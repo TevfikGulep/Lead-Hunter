@@ -21,7 +21,7 @@ const LeadHunter = () => {
     const [settings, setSettings] = useState({
         googleApiKey: '', searchEngineId: '', geminiApiKey: '', 
         googleScriptUrl: '', signature: '', followUpDays: 7,
-        firebaseConfig: defaultFirebaseConfig, // BURASI GÜNCELLENDİ
+        firebaseConfig: defaultFirebaseConfig, 
         workflowTR: window.DEFAULT_WORKFLOW_TR,
         workflowEN: window.DEFAULT_WORKFLOW_EN
     });
@@ -410,6 +410,37 @@ const LeadHunter = () => {
         setSelectedLead({ ...lead, currentLabel: info.label, draft: { to: lead.email ? lead.email.split(',')[0].trim() : '', subject: info.template.subject.replace(/{{Website}}/g, domain), body: info.template.body.replace(/{{Website}}/g, domain) }, allEmails: lead.email });
     };
 
+    // --- MANUEL NOT EKLEME ---
+    const handleAddNote = async (leadId, noteContent) => {
+        if (!isDbConnected || !leadId || !noteContent.trim()) return;
+        
+        try {
+            const lead = crmData.find(l => l.id === leadId);
+            if (!lead) return;
+
+            const newLog = {
+                date: new Date().toISOString(),
+                type: 'NOTE',
+                content: noteContent
+            };
+
+            const updatedLogs = [...(lead.activityLog || []), newLog];
+            
+            await dbInstance.collection("leads").doc(leadId).update({
+                activityLog: updatedLogs
+            });
+            
+            // Eğer o an history modal açıksa, anlık güncelle
+            if (historyModalLead && historyModalLead.id === leadId) {
+                setHistoryModalLead(prev => ({ ...prev, activityLog: updatedLogs }));
+            }
+
+        } catch(e) {
+            console.error("Not ekleme hatası:", e);
+            alert("Not eklenirken bir hata oluştu.");
+        }
+    };
+
     const handleSendMail = async () => {
         if (!selectedLead) return; setIsSending(true);
         try {
@@ -421,8 +452,27 @@ const LeadHunter = () => {
             const response = await fetch(settings.googleScriptUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'send_mail', to: selectedLead.draft.to, subject: selectedLead.draft.subject, body: plainBody, htmlBody: htmlContent, threadId: selectedLead.threadId || null }) });
             const result = await response.json();
             
+            if (result.status === 'error') {
+                throw new Error(result.message);
+            }
+
             if (isDbConnected) {
-                const updateData = { statusKey: 'NO_REPLY', statusLabel: window.LEAD_STATUSES['NO_REPLY'].label, stage: (selectedLead.stage || 0) + 1, lastContactDate: new Date().toISOString(), [`history.${selectedLead.stage === 0 ? 'initial' : `repeat${selectedLead.stage}`}`]: new Date().toISOString() };
+                // Aktivite günlüğüne ekle
+                const newLog = {
+                    date: new Date().toISOString(),
+                    type: 'MAIL',
+                    content: `Mail Gönderildi: ${selectedLead.currentLabel}`
+                };
+                
+                const updateData = { 
+                    statusKey: 'NO_REPLY', 
+                    statusLabel: window.LEAD_STATUSES['NO_REPLY'].label, 
+                    stage: (selectedLead.stage || 0) + 1, 
+                    lastContactDate: new Date().toISOString(), 
+                    [`history.${selectedLead.stage === 0 ? 'initial' : `repeat${selectedLead.stage}`}`]: new Date().toISOString(),
+                    activityLog: [...(selectedLead.activityLog || []), newLog] // Logu ekle
+                };
+
                 if (result.threadId) updateData.threadId = result.threadId;
                 await dbInstance.collection("leads").doc(selectedLead.id).update(updateData);
                 setCrmData(prev => prev.map(p => p.id === selectedLead.id ? { ...p, ...updateData } : p));
@@ -460,11 +510,55 @@ const LeadHunter = () => {
             try {
                 const subject = template.subject.replace(/{{Website}}/g, domainsString);
                 const body = template.body.replace(/{{Website}}/g, uniqueDomains.join(', '));
-                // (Mail gönderme mantığı handleSendMail ile benzer, burada kısalttım)
-                // ... fetch call ...
+                
+                // Mail Gönderimi
+                const messageHtml = body.replace(/\n/g, '<br>');
+                let signatureHtml = settings.signature ? window.decodeHtmlEntities(settings.signature).replace(/class="MsoNormal"/g, 'style="margin:0;"') : '';
+                const htmlContent = `<div style="font-family: Arial; font-size: 14px;">${messageHtml}</div><br><br><div>${signatureHtml}</div>`;
+                const plainBody = body + (settings.signature ? `\n\n--\n${settings.signature.replace(/<[^>]+>/g, '')}` : '');
+
+                const response = await fetch(settings.googleScriptUrl, { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
+                    body: JSON.stringify({ 
+                        action: 'send_mail', 
+                        to: email, 
+                        subject: subject, 
+                        body: plainBody, 
+                        htmlBody: htmlContent, 
+                        threadId: mainLead.threadId || null 
+                    }) 
+                });
+                const result = await response.json();
+                
+                if (result.status === 'error') throw new Error(result.message);
+
                 addBulkLog(`${email}: Gönderildi`, true);
-                if (isDbConnected) { /* DB Update Logic */ }
-            } catch (e) { addBulkLog(`${email}: Hata`, false); }
+                
+                if (isDbConnected) { 
+                     // Veritabanı güncelleme (Her lead için)
+                     const batch = dbInstance.batch();
+                     group.forEach(l => {
+                        const newLog = {
+                            date: new Date().toISOString(),
+                            type: 'MAIL',
+                            content: `Toplu Gönderildi: ${targetStage}. Aşama`
+                        };
+                        const ref = dbInstance.collection("leads").doc(l.id);
+                        const updateData = {
+                             statusKey: 'NO_REPLY', 
+                             statusLabel: window.LEAD_STATUSES['NO_REPLY'].label, 
+                             stage: targetStage + 1, 
+                             lastContactDate: new Date().toISOString(),
+                             [`history.${targetStage === 0 ? 'initial' : `repeat${targetStage}`}`]: new Date().toISOString(),
+                             activityLog: firebase.firestore.FieldValue.arrayUnion(newLog)
+                        };
+                        if (result.threadId) updateData.threadId = result.threadId;
+                        batch.update(ref, updateData);
+                     });
+                     await batch.commit();
+                }
+            } catch (e) { addBulkLog(`${email}: Hata - ${e.message}`, false); }
             if (index < totalGroups) await new Promise(r => setTimeout(r, 2000));
         }
         setIsBulkSending(false); setSelectedIds(new Set()); alert("Tamamlandı."); setShowBulkModal(false);
@@ -498,7 +592,6 @@ const LeadHunter = () => {
         const keywordList = keywords.split(/[\n,]+/).map(k => k.trim()).filter(k => k.length > 0);
         if (keywordList.length === 0) return alert("Kelime giriniz.");
         scanIntervalRef.current = true; setIsScanning(true); setLeads([]); setLogs([]); setProgress(0);
-        const lang = window.SEARCH_COUNTRIES.find(c => c.code === searchLocation)?.lang || 'tr';
         
         for (let i = 0; i < keywordList.length; i++) {
             if (!scanIntervalRef.current) break;
@@ -533,7 +626,6 @@ const LeadHunter = () => {
                     <div className="mb-8 flex justify-between items-end border-b border-slate-200 pb-4">
                         <h2 className="text-3xl font-bold text-slate-800 tracking-tight">{activeTab === 'dashboard' ? 'Yönetim Paneli' : activeTab === 'hunter' ? 'Site Avcısı' : activeTab === 'crm' ? 'Müşteri Listesi' : 'Ayarlar'}</h2>
                         {activeTab === 'crm' && (
-                             /* Dil Araçları ve Rapor Yükle Butonları (Kısaltıldı) */
                             <div className="flex gap-2">
                                 <button onClick={enrichDatabase} disabled={isEnriching} className="bg-purple-50 text-purple-700 px-3 py-1.5 rounded-lg text-xs font-bold border border-purple-200 flex items-center gap-2">{isEnriching ? 'Taranıyor...' : 'Zenginleştir'}</button>
                             </div>
@@ -553,7 +645,16 @@ const LeadHunter = () => {
             {showEnrichModal && <window.EnrichModal isEnriching={isEnriching} enrichProgress={enrichProgress} enrichLogs={enrichLogs} close={()=>setShowEnrichModal(false)} />}
             {showBulkModal && <window.BulkModal isBulkSending={isBulkSending} bulkProgress={bulkProgress} selectedCount={selectedIds.size} bulkConfig={bulkConfig} setBulkConfig={setBulkConfig} activeTab={activeTab} settings={settings} executeBulkSend={executeBulkSend} close={()=>setShowBulkModal(false)} setShowBulkModal={setShowBulkModal} />}
             <window.MailModal selectedLead={selectedLead} setSelectedLead={setSelectedLead} handleSendMail={handleSendMail} isSending={isSending} />
-            <window.HistoryModal historyModalLead={historyModalLead} setHistoryModalLead={setHistoryModalLead} checkGmailReply={checkGmailReply} isCheckingReply={isCheckingReply} replyCheckResult={replyCheckResult} />
+            
+            {/* onAddNote prop'u eklendi */}
+            <window.HistoryModal 
+                historyModalLead={historyModalLead} 
+                setHistoryModalLead={setHistoryModalLead} 
+                checkGmailReply={checkGmailReply} 
+                isCheckingReply={isCheckingReply} 
+                replyCheckResult={replyCheckResult}
+                onAddNote={handleAddNote} 
+            />
         </div>
     );
 };
