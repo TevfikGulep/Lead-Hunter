@@ -410,35 +410,54 @@ const LeadHunter = () => {
         setSelectedLead({ ...lead, currentLabel: info.label, draft: { to: lead.email ? lead.email.split(',')[0].trim() : '', subject: info.template.subject.replace(/{{Website}}/g, domain), body: info.template.body.replace(/{{Website}}/g, domain) }, allEmails: lead.email });
     };
 
-    // --- MANUEL NOT EKLEME ---
+    // --- MANUEL NOT İŞLEMLERİ (EKLEME, SİLME, GÜNCELLEME) ---
     const handleAddNote = async (leadId, noteContent) => {
         if (!isDbConnected || !leadId || !noteContent.trim()) return;
-        
         try {
             const lead = crmData.find(l => l.id === leadId);
             if (!lead) return;
-
-            const newLog = {
-                date: new Date().toISOString(),
-                type: 'NOTE',
-                content: noteContent
-            };
-
+            const newLog = { date: new Date().toISOString(), type: 'NOTE', content: noteContent };
             const updatedLogs = [...(lead.activityLog || []), newLog];
-            
-            await dbInstance.collection("leads").doc(leadId).update({
-                activityLog: updatedLogs
-            });
-            
-            // Eğer o an history modal açıksa, anlık güncelle
+            await dbInstance.collection("leads").doc(leadId).update({ activityLog: updatedLogs });
             if (historyModalLead && historyModalLead.id === leadId) {
                 setHistoryModalLead(prev => ({ ...prev, activityLog: updatedLogs }));
             }
+        } catch(e) { console.error(e); alert("Not eklenirken hata oluştu."); }
+    };
 
-        } catch(e) {
-            console.error("Not ekleme hatası:", e);
-            alert("Not eklenirken bir hata oluştu.");
-        }
+    const handleDeleteNote = async (leadId, noteIndex) => {
+        if (!isDbConnected || !leadId) return;
+        if (!confirm("Bu notu silmek istediğinize emin misiniz?")) return;
+        try {
+            const lead = crmData.find(l => l.id === leadId);
+            if (!lead || !lead.activityLog) return;
+
+            const updatedLogs = [...lead.activityLog];
+            updatedLogs.splice(noteIndex, 1);
+
+            await dbInstance.collection("leads").doc(leadId).update({ activityLog: updatedLogs });
+            
+            if (historyModalLead && historyModalLead.id === leadId) {
+                setHistoryModalLead(prev => ({ ...prev, activityLog: updatedLogs }));
+            }
+        } catch(e) { console.error(e); alert("Silme hatası."); }
+    };
+
+    const handleUpdateNote = async (leadId, noteIndex, newContent) => {
+        if (!isDbConnected || !leadId) return;
+        try {
+            const lead = crmData.find(l => l.id === leadId);
+            if (!lead || !lead.activityLog) return;
+
+            const updatedLogs = [...lead.activityLog];
+            updatedLogs[noteIndex] = { ...updatedLogs[noteIndex], content: newContent };
+
+            await dbInstance.collection("leads").doc(leadId).update({ activityLog: updatedLogs });
+            
+            if (historyModalLead && historyModalLead.id === leadId) {
+                setHistoryModalLead(prev => ({ ...prev, activityLog: updatedLogs }));
+            }
+        } catch(e) { console.error(e); alert("Güncelleme hatası."); }
     };
 
     const handleSendMail = async () => {
@@ -470,7 +489,7 @@ const LeadHunter = () => {
                     stage: (selectedLead.stage || 0) + 1, 
                     lastContactDate: new Date().toISOString(), 
                     [`history.${selectedLead.stage === 0 ? 'initial' : `repeat${selectedLead.stage}`}`]: new Date().toISOString(),
-                    activityLog: [...(selectedLead.activityLog || []), newLog] // Logu ekle
+                    activityLog: [...(selectedLead.activityLog || []), newLog] 
                 };
 
                 if (result.threadId) updateData.threadId = result.threadId;
@@ -511,7 +530,6 @@ const LeadHunter = () => {
                 const subject = template.subject.replace(/{{Website}}/g, domainsString);
                 const body = template.body.replace(/{{Website}}/g, uniqueDomains.join(', '));
                 
-                // Mail Gönderimi
                 const messageHtml = body.replace(/\n/g, '<br>');
                 let signatureHtml = settings.signature ? window.decodeHtmlEntities(settings.signature).replace(/class="MsoNormal"/g, 'style="margin:0;"') : '';
                 const htmlContent = `<div style="font-family: Arial; font-size: 14px;">${messageHtml}</div><br><br><div>${signatureHtml}</div>`;
@@ -536,7 +554,6 @@ const LeadHunter = () => {
                 addBulkLog(`${email}: Gönderildi`, true);
                 
                 if (isDbConnected) { 
-                     // Veritabanı güncelleme (Her lead için)
                      const batch = dbInstance.batch();
                      group.forEach(l => {
                         const newLog = {
@@ -607,12 +624,59 @@ const LeadHunter = () => {
     const handleSort = (key) => { setSortConfig(current => ({ key, direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc' })); };
     const handleEditClick = (lead) => { setEditingRowId(lead.id); setEditFormData({ ...lead, potential: lead.trafficStatus?.label || '' }); };
     const handleEditChange = (key, value) => setEditFormData(prev => ({ ...prev, [key]: value }));
-    const handleEditSave = async () => { /* Update Logic */ setEditingRowId(null); };
+    
+    // --- MANUEL DÜZENLEME KAYDETME (DÜZELTİLDİ) ---
+    const handleEditSave = async () => {
+        if (!editingRowId || !isDbConnected) return;
+        try {
+            const updates = { ...editFormData };
+            // Status Label güncellemesi
+            if (updates.statusKey && window.LEAD_STATUSES[updates.statusKey]) {
+                updates.statusLabel = window.LEAD_STATUSES[updates.statusKey].label;
+            } else if (updates.statusKey === 'New') {
+                updates.statusLabel = 'New';
+            }
+
+            // Sayısal trafik verisini güncelle
+            if (updates.potential && updates.potential !== (crmData.find(i=>i.id===editingRowId).trafficStatus?.label)) {
+                 const newVal = window.parseTrafficToNumber(updates.potential);
+                 updates.trafficStatus = { ...(updates.trafficStatus || {}), label: updates.potential, value: newVal, viable: newVal > 20000 };
+            }
+
+            await dbInstance.collection("leads").doc(editingRowId).update(updates);
+            setCrmData(prev => prev.map(item => item.id === editingRowId ? { ...item, ...updates } : item));
+            setEditingRowId(null);
+            setEditFormData({});
+        } catch (e) {
+            alert("Güncelleme hatası: " + e.message);
+        }
+    };
+
     const handleEditCancel = () => { setEditingRowId(null); setEditFormData({}); };
     const handleSettingChange = (key, value) => setSettings(prev => ({ ...prev, [key]: value }));
     const updateWorkflowStep = (index, field, value) => { const k = activeTemplateLang === 'EN' ? 'workflowEN' : 'workflowTR'; const nw = [...settings[k]]; nw[index][field] = value; setSettings(p => ({ ...p, [k]: nw })); };
     const fixHtmlCode = () => { if(settings.signature) handleSettingChange('signature', window.decodeHtmlEntities(settings.signature)); };
-    const addToCrm = async (lead, lang) => { /* Add Logic */ };
+    
+    // CRM'e Ekleme Mantığı (Dolduruldu)
+    const addToCrm = async (lead, lang) => {
+        if (!isDbConnected) return alert("Veritabanı bağlı değil.");
+        try {
+            const newLead = {
+                url: lead.url,
+                email: lead.email || '',
+                statusKey: 'New',
+                statusLabel: 'New',
+                stage: 0,
+                language: lang,
+                trafficStatus: lead.trafficStatus || { viable: false },
+                addedDate: new Date().toISOString(),
+                activityLog: []
+            };
+            const docRef = await dbInstance.collection("leads").add(newLead);
+            setCrmData(prev => [...prev, { ...newLead, id: docRef.id }]);
+            alert(`${window.cleanDomain(lead.url)} başarıyla eklendi!`);
+        } catch(e) { alert("Ekleme hatası: " + e.message); }
+    };
 
     // --- RENDER ---
     if (!isAuthenticated) return <window.LoginScreen authEmail={authEmail} setAuthEmail={setAuthEmail} passwordInput={passwordInput} setPasswordInput={setPasswordInput} handleLogin={handleLogin} loginError={loginError} />;
@@ -646,14 +710,15 @@ const LeadHunter = () => {
             {showBulkModal && <window.BulkModal isBulkSending={isBulkSending} bulkProgress={bulkProgress} selectedCount={selectedIds.size} bulkConfig={bulkConfig} setBulkConfig={setBulkConfig} activeTab={activeTab} settings={settings} executeBulkSend={executeBulkSend} close={()=>setShowBulkModal(false)} setShowBulkModal={setShowBulkModal} />}
             <window.MailModal selectedLead={selectedLead} setSelectedLead={setSelectedLead} handleSendMail={handleSendMail} isSending={isSending} />
             
-            {/* onAddNote prop'u eklendi */}
             <window.HistoryModal 
                 historyModalLead={historyModalLead} 
                 setHistoryModalLead={setHistoryModalLead} 
                 checkGmailReply={checkGmailReply} 
                 isCheckingReply={isCheckingReply} 
                 replyCheckResult={replyCheckResult}
-                onAddNote={handleAddNote} 
+                onAddNote={handleAddNote}
+                onDeleteNote={handleDeleteNote}
+                onUpdateNote={handleUpdateNote}
             />
         </div>
     );
