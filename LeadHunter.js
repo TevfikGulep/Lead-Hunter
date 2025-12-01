@@ -321,6 +321,68 @@ const LeadHunter = () => {
         return { template: workflow[stageIndex], label: workflow[stageIndex].label, isFinished: false };
     };
 
+    // --- MANUEL AŞAMA GÜNCELLEME (YENİ) ---
+    const handleManualStageUpdate = async (leadId, newStage) => {
+        if (!isDbConnected || !leadId) return alert("Veritabanı bağlı değil.");
+        
+        const lead = crmData.find(l => l.id === leadId);
+        if (!lead) return;
+
+        // Stage 0 = Henüz Yok, Stage 1 = İlk Temas (Index 0), Stage 2 = Takip 1 (Index 1)...
+        // getStageInfo logic: stage - 1 = workflow index
+        const stageLabel = newStage === 0 ? 'Başlamadı' : getStageInfo(newStage - 1, lead.language).label;
+        
+        if (!confirm(`"${window.cleanDomain(lead.url)}" için son gönderilen aşamayı manuel olarak "${stageLabel}" şeklinde değiştirmek istiyor musunuz? Geçmiş buna göre güncellenecektir.`)) return;
+
+        try {
+            const timestamp = new Date().toISOString();
+            
+            // Log oluştur
+            const newLog = {
+                date: timestamp,
+                type: 'SYSTEM',
+                content: `Manuel Aşama Güncellemesi: ${stageLabel} olarak ayarlandı.`
+            };
+
+            // Güncelleme verileri
+            const updateData = {
+                stage: newStage,
+                lastContactDate: timestamp, // Son temas tarihini şimdi yap
+                activityLog: firebase.firestore.FieldValue.arrayUnion(newLog)
+            };
+
+            // Geçmiş (history) nesnesini güncelle
+            // Eğer yeni bir aşamaya geçildiyse, o aşamanın tarihini 'bugün' olarak işaretle
+            if (newStage > 0) {
+                const historyKey = newStage === 1 ? 'initial' : `repeat${newStage - 1}`;
+                updateData[`history.${historyKey}`] = timestamp;
+            }
+
+            await dbInstance.collection("leads").doc(leadId).update(updateData);
+            
+            // UI'ı güncelle (Firestore listener zaten yapacak ama iyimser güncelleme için)
+            setCrmData(prev => prev.map(p => {
+                if (p.id === leadId) {
+                    const updatedHistory = { ...(p.history || {}) };
+                    if (newStage > 0) {
+                        const historyKey = newStage === 1 ? 'initial' : `repeat${newStage - 1}`;
+                        updatedHistory[historyKey] = timestamp;
+                    }
+                    return { 
+                        ...p, 
+                        ...updateData, 
+                        history: updatedHistory,
+                        activityLog: [...(p.activityLog || []), newLog]
+                    };
+                }
+                return p;
+            }));
+
+        } catch (e) {
+            alert("Güncelleme hatası: " + e.message);
+        }
+    };
+
     // --- ACTIONS ---
     const checkGmailReply = async (lead) => {
         if (!lead.threadId) return alert("Bu kayıtla ilişkili bir mail konuşması (Thread ID) bulunamadı.");
@@ -857,11 +919,11 @@ const LeadHunter = () => {
                         )}
                     </div>
 
-                    {activeTab === 'dashboard' && <window.DashboardTab crmData={crmData} filters={filters} setFilters={setFilters} selectedIds={selectedIds} toggleSelection={toggleSelection} toggleSelectAll={toggleSelectAll} selectedCount={selectedIds.size} setShowBulkModal={setShowBulkModal} activeTab={activeTab} fixAllTrafficData={fixAllTrafficData} onBulkCheck={handleBulkReplyCheck} isCheckingBulk={isCheckingBulk} paginatedItems={getPaginatedData()} currentPage={currentPage} totalPages={totalPages} setCurrentPage={setCurrentPage} totalRecords={processedData.length} setHistoryModalLead={setHistoryModalLead} getStageInfo={getStageInfo} handleSort={handleSort} sortConfig={sortConfig} />}
+                    {activeTab === 'dashboard' && <window.DashboardTab crmData={crmData} filters={filters} setFilters={setFilters} selectedIds={selectedIds} toggleSelection={toggleSelection} toggleSelectAll={toggleSelectAll} selectedCount={selectedIds.size} setShowBulkModal={setShowBulkModal} activeTab={activeTab} fixAllTrafficData={fixAllTrafficData} onBulkCheck={handleBulkReplyCheck} isCheckingBulk={isCheckingBulk} paginatedItems={getPaginatedData()} currentPage={currentPage} totalPages={totalPages} setCurrentPage={setCurrentPage} totalRecords={processedData.length} setHistoryModalLead={setHistoryModalLead} getStageInfo={getStageInfo} handleSort={handleSort} sortConfig={sortConfig} onStageChange={handleManualStageUpdate} workflow={settings.workflowTR} />}
                     
                     {activeTab === 'hunter' && <window.HunterTab keywords={keywords} setKeywords={setKeywords} searchDepth={searchDepth} setSearchDepth={setSearchDepth} searchLocation={searchLocation} setSearchLocation={setSearchLocation} isScanning={isScanning} startScan={startScan} stopScan={stopScan} progress={progress} logs={logs} logsEndRef={logsEndRef} leads={leads} hunterFilterType={hunterFilterType} setHunterFilterType={setHunterFilterType} selectedIds={selectedIds} bulkAddNotViable={bulkAddNotViable} setShowBulkModal={setShowBulkModal} processedHunterLeads={processedHunterLeads} toggleSelectAll={toggleSelectAll} toggleSelection={toggleSelection} setHunterSort={setHunterSort} addToCrm={addToCrm} />}
                     
-                    {activeTab === 'crm' && <window.CrmTab crmData={crmData} filters={filters} setFilters={setFilters} selectedIds={selectedIds} setShowBulkModal={setShowBulkModal} activeTab={activeTab} fixAllTrafficData={fixAllTrafficData} onBulkCheck={handleBulkReplyCheck} isCheckingBulk={isCheckingBulk} paginatedItems={getPaginatedData()} selectedCount={selectedIds.size} toggleSelectAll={toggleSelectAll} toggleSelection={toggleSelection} handleSort={handleSort} sortConfig={sortConfig} editingRowId={editingRowId} editFormData={editFormData} handleEditChange={handleEditChange} handleEditSave={handleEditSave} handleEditCancel={handleEditCancel} handleEditClick={handleEditClick} setHistoryModalLead={setHistoryModalLead} openMailModal={openMailModal} currentPage={currentPage} totalPages={totalPages} setCurrentPage={setCurrentPage} totalRecords={processedData.length} emailMap={emailMap} getStageInfo={getStageInfo} enrichDatabase={enrichDatabase} isEnriching={isEnriching} setShowImportModal={setShowImportModal} bulkUpdateStatus={bulkUpdateStatus} />}
+                    {activeTab === 'crm' && <window.CrmTab crmData={crmData} filters={filters} setFilters={setFilters} selectedIds={selectedIds} setShowBulkModal={setShowBulkModal} activeTab={activeTab} fixAllTrafficData={fixAllTrafficData} onBulkCheck={handleBulkReplyCheck} isCheckingBulk={isCheckingBulk} paginatedItems={getPaginatedData()} selectedCount={selectedIds.size} toggleSelectAll={toggleSelectAll} toggleSelection={toggleSelection} handleSort={handleSort} sortConfig={sortConfig} editingRowId={editingRowId} editFormData={editFormData} handleEditChange={handleEditChange} handleEditSave={handleEditSave} handleEditCancel={handleEditCancel} handleEditClick={handleEditClick} setHistoryModalLead={setHistoryModalLead} openMailModal={openMailModal} currentPage={currentPage} totalPages={totalPages} setCurrentPage={setCurrentPage} totalRecords={processedData.length} emailMap={emailMap} getStageInfo={getStageInfo} enrichDatabase={enrichDatabase} isEnriching={isEnriching} setShowImportModal={setShowImportModal} bulkUpdateStatus={bulkUpdateStatus} onStageChange={handleManualStageUpdate} workflow={settings.workflowTR} />}
                     
                     {activeTab === 'settings' && <window.SettingsTab settings={settings} handleSettingChange={handleSettingChange} saveSettingsToCloud={saveSettingsToCloud} showSignatureHtml={showSignatureHtml} setShowSignatureHtml={setShowSignatureHtml} fixHtmlCode={fixHtmlCode} fixAllTrafficData={fixAllTrafficData} activeTemplateLang={activeTemplateLang} setActiveTemplateLang={setActiveTemplateLang} activeTemplateIndex={activeTemplateIndex} setActiveTemplateIndex={setActiveTemplateIndex} updateWorkflowStep={updateWorkflowStep} />}
                 </div>
