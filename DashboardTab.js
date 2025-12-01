@@ -25,7 +25,8 @@ window.DashboardTab = ({
     handleSort, // YENİ: Sıralama fonksiyonu
     sortConfig, // YENİ: Sıralama durumu
     onStageChange, // YENİ: Manuel aşama değiştirme fonksiyonu
-    workflow // YENİ: Workflow listesi (Dropdown için)
+    workflow, // YENİ: Workflow listesi (Dropdown için)
+    bulkUpdateStatus // YENİ: Toplu durum güncelleme fonksiyonu
 }) => {
 
     // İstatistik Verileri
@@ -66,6 +67,7 @@ window.DashboardTab = ({
                 fixAllTrafficData={fixAllTrafficData}
                 onBulkCheck={onBulkCheck}
                 isCheckingBulk={isCheckingBulk}
+                onBulkStatusChange={bulkUpdateStatus} /* EKLENDİ: FilterBar'a fonksiyon iletiliyor */
             />
             
             {/* Tablo */}
