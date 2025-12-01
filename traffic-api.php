@@ -1,0 +1,294 @@
+<?php
+// traffic-api.php
+// Versiyon: 3.0 (Akıllı Link Keşfi + Cloudflare Decoder + ROT13)
+
+header("Access-Control-Allow-Origin: *");
+header("Access-Control-Allow-Methods: GET, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type");
+header("Content-Type: application/json; charset=UTF-8");
+
+// Zaman aşımı sınırını artıralım (Kapsamlı tarama için)
+set_time_limit(45);
+
+if (!isset($_GET['domain'])) {
+    echo json_encode(['success' => false, 'error' => 'Domain parametresi eksik.']);
+    exit;
+}
+
+$type = isset($_GET['type']) ? $_GET['type'] : 'traffic';
+$domain = cleanDomain($_GET['domain']);
+
+if ($type === 'email') {
+    // *** EMAIL BULMA MODU ***
+    $emails = findEmails($domain);
+    
+    if (!empty($emails)) {
+        echo json_encode(['success' => true, 'emails' => $emails]);
+    } else {
+        echo json_encode(['success' => false, 'error' => 'Email bulunamadı.']);
+    }
+    exit;
+
+} else {
+    // *** TRAFİK BULMA MODU ***
+    $trafficData = getTraffic($domain);
+    echo json_encode($trafficData);
+    exit;
+}
+
+// ---------------------------------------------------
+// --- FONKSİYONLAR ---
+// ---------------------------------------------------
+
+function cleanDomain($url) {
+    $url = trim($url);
+    $url = preg_replace('#^https?://#', '', $url);
+    $url = preg_replace('#^www\.#', '', $url);
+    return explode('/', $url)[0];
+}
+
+function fetchUrl($url) {
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+    // Gerçekçi Browser İmzası
+    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    $content = curl_exec($ch);
+    curl_close($ch);
+    return $content;
+}
+
+function findEmails($domain) {
+    $protocol = 'https://';
+    $baseUrl = $protocol . $domain;
+    
+    // Bulunan maillerin toplanacağı havuz
+    $foundEmails = [];
+    
+    // 1. Önce Ana Sayfayı Çek
+    $homeHtml = fetchUrl($baseUrl);
+    if (!$homeHtml) {
+        // Https çalışmazsa http dene
+        $baseUrl = 'http://' . $domain;
+        $homeHtml = fetchUrl($baseUrl);
+    }
+
+    if ($homeHtml) {
+        // Ana sayfadaki mailleri al
+        $foundEmails = array_merge($foundEmails, extractEmailsFromHtml($homeHtml, $domain));
+        
+        // 2. AKILLI LİNK KEŞFİ (Smart Crawl)
+        // Ana sayfadaki linkleri analiz et ve potansiyel iletişim sayfalarını bul
+        $contactLinks = findContactLinks($homeHtml, $baseUrl);
+        
+        // En fazla 3 iç sayfayı daha tara (Sunucuyu yormamak için limitli)
+        $pagesToCrawl = array_slice($contactLinks, 0, 3);
+        
+        foreach ($pagesToCrawl as $pageUrl) {
+            $pageHtml = fetchUrl($pageUrl);
+            if ($pageHtml) {
+                $foundEmails = array_merge($foundEmails, extractEmailsFromHtml($pageHtml, $domain));
+            }
+            usleep(100000); // 0.1s bekle
+        }
+    }
+    
+    // Eğer hiç mail bulunamadıysa standart tahmin yollarını son çare olarak dene
+    if (empty($foundEmails)) {
+        $fallbackPaths = ['/iletisim', '/contact', '/contact-us'];
+        foreach($fallbackPaths as $path) {
+            $fallbackHtml = fetchUrl(rtrim($baseUrl, '/') . $path);
+            if ($fallbackHtml) {
+                $foundEmails = array_merge($foundEmails, extractEmailsFromHtml($fallbackHtml, $domain));
+            }
+        }
+    }
+
+    // Tekilleştir
+    $foundEmails = array_unique($foundEmails);
+    
+    // Puanlama ve Sıralama
+    usort($foundEmails, function($a, $b) use ($domain) {
+        $scoreA = getEmailScore($a, $domain);
+        $scoreB = getEmailScore($b, $domain);
+        return $scoreB - $scoreA;
+    });
+    
+    return array_slice($foundEmails, 0, 5);
+}
+
+// HTML İçinden Mail Çıkarma (Regex + Cloudflare + ROT13)
+function extractEmailsFromHtml($html, $domain) {
+    $emails = [];
+
+    // A. Standart Regex
+    preg_match_all('/[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,10}/', $html, $matches);
+    if (!empty($matches[0])) {
+        foreach ($matches[0] as $email) {
+            $clean = strtolower(trim($email));
+            
+            // ROT13 Çözücü (.pbz gibi)
+            if (preg_match('/\.pbz$|\.arg$|\.bet$/', $clean)) {
+                $clean = str_rot13($clean);
+            }
+            
+            if (isValidEmail($clean, $domain)) {
+                $emails[] = $clean;
+            }
+        }
+    }
+
+    // B. Cloudflare Email Decoding ([email protected])
+    // Cloudflare şu formatı kullanır: data-cfemail="hex_string"
+    if (preg_match_all('/data-cfemail="([a-f0-9]+)"/i', $html, $cfMatches)) {
+        foreach ($cfMatches[1] as $hex) {
+            $decodedEmail = decodeCloudflareEmail($hex);
+            if (isValidEmail($decodedEmail, $domain)) {
+                $emails[] = $decodedEmail;
+            }
+        }
+    }
+
+    return $emails;
+}
+
+// Cloudflare Hex Çözücü Fonksiyonu
+function decodeCloudflareEmail($hex) {
+    $email = "";
+    $k = hexdec(substr($hex, 0, 2));
+    for ($i = 2; $i < strlen($hex); $i += 2) {
+        $email .= chr(hexdec(substr($hex, $i, 2)) ^ $k);
+    }
+    return strtolower($email);
+}
+
+// HTML içindeki "İletişim", "Contact", "About" linklerini bulur
+function findContactLinks($html, $baseUrl) {
+    $dom = new DOMDocument();
+    @$dom->loadHTML($html);
+    $links = $dom->getElementsByTagName('a');
+    $candidates = [];
+    
+    $keywords = ['contact', 'iletisim', 'iletişim', 'about', 'hakkimizda', 'hakkımızda', 'bize-ulasin', 'ulasim', 'imprint', 'kunye', 'künye'];
+    
+    foreach ($links as $link) {
+        $href = $link->getAttribute('href');
+        $text = strtolower($link->nodeValue);
+        
+        // Link veya metin anahtar kelimeleri içeriyor mu?
+        foreach ($keywords as $kw) {
+            if (strpos($href, $kw) !== false || strpos($text, $kw) !== false) {
+                // Relative linki absolute yap
+                if (strpos($href, 'http') === false) {
+                    $href = rtrim($baseUrl, '/') . '/' . ltrim($href, '/');
+                }
+                // Başka siteye gidiyorsa (sosyal medya hariç) alma
+                if (strpos($href, cleanDomain($baseUrl)) !== false) {
+                    $candidates[] = $href;
+                }
+                break; 
+            }
+        }
+    }
+    return array_unique($candidates);
+}
+
+function getEmailScore($email, $domain) {
+    $score = 0;
+    $userPart = explode('@', $email)[0];
+    $domainPart = explode('@', $email)[1];
+    
+    $cleanDomain = str_replace('www.', '', $domain);
+    if (strpos($domainPart, $cleanDomain) !== false) $score += 10;
+
+    $priorityWords = ['info', 'contact', 'sales', 'support', 'iletisim', 'bilgi', 'merhaba', 'reklam', 'hello', 'editor', 'haber', 'yonetim'];
+    if (in_array($userPart, $priorityWords)) $score += 5;
+
+    return $score;
+}
+
+function isValidEmail($email, $domain) {
+    $junkTerms = [
+        'w3.org', 'sentry.io', 'example.com', 'yourdomain.com', 'email@', 'name@', 'user@', 'domain.com',
+        '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.js', '.css', '.woff', '.ttf',
+        '2x.png', '@2x', 'bootstrap', 'jquery', 'cloudflare', 'react', 'google', 'wordpress',
+        'noreply', 'no-reply', 'donotreply', 'server@', 'cpanel@', 'plesk@', 'nginx@'
+    ];
+
+    foreach ($junkTerms as $term) {
+        if (strpos($email, $term) !== false) return false;
+    }
+
+    $parts = explode('.', $email);
+    $tld = end($parts);
+    if (is_numeric($tld)) return false;
+
+    $userPart = explode('@', $email)[0];
+    if (strlen($userPart) > 35 || strlen($userPart) < 2) return false;
+    
+    return true;
+}
+
+// --- TRAFİK FONKSİYONLARI (Değişmedi) ---
+function getTraffic($domain) {
+    $targetUrl = "https://www.similarsites.com/site/" . urlencode($domain);
+    $html = fetchUrl($targetUrl);
+
+    if ($html) {
+        $dom = new DOMDocument();
+        libxml_use_internal_errors(true);
+        @$dom->loadHTML($html);
+        libxml_clear_errors();
+        $xpath = new DOMXPath($dom);
+        
+        $queries = [
+            "//*[@data-testid='siteheader_monthlyvisits']",
+            "//p[contains(@class, 'total-visits-value')]",
+            "//div[contains(@class, 'visits-container__value')]",
+            "//dt[contains(., 'Total Visits')]/following-sibling::dd[1]"
+        ];
+
+        foreach ($queries as $query) {
+            $nodes = $xpath->query($query);
+            if ($nodes && $nodes->length > 0) {
+                $val = trim($nodes->item(0)->nodeValue);
+                return ['success' => true, 'source' => 'similarsites', 'value' => parseTrafficString($val), 'raw' => strtoupper($val)];
+            }
+        }
+        
+        if (preg_match('/"(MonthlyVisits|monthly_visits|TotalVisits)"\s*:\s*(\d+)/i', $html, $matches)) {
+             $rawNum = (int)$matches[2];
+             return ['success' => true, 'source' => 'similarsites-regex', 'value' => $rawNum, 'raw' => formatNumber($rawNum)];
+        }
+    }
+
+    $hypeUrl = "https://hypestat.com/info/" . urlencode($domain);
+    $htmlHype = fetchUrl($hypeUrl);
+    if ($htmlHype && preg_match('/Daily Unique Visitors\s*[:\n]+\s*([\d,]+)/i', $htmlHype, $matches)) {
+        $daily = (int)str_replace(',', '', $matches[1]);
+        $monthly = $daily * 30;
+        return ['success' => true, 'source' => 'hypestat', 'value' => $monthly, 'raw' => formatNumber($monthly)];
+    }
+
+    return ['success' => false, 'error' => 'Veri bulunamadı.'];
+}
+
+function parseTrafficString($str) {
+    $str = strtolower($str);
+    $clean = preg_replace('/[^0-9.kmb]/', '', $str);
+    $multiplier = 1;
+    if (strpos($clean, 'm') !== false) { $multiplier = 1000000; $clean = str_replace('m', '', $clean); }
+    elseif (strpos($clean, 'k') !== false) { $multiplier = 1000; $clean = str_replace('k', '', $clean); }
+    elseif (strpos($clean, 'b') !== false) { $multiplier = 1000000000; $clean = str_replace('b', '', $clean); }
+    return (float)$clean * $multiplier;
+}
+
+function formatNumber($num) {
+    if ($num > 1000000) return number_format($num / 1000000, 1) . 'M';
+    if ($num > 1000) return number_format($num / 1000, 1) . 'K';
+    return (string)$num;
+}
+?>

@@ -1,0 +1,19 @@
+/* style.css */
+
+body { 
+    background-color: #f8fafc; 
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+}
+.custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: #1e293b; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+.loader { border: 3px solid #f3f3f3; border-top: 3px solid #4f46e5; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; }
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+/* Editor Styles */
+.rich-editor img { max-width: 100%; height: auto; display: inline-block; }
+.rich-editor { min-height: 150px; outline: none; }
+.rich-editor:empty:before { content: attr(placeholder); color: #94a3b8; display: block; }
+/* Checkbox Style */
+.custom-checkbox { cursor: pointer; accent-color: #4f46e5; width: 16px; height: 16px; margin-right: 8px; }
+/* Console Log Style */
+.console-log { font-family: 'Menlo', 'Monaco', 'Courier New', monospace; font-size: 11px; line-height: 1.5; }
