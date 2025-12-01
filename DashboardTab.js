@@ -23,7 +23,9 @@ window.DashboardTab = ({
     setHistoryModalLead,
     getStageInfo, // app.js'deki getStageInfo fonksiyonu prop olarak gelmeli
     handleSort, // YENİ: Sıralama fonksiyonu
-    sortConfig // YENİ: Sıralama durumu
+    sortConfig, // YENİ: Sıralama durumu
+    onStageChange, // YENİ: Manuel aşama değiştirme fonksiyonu
+    workflow // YENİ: Workflow listesi (Dropdown için)
 }) => {
 
     // İstatistik Verileri
@@ -107,7 +109,6 @@ window.DashboardTab = ({
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {displayItems.map(lead => {
-                                const lastSentInfo = getStageInfo((lead.stage || 0) - 1, lead.language);
                                 const nextStageInfo = getStageInfo(lead.stage, lead.language);
                                 return (
                                     <tr key={lead.id} className="hover:bg-slate-50">
@@ -135,7 +136,25 @@ window.DashboardTab = ({
                                             ) : <span className="text-slate-300">-</span>}
                                         </td>
 
-                                        <td className="p-4"><span className="bg-indigo-50 text-indigo-700 px-2 py-1 rounded text-xs font-bold">{lead.stage === 0 ? 'Henüz Yok' : lastSentInfo.label}</span></td>
+                                        <td className="p-4">
+                                            {/* GÜNCELLENDİ: Manuel Düzenlenebilir Select */}
+                                            <div className="relative inline-block">
+                                                <select
+                                                    value={lead.stage || 0}
+                                                    onChange={(e) => onStageChange(lead.id, parseInt(e.target.value))}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    className="appearance-none bg-indigo-50 text-indigo-700 px-2 py-1 pr-6 rounded text-xs font-bold border-none outline-none cursor-pointer focus:ring-2 focus:ring-indigo-300"
+                                                >
+                                                    <option value={0}>Henüz Yok</option>
+                                                    {workflow && workflow.map((step, idx) => (
+                                                        <option key={idx} value={idx + 1}>{step.label}</option>
+                                                    ))}
+                                                </select>
+                                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-1 text-indigo-700">
+                                                    <window.Icon name="chevron-down" className="w-3 h-3"/>
+                                                </div>
+                                            </div>
+                                        </td>
                                         <td className="p-4 text-slate-500">{lead.lastContactDate ? new Date(lead.lastContactDate).toLocaleDateString('tr-TR') : '-'}</td>
                                         
                                         {/* YENİ SÜTUN: Mevcut Durum */}
