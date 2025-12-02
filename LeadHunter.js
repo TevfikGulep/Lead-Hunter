@@ -243,7 +243,13 @@ const LeadHunter = () => {
         // 2. Global Filtreler
         if (filters.search) {
             const searchLower = filters.search.toLowerCase();
-            data = data.filter(item => item.url?.toLowerCase().includes(searchLower) || item.contactName?.toLowerCase().includes(searchLower) || item.email?.toLowerCase().includes(searchLower));
+            // GÜNCELLENDİ: Artık notlar (notes) içinde de arama yapılıyor
+            data = data.filter(item => 
+                item.url?.toLowerCase().includes(searchLower) || 
+                item.contactName?.toLowerCase().includes(searchLower) || 
+                item.email?.toLowerCase().includes(searchLower) ||
+                item.notes?.toLowerCase().includes(searchLower)
+            );
         }
         if (filters.language !== 'ALL') data = data.filter(item => item.language === filters.language);
         if (filters.status.length > 0) {
