@@ -233,8 +233,7 @@ const LeadHunter = () => {
     const processedData = useMemo(() => {
         let data = [...crmData];
 
-        // 1. Dashboard'a Özel Filtre: Aktif olmayan durumları listeden tamamen çıkar
-        // Bu işlem sıralamadan ve sayfalamadan ÖNCE yapılmalıdır.
+        // 1. Dashboard'a Özel Filtre
         if (activeTab === 'dashboard') {
             const terminalStatuses = ['DEAL_ON', 'DEAL_OFF', 'DENIED', 'NOT_VIABLE', 'NON_RESPONSIVE', 'NOT_POSSIBLE'];
             data = data.filter(i => !terminalStatuses.includes(i.statusKey));
@@ -243,7 +242,6 @@ const LeadHunter = () => {
         // 2. Global Filtreler
         if (filters.search) {
             const searchLower = filters.search.toLowerCase();
-            // GÜNCELLENDİ: Artık notlar (notes) içinde de arama yapılıyor
             data = data.filter(item => 
                 item.url?.toLowerCase().includes(searchLower) || 
                 item.contactName?.toLowerCase().includes(searchLower) || 
@@ -288,7 +286,7 @@ const LeadHunter = () => {
             data = data.filter(item => item.lastContactDate && new Date(item.lastContactDate).getTime() <= end + 86400000);
         }
         
-        // 3. Sıralama (Filtrelenmiş veri üzerinde yapılır)
+        // 3. Sıralama
         data.sort((a, b) => {
             let valA = a[sortConfig.key], valB = b[sortConfig.key];
             
@@ -314,7 +312,7 @@ const LeadHunter = () => {
             return 0;
         });
         return data;
-    }, [crmData, filters, sortConfig, activeTab]); // activeTab bağımlılığı eklendi
+    }, [crmData, filters, sortConfig, activeTab]);
 
     const getPaginatedData = () => { const startIndex = (currentPage - 1) * window.ITEMS_PER_PAGE; return processedData.slice(startIndex, startIndex + window.ITEMS_PER_PAGE); };
     const totalPages = Math.ceil(processedData.length / window.ITEMS_PER_PAGE);
@@ -327,46 +325,30 @@ const LeadHunter = () => {
         return { template: workflow[stageIndex], label: workflow[stageIndex].label, isFinished: false };
     };
 
-    // --- MANUEL AŞAMA GÜNCELLEME (YENİ) ---
+    // --- MANUEL AŞAMA GÜNCELLEME ---
     const handleManualStageUpdate = async (leadId, newStage) => {
         if (!isDbConnected || !leadId) return alert("Veritabanı bağlı değil.");
-        
         const lead = crmData.find(l => l.id === leadId);
         if (!lead) return;
-
-        // Stage 0 = Henüz Yok, Stage 1 = İlk Temas (Index 0), Stage 2 = Takip 1 (Index 1)...
-        // getStageInfo logic: stage - 1 = workflow index
         const stageLabel = newStage === 0 ? 'Başlamadı' : getStageInfo(newStage - 1, lead.language).label;
-        
         if (!confirm(`"${window.cleanDomain(lead.url)}" için son gönderilen aşamayı manuel olarak "${stageLabel}" şeklinde değiştirmek istiyor musunuz? Geçmiş buna göre güncellenecektir.`)) return;
-
         try {
             const timestamp = new Date().toISOString();
-            
-            // Log oluştur
             const newLog = {
                 date: timestamp,
                 type: 'SYSTEM',
                 content: `Manuel Aşama Güncellemesi: ${stageLabel} olarak ayarlandı.`
             };
-
-            // Güncelleme verileri
             const updateData = {
                 stage: newStage,
-                lastContactDate: timestamp, // Son temas tarihini şimdi yap
+                lastContactDate: timestamp,
                 activityLog: firebase.firestore.FieldValue.arrayUnion(newLog)
             };
-
-            // Geçmiş (history) nesnesini güncelle
-            // Eğer yeni bir aşamaya geçildiyse, o aşamanın tarihini 'bugün' olarak işaretle
             if (newStage > 0) {
                 const historyKey = newStage === 1 ? 'initial' : `repeat${newStage - 1}`;
                 updateData[`history.${historyKey}`] = timestamp;
             }
-
             await dbInstance.collection("leads").doc(leadId).update(updateData);
-            
-            // UI'ı güncelle (Firestore listener zaten yapacak ama iyimser güncelleme için)
             setCrmData(prev => prev.map(p => {
                 if (p.id === leadId) {
                     const updatedHistory = { ...(p.history || {}) };
@@ -374,16 +356,10 @@ const LeadHunter = () => {
                         const historyKey = newStage === 1 ? 'initial' : `repeat${newStage - 1}`;
                         updatedHistory[historyKey] = timestamp;
                     }
-                    return { 
-                        ...p, 
-                        ...updateData, 
-                        history: updatedHistory,
-                        activityLog: [...(p.activityLog || []), newLog]
-                    };
+                    return { ...p, ...updateData, history: updatedHistory, activityLog: [...(p.activityLog || []), newLog] };
                 }
                 return p;
             }));
-
         } catch (e) {
             alert("Güncelleme hatası: " + e.message);
         }
@@ -398,16 +374,13 @@ const LeadHunter = () => {
             const data = await response.json();
             if (data.status === 'success') {
                 setReplyCheckResult(data);
-                
                 if (data.isBounce) {
                     if (isDbConnected && confirm(`BU MAİL HATALI (BOUNCE)!\n\n"${data.snippet}"\n\nKayıt "Hatalı Mail" olarak güncellensin ve geçmişe işlensin mi?`)) {
-                        
                         const newLog = {
                             date: new Date().toISOString(),
                             type: 'BOUNCE',
                             content: `Teslimat Hatası (Bounce): ${data.snippet || 'Adres bulunamadı'}`
                         };
-
                         const updateData = { 
                             statusKey: 'MAIL_ERROR', 
                             statusLabel: 'Error in mail (Bounced)', 
@@ -416,16 +389,12 @@ const LeadHunter = () => {
                             notes: (lead.notes || '') + ' [Sistem: Hatalı Mail Silindi]',
                             activityLog: [...(lead.activityLog || []), newLog]
                         };
-
                         await dbInstance.collection("leads").doc(lead.id).update(updateData);
-                        
                         const updatedLead = { ...lead, ...updateData };
                         setCrmData(prev => prev.map(p => p.id === lead.id ? updatedLead : p));
-                        
                         if (historyModalLead && historyModalLead.id === lead.id) {
                             setHistoryModalLead(updatedLead);
                         }
-                        
                         alert("Kayıt güncellendi ve geçmişe işlendi.");
                     }
                 }
@@ -455,7 +424,6 @@ const LeadHunter = () => {
                                 type: 'BOUNCE',
                                 content: `Otomatik Tarama: Mail İletilemedi (Bounce)`
                             };
-                            
                             batch.update(ref, { 
                                 statusKey: 'MAIL_ERROR', 
                                 statusLabel: 'Error in mail (Bounced)', 
@@ -470,7 +438,6 @@ const LeadHunter = () => {
                                 type: 'REPLY',
                                 content: `Yeni Cevap Alındı: ${result.snippet?.substring(0, 50)}...`
                             };
-
                             batch.update(ref, { 
                                 statusKey: 'INTERESTED', 
                                 statusLabel: 'Showed interest (Reply Found)', 
@@ -523,11 +490,8 @@ const LeadHunter = () => {
     const bulkUpdateStatus = async (newStatusKey) => {
         if (selectedIds.size === 0) return alert("Lütfen kayıt seçin.");
         if (!isDbConnected) return alert("Veritabanı bağlı değil.");
-        
         const statusLabel = window.LEAD_STATUSES[newStatusKey]?.label || newStatusKey;
-        
         if (!confirm(`Seçili ${selectedIds.size} kaydın durumu '${statusLabel}' olarak güncellenecek. Onaylıyor musunuz?`)) return;
-
         const batch = dbInstance.batch();
         const timestamp = new Date().toISOString();
         const newLog = {
@@ -535,7 +499,6 @@ const LeadHunter = () => {
             type: 'SYSTEM',
             content: `Durum manuel olarak '${statusLabel}' yapıldı (Toplu İşlem).`
         };
-        
         selectedIds.forEach(id => {
             const ref = dbInstance.collection("leads").doc(id);
             const updateData = { 
@@ -545,22 +508,14 @@ const LeadHunter = () => {
             };
             batch.update(ref, updateData);
         });
-
         try {
             await batch.commit();
-            
             setCrmData(prev => prev.map(item => {
                 if (selectedIds.has(item.id)) {
-                    return { 
-                        ...item, 
-                        statusKey: newStatusKey, 
-                        statusLabel: statusLabel,
-                        activityLog: [...(item.activityLog || []), newLog]
-                    };
+                    return { ...item, statusKey: newStatusKey, statusLabel: statusLabel, activityLog: [...(item.activityLog || []), newLog] };
                 }
                 return item;
             }));
-            
             setSelectedIds(new Set()); 
             alert("Durumlar başarıyla güncellendi.");
         } catch (e) {
@@ -595,12 +550,9 @@ const LeadHunter = () => {
         try {
             const lead = crmData.find(l => l.id === leadId);
             if (!lead || !lead.activityLog) return;
-
             const updatedLogs = [...lead.activityLog];
             updatedLogs.splice(noteIndex, 1);
-
             await dbInstance.collection("leads").doc(leadId).update({ activityLog: updatedLogs });
-            
             if (historyModalLead && historyModalLead.id === leadId) {
                 setHistoryModalLead(prev => ({ ...prev, activityLog: updatedLogs }));
             }
@@ -612,12 +564,9 @@ const LeadHunter = () => {
         try {
             const lead = crmData.find(l => l.id === leadId);
             if (!lead || !lead.activityLog) return;
-
             const updatedLogs = [...lead.activityLog];
             updatedLogs[noteIndex] = { ...updatedLogs[noteIndex], content: newContent };
-
             await dbInstance.collection("leads").doc(leadId).update({ activityLog: updatedLogs });
-            
             if (historyModalLead && historyModalLead.id === leadId) {
                 setHistoryModalLead(prev => ({ ...prev, activityLog: updatedLogs }));
             }
@@ -637,12 +586,10 @@ const LeadHunter = () => {
             } else if (updates.statusKey === 'New') {
                 updates.statusLabel = 'New';
             }
-
             if (updates.potential && updates.potential !== (crmData.find(i=>i.id===editingRowId).trafficStatus?.label)) {
                  const newVal = window.parseTrafficToNumber(updates.potential);
                  updates.trafficStatus = { ...(updates.trafficStatus || {}), label: updates.potential, value: newVal, viable: newVal > 20000 };
             }
-
             await dbInstance.collection("leads").doc(editingRowId).update(updates);
             setCrmData(prev => prev.map(item => item.id === editingRowId ? { ...item, ...updates } : item));
             setEditingRowId(null);
@@ -698,7 +645,6 @@ const LeadHunter = () => {
                     type: 'MAIL',
                     content: `Mail Gönderildi: ${selectedLead.currentLabel}`
                 };
-                
                 const updateData = { 
                     statusKey: 'NO_REPLY', 
                     statusLabel: window.LEAD_STATUSES['NO_REPLY'].label, 
@@ -707,7 +653,6 @@ const LeadHunter = () => {
                     [`history.${selectedLead.stage === 0 ? 'initial' : `repeat${selectedLead.stage}`}`]: new Date().toISOString(),
                     activityLog: [...(selectedLead.activityLog || []), newLog] 
                 };
-
                 if (result.threadId) updateData.threadId = result.threadId;
                 await dbInstance.collection("leads").doc(selectedLead.id).update(updateData);
                 setCrmData(prev => prev.map(p => p.id === selectedLead.id ? { ...p, ...updateData } : p));
@@ -797,20 +742,24 @@ const LeadHunter = () => {
         setIsBulkSending(false); setSelectedIds(new Set()); alert("Tamamlandı."); setShowBulkModal(false);
     };
 
-    // --- GÜNCELLENMİŞ ZENGİNLEŞTİRME (DETAYLI LOGLU) ---
+    // --- GÜNCELLENMİŞ ZENGİNLEŞTİRME (ENRICH DATABASE) ---
     const enrichDatabase = async (mode = 'BOTH') => {
+        const negativeStatuses = ['NOT_VIABLE', 'NOT_POSSIBLE', 'DENIED', 'DEAL_OFF', 'NON_RESPONSIVE'];
+        
         const targets = crmData.filter(item => {
-            // İstenmeyen durumları (Negatif statüleri) baştan ele
-            // 'NOT_VIABLE', 'NOT_POSSIBLE', 'DENIED', 'DEAL_OFF' gibi statülerde zenginleştirme yapma
-            const negativeStatuses = ['NOT_VIABLE', 'NOT_POSSIBLE', 'DENIED', 'DEAL_OFF', 'NON_RESPONSIVE'];
+            // Negatif statüleri filtrele
             if (negativeStatuses.includes(item.statusKey)) return false;
 
+            // Eksik Email Mantığı
             const missingEmail = !item.email || item.email.length < 5 || item.email === '-' || item.statusKey === 'MAIL_ERROR';
             
-            // Trafik kontrolü: Etiket yoksa, 'Bilinmiyor', 'Veri Yok', 'Hata' ise veya değer 0 ise eksik kabul et
-            const missingTraffic = !item.trafficStatus?.label 
-                                || ['Bilinmiyor', 'Veri Yok', 'Hata', '-'].includes(item.trafficStatus.label) 
-                                || (item.trafficStatus.value === 0 && item.trafficStatus.label === 'Veri Yok');
+            // --- GÜNCELLENMİŞ EKSİK TRAFİK MANTIĞI ---
+            // Eğer trafficStatus yoksa, label'ı "Bilinmiyor/Veri Yok/Hata" ise veya değeri 100'den küçükse (hatalı veri)
+            const missingTraffic = !item.trafficStatus 
+                                || !item.trafficStatus.label 
+                                || ['Bilinmiyor', 'Veri Yok', 'Hata', '-', 'API Ayarı Yok'].includes(item.trafficStatus.label) 
+                                || !item.trafficStatus.value 
+                                || item.trafficStatus.value < 100;
 
             if (mode === 'EMAIL') return missingEmail;
             if (mode === 'TRAFFIC') return missingTraffic;
@@ -824,7 +773,6 @@ const LeadHunter = () => {
         setEnrichLogs([]); 
         setEnrichProgress({ current: 0, total: targets.length });
 
-        // UI Log Yardımcısı
         const addEnrichLog = (msg, type = 'info') => {
             setEnrichLogs(prev => [...prev, {
                 time: new Date().toLocaleTimeString(), 
@@ -840,28 +788,33 @@ const LeadHunter = () => {
             let updates = {};
             setEnrichProgress(prev => ({ ...prev, current: i + 1 }));
             
+            // Tekrar hesapla (Döngü içinde)
             const missingEmail = !lead.email || lead.email.length < 5 || lead.statusKey === 'MAIL_ERROR';
-            const missingTraffic = !lead.trafficStatus?.label || lead.trafficStatus.label === 'Bilinmiyor';
+            const missingTraffic = !lead.trafficStatus || !lead.trafficStatus.label 
+                                || ['Bilinmiyor', 'Veri Yok', 'Hata', '-', 'API Ayarı Yok'].includes(lead.trafficStatus.label) 
+                                || !lead.trafficStatus.value || lead.trafficStatus.value < 100;
 
-            addEnrichLog(`${lead.url} analizi başlıyor...`, 'info');
+            addEnrichLog(`${window.cleanDomain(lead.url)} analizi başlıyor...`, 'info');
 
-            // Trafik Kontrolü
+            // --- TRAFİK KONTROLÜ ---
             if ((mode === 'TRAFFIC' || mode === 'BOTH') && missingTraffic) {
                 addEnrichLog(`> Trafik aranıyor...`, 'warning');
                 try { 
                     const t = await window.checkTraffic(lead.url); 
-                    if(t && t.label !== 'Hata') {
+                    
+                    // Hata kontrolü: Sadece 'Hata' veya 'API Ayarı Yok' ise başarısız say
+                    if(t && t.label !== 'Hata' && t.label !== 'API Ayarı Yok') {
                         updates.trafficStatus = t; 
                         addEnrichLog(`> Trafik bulundu: ${t.label}`, 'success');
                     } else {
-                        addEnrichLog(`> Trafik verisi yok.`, 'error');
+                        addEnrichLog(`> Trafik verisi alınamadı (${t.label}).`, 'error');
                     }
                 } catch(e){
-                    addEnrichLog(`> Trafik hatası: ${e.message}`, 'error');
+                    addEnrichLog(`> Trafik API hatası: ${e.message}`, 'error');
                 }
             }
 
-            // Email Kontrolü
+            // --- EMAIL KONTROLÜ ---
             if ((mode === 'EMAIL' || mode === 'BOTH') && missingEmail) {
                 addEnrichLog(`> Email taranıyor...`, 'warning');
                 try { 
@@ -882,15 +835,26 @@ const LeadHunter = () => {
                 }
             }
 
-            if (Object.keys(updates).length > 0 && isDbConnected) {
-                await dbInstance.collection("leads").doc(lead.id).update(updates);
-                addEnrichLog(`✓ Veritabanı güncellendi.`, 'success');
-                setCrmData(prev => prev.map(p => p.id === lead.id ? { ...p, ...updates } : p));
+            // --- GÜNCELLEME İŞLEMİ ---
+            const hasUpdates = Object.keys(updates).length > 0;
+            
+            if (hasUpdates && isDbConnected) {
+                try {
+                    await dbInstance.collection("leads").doc(lead.id).update(updates);
+                    addEnrichLog(`✓ Veritabanı güncellendi.`, 'success');
+                    // UI Güncelleme
+                    setCrmData(prev => prev.map(p => p.id === lead.id ? { ...p, ...updates } : p));
+                } catch(dbErr) {
+                    addEnrichLog(`x DB Yazma Hatası: ${dbErr.message}`, 'error');
+                }
+            } else if (hasUpdates && !isDbConnected) {
+                addEnrichLog(`- Veritabanı bağlı değil, kayıt yapılamadı.`, 'error');
             } else {
-                addEnrichLog(`- Güncelleme gerekmedi.`, 'info');
+                addEnrichLog(`- Yeni veri bulunamadığı için güncelleme yapılmadı.`, 'info');
             }
             
-            await new Promise(r => setTimeout(r, 800));
+            // Rate limit önlemi
+            await new Promise(r => setTimeout(r, 1000));
         }
         
         addEnrichLog(`Tüm işlemler tamamlandı.`, 'success');
