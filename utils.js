@@ -1,11 +1,9 @@
 // utils.js
 
 // --- CONFIGURATION ---
-// BURAYI DÜZENLEYİN: Yüklediğiniz traffic-api.php dosyasının tam adresi
-// Eğer config.js yüklüyse oradan al, değilse boş string veya varsayılan değer ata
 const SERVER_API_URL = (window.APP_CONFIG && window.APP_CONFIG.SERVER_API_URL) || 'https://varsayilan-url.com/traffic-api.php';
 
-
+// ... (cleanDomain, getRootDomain vb. yardımcı fonksiyonlar aynı kalacak) ...
 window.cleanDomain = (url) => { 
     if (!url) return '';
     try {
@@ -106,16 +104,14 @@ window.checkRealAdSenseOnSite = async (url) => {
 window.checkTraffic = async (siteUrl) => {
     const rootDomain = window.getRootDomain(siteUrl);
     
-    // API URL Kontrolü
     if (SERVER_API_URL.includes('siteniz.com')) {
         console.error("LÜTFEN UTILS.JS İÇİNDEKİ SERVER_API_URL DEĞİŞKENİNİ GÜNCELLEYİN!");
         return { viable: false, label: 'API Ayarı Yok', value: 0, note: 'PHP URL Eksik' };
     }
 
     try {
-        // console.log(`[Server-Side] Trafik sorgulanıyor (Type: Traffic): ${rootDomain}`);
+        console.log(`%c[Traffic Check] ${rootDomain} sorgulanıyor...`, 'color: blue; font-weight: bold;');
         
-        // type=traffic parametresi gönderiyoruz (varsayılan)
         const response = await fetch(`${SERVER_API_URL}?type=traffic&domain=${encodeURIComponent(rootDomain)}`);
         
         if (!response.ok) {
@@ -124,11 +120,20 @@ window.checkTraffic = async (siteUrl) => {
 
         const data = await response.json();
 
+        // --- DEBUG LOGLARI ---
+        // Sunucudan gelen logları tarayıcı konsoluna bas
+        if (data.debug && Array.isArray(data.debug)) {
+            console.groupCollapsed(`🔍 Sunucu Logları: ${rootDomain}`);
+            data.debug.forEach(log => console.log(`%c${log}`, 'color: #666'));
+            console.groupEnd();
+        }
+        // ---------------------
+
         if (data.success) {
             const numVal = parseFloat(data.value);
             const isViable = numVal > 20000;
             
-            // console.log(`[Server-Side] Başarılı: ${data.raw} (${numVal}) - Kaynak: ${data.source}`);
+            console.log(`%c✅ Sonuç: ${data.raw} (${data.source})`, 'color: green');
 
             return {
                 viable: isViable,
@@ -137,18 +142,17 @@ window.checkTraffic = async (siteUrl) => {
                 note: isViable ? 'İyi Trafik' : 'Düşük Trafik'
             };
         } else {
-            // console.warn(`[Server-Side] Veri bulunamadı: ${data.error}`);
+            console.warn(`⚠️ Veri Yok: ${data.error}`);
             return { viable: false, label: 'Veri Yok', value: 0, note: data.error || 'Bulunamadı' };
         }
 
     } catch (e) {
-        console.error(`[Server-Side] Bağlantı Hatası: ${e.message}`);
+        console.error(`❌ Bağlantı Hatası: ${e.message}`);
         return { viable: false, label: 'Hata', value: 0, note: 'API Hatası' };
     }
 };
 
 // SERVER-SIDE PHP API KULLANAN YENİ FIND EMAILS
-// GÜNCELLENDİ: Artık dönen "emails" dizisini işliyor
 window.findEmailsOnSite = async (url) => {
     const domain = window.cleanDomain(url);
 
@@ -158,7 +162,7 @@ window.findEmailsOnSite = async (url) => {
     }
 
     try {
-        console.log(`[Server-Side] Email aranıyor (Type: Email): ${domain}`);
+        console.log(`%c[Email Check] ${domain} taranıyor...`, 'color: purple; font-weight: bold;');
         
         const response = await fetch(`${SERVER_API_URL}?type=email&domain=${encodeURIComponent(domain)}`);
         
@@ -168,26 +172,55 @@ window.findEmailsOnSite = async (url) => {
 
         const data = await response.json();
 
+        // --- DEBUG LOGLARI ---
+        if (data.debug && Array.isArray(data.debug)) {
+            console.groupCollapsed(`🔍 Sunucu Logları (Email): ${domain}`);
+            data.debug.forEach(log => console.log(`%c${log}`, 'color: #666'));
+            console.groupEnd();
+        }
+        // ---------------------
+
         if (data.success) {
-            // Gelen veri bir dizi mi kontrol et (yeni api)
             if (Array.isArray(data.emails) && data.emails.length > 0) {
-                // Mailleri virgülle birleştir: "info@x.com, satis@x.com"
                 const joinedEmails = data.emails.join(', ');
-                console.log(`[Server-Side] Mailler Bulundu: ${joinedEmails}`);
+                console.log(`%c📧 Bulundu: ${joinedEmails}`, 'color: green');
                 return joinedEmails;
             } 
-            // Eski API formatı (tek email) için yedek kontrol
             else if (data.email) {
-                console.log(`[Server-Side] Tek Email Bulundu: ${data.email}`);
+                console.log(`%c📧 Bulundu: ${data.email}`, 'color: green');
                 return data.email;
             }
         } 
         
-        console.log(`[Server-Side] Email Bulunamadı.`);
+        console.log(`⚪ Email bulunamadı.`);
         return null;
 
     } catch (e) {
-        console.error(`[Server-Side] Email Bağlantı Hatası: ${e.message}`);
+        console.error(`❌ Email Bağlantı Hatası: ${e.message}`);
         return null;
     }
+};
+// ... (helper functions end) ...
+window.decodeHtmlEntities = (text) => {
+    if (!text) return '';
+    const textArea = document.createElement('textarea');
+    textArea.innerHTML = text;
+    return textArea.value;
+};
+
+window.parseTrafficToNumber = (str) => {
+    if (!str) return 0;
+    if (typeof str === 'number') return str;
+    
+    const s = str.toString().toLowerCase().trim().replace(/,/g, '.');
+    let multiplier = 1;
+    
+    if (s.includes('b')) multiplier = 1000000000;
+    else if (s.includes('m')) multiplier = 1000000;
+    else if (s.includes('k')) multiplier = 1000;
+    
+    const numPart = s.replace(/[^0-9.]/g, '');
+    const num = parseFloat(numPart);
+    
+    return isNaN(num) ? 0 : num * multiplier;
 };
