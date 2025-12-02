@@ -800,11 +800,17 @@ const LeadHunter = () => {
     // --- GÜNCELLENMİŞ ZENGİNLEŞTİRME (DETAYLI LOGLU) ---
     const enrichDatabase = async (mode = 'BOTH') => {
         const targets = crmData.filter(item => {
-            const missingEmail = !item.email || item.email.length < 5 || item.statusKey === 'MAIL_ERROR';
-            const missingTraffic = !item.trafficStatus?.label || item.trafficStatus.label === 'Bilinmiyor';
+            // İstenmeyen durumları (Negatif statüleri) baştan ele
+            // 'NOT_VIABLE', 'NOT_POSSIBLE', 'DENIED', 'DEAL_OFF' gibi statülerde zenginleştirme yapma
+            const negativeStatuses = ['NOT_VIABLE', 'NOT_POSSIBLE', 'DENIED', 'DEAL_OFF', 'NON_RESPONSIVE'];
+            if (negativeStatuses.includes(item.statusKey)) return false;
+
+            const missingEmail = !item.email || item.email.length < 5 || item.email === '-' || item.statusKey === 'MAIL_ERROR';
             
-            // "Not Viable" olanları tarama
-            if (['NOT_VIABLE'].includes(item.statusKey)) return false;
+            // Trafik kontrolü: Etiket yoksa, 'Bilinmiyor', 'Veri Yok', 'Hata' ise veya değer 0 ise eksik kabul et
+            const missingTraffic = !item.trafficStatus?.label 
+                                || ['Bilinmiyor', 'Veri Yok', 'Hata', '-'].includes(item.trafficStatus.label) 
+                                || (item.trafficStatus.value === 0 && item.trafficStatus.label === 'Veri Yok');
 
             if (mode === 'EMAIL') return missingEmail;
             if (mode === 'TRAFFIC') return missingTraffic;
