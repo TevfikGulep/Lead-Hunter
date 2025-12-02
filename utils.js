@@ -3,7 +3,7 @@
 // --- CONFIGURATION ---
 const SERVER_API_URL = (window.APP_CONFIG && window.APP_CONFIG.SERVER_API_URL) || 'https://varsayilan-url.com/traffic-api.php';
 
-// ... (cleanDomain, getRootDomain vb. yardımcı fonksiyonlar aynı kalacak) ...
+// ... (Diğer yardımcı fonksiyonlar - cleanDomain vb. aynı kalacak) ...
 window.cleanDomain = (url) => { 
     if (!url) return '';
     try {
@@ -112,21 +112,32 @@ window.checkTraffic = async (siteUrl) => {
     try {
         console.log(`%c[Traffic Check] ${rootDomain} sorgulanıyor...`, 'color: blue; font-weight: bold;');
         
-        // Cache Buster (Önbellek Engelleme) eklendi: &_t=timestamp
+        // Cache Buster eklendi
         const response = await fetch(`${SERVER_API_URL}?type=traffic&domain=${encodeURIComponent(rootDomain)}&_t=${Date.now()}`);
         
+        // ÖNCE TEXT OLARAK AL (Hata Ayıklama İçin Kritik)
+        const rawText = await response.text();
+        
+        let data;
+        try {
+            data = JSON.parse(rawText);
+        } catch (jsonError) {
+            console.error("⚠️ API YANITI JSON DEĞİL! İşte gelen ham veri:");
+            console.log(rawText); // PHP Hatası veya HTML çıktısı burada görünecek
+            return { viable: false, label: 'Sunucu Hatası', value: 0, note: 'JSON Parse Hatası' };
+        }
+
         if (!response.ok) {
             throw new Error(`API Hatası: ${response.status}`);
         }
 
-        const data = await response.json();
-
-        // --- DEBUG LOGLARI (SADE VE ANLIK) ---
+        // --- DEBUG LOGLARI ---
         if (data.debug && Array.isArray(data.debug)) {
-            // Grouping kaldırıldı, loglar direkt akacak
             data.debug.forEach(log => console.log(`[Server Log] ${log}`));
+        } else {
+             console.log("[Server Log] Debug verisi gelmedi.");
         }
-        // -------------------------------------
+        // ---------------------
 
         if (data.success) {
             const numVal = parseFloat(data.value);
@@ -165,11 +176,21 @@ window.findEmailsOnSite = async (url) => {
         
         const response = await fetch(`${SERVER_API_URL}?type=email&domain=${encodeURIComponent(domain)}&_t=${Date.now()}`);
         
+        // ÖNCE TEXT OLARAK AL
+        const rawText = await response.text();
+        
+        let data;
+        try {
+            data = JSON.parse(rawText);
+        } catch (jsonError) {
+            console.error("⚠️ API YANITI JSON DEĞİL (Email)! İşte gelen ham veri:");
+            console.log(rawText);
+            return null;
+        }
+        
         if (!response.ok) {
             throw new Error(`API Hatası: ${response.status}`);
         }
-
-        const data = await response.json();
 
         if (data.debug && Array.isArray(data.debug)) {
             data.debug.forEach(log => console.log(`[Server Log] ${log}`));
