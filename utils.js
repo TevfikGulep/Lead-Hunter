@@ -112,7 +112,8 @@ window.checkTraffic = async (siteUrl) => {
     try {
         console.log(`%c[Traffic Check] ${rootDomain} sorgulanıyor...`, 'color: blue; font-weight: bold;');
         
-        const response = await fetch(`${SERVER_API_URL}?type=traffic&domain=${encodeURIComponent(rootDomain)}`);
+        // Cache Buster (Önbellek Engelleme) eklendi: &_t=timestamp
+        const response = await fetch(`${SERVER_API_URL}?type=traffic&domain=${encodeURIComponent(rootDomain)}&_t=${Date.now()}`);
         
         if (!response.ok) {
             throw new Error(`API Hatası: ${response.status}`);
@@ -120,20 +121,18 @@ window.checkTraffic = async (siteUrl) => {
 
         const data = await response.json();
 
-        // --- DEBUG LOGLARI ---
-        // Sunucudan gelen logları tarayıcı konsoluna bas
+        // --- DEBUG LOGLARI (SADE VE ANLIK) ---
         if (data.debug && Array.isArray(data.debug)) {
-            console.groupCollapsed(`🔍 Sunucu Logları: ${rootDomain}`);
-            data.debug.forEach(log => console.log(`%c${log}`, 'color: #666'));
-            console.groupEnd();
+            // Grouping kaldırıldı, loglar direkt akacak
+            data.debug.forEach(log => console.log(`[Server Log] ${log}`));
         }
-        // ---------------------
+        // -------------------------------------
 
         if (data.success) {
             const numVal = parseFloat(data.value);
             const isViable = numVal > 20000;
             
-            console.log(`%c✅ Sonuç: ${data.raw} (${data.source})`, 'color: green');
+            console.log(`%c✅ [Result] ${rootDomain}: ${data.raw} (${data.source})`, 'color: green; font-weight: bold;');
 
             return {
                 viable: isViable,
@@ -142,12 +141,12 @@ window.checkTraffic = async (siteUrl) => {
                 note: isViable ? 'İyi Trafik' : 'Düşük Trafik'
             };
         } else {
-            console.warn(`⚠️ Veri Yok: ${data.error}`);
+            console.warn(`⚠️ [No Data] ${rootDomain}: ${data.error}`);
             return { viable: false, label: 'Veri Yok', value: 0, note: data.error || 'Bulunamadı' };
         }
 
     } catch (e) {
-        console.error(`❌ Bağlantı Hatası: ${e.message}`);
+        console.error(`❌ [Error] ${rootDomain}: ${e.message}`);
         return { viable: false, label: 'Hata', value: 0, note: 'API Hatası' };
     }
 };
@@ -164,7 +163,7 @@ window.findEmailsOnSite = async (url) => {
     try {
         console.log(`%c[Email Check] ${domain} taranıyor...`, 'color: purple; font-weight: bold;');
         
-        const response = await fetch(`${SERVER_API_URL}?type=email&domain=${encodeURIComponent(domain)}`);
+        const response = await fetch(`${SERVER_API_URL}?type=email&domain=${encodeURIComponent(domain)}&_t=${Date.now()}`);
         
         if (!response.ok) {
             throw new Error(`API Hatası: ${response.status}`);
@@ -172,34 +171,31 @@ window.findEmailsOnSite = async (url) => {
 
         const data = await response.json();
 
-        // --- DEBUG LOGLARI ---
         if (data.debug && Array.isArray(data.debug)) {
-            console.groupCollapsed(`🔍 Sunucu Logları (Email): ${domain}`);
-            data.debug.forEach(log => console.log(`%c${log}`, 'color: #666'));
-            console.groupEnd();
+            data.debug.forEach(log => console.log(`[Server Log] ${log}`));
         }
-        // ---------------------
 
         if (data.success) {
             if (Array.isArray(data.emails) && data.emails.length > 0) {
                 const joinedEmails = data.emails.join(', ');
-                console.log(`%c📧 Bulundu: ${joinedEmails}`, 'color: green');
+                console.log(`%c📧 [Result] ${domain}: ${joinedEmails}`, 'color: green; font-weight: bold;');
                 return joinedEmails;
             } 
             else if (data.email) {
-                console.log(`%c📧 Bulundu: ${data.email}`, 'color: green');
+                console.log(`%c📧 [Result] ${domain}: ${data.email}`, 'color: green; font-weight: bold;');
                 return data.email;
             }
         } 
         
-        console.log(`⚪ Email bulunamadı.`);
+        console.log(`⚪ [No Email] ${domain}`);
         return null;
 
     } catch (e) {
-        console.error(`❌ Email Bağlantı Hatası: ${e.message}`);
+        console.error(`❌ [Error] ${domain}: ${e.message}`);
         return null;
     }
 };
+
 // ... (helper functions end) ...
 window.decodeHtmlEntities = (text) => {
     if (!text) return '';
