@@ -1,6 +1,6 @@
 <?php
 // traffic-api.php
-// Versiyon: 3.0 (Akıllı Link Keşfi + Cloudflare Decoder + ROT13)
+// Versiyon: 3.1 (Hypestat Page Impressions Fallback Eklendi)
 
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, OPTIONS");
@@ -232,12 +232,14 @@ function isValidEmail($email, $domain) {
     return true;
 }
 
-// --- TRAFİK FONKSİYONLARI (Değişmedi) ---
+// --- TRAFİK FONKSİYONLARI ---
 function getTraffic($domain) {
+    // 1. Önce SimilarSites'ı dene (Mevcut Mantık)
     $targetUrl = "https://www.similarsites.com/site/" . urlencode($domain);
     $html = fetchUrl($targetUrl);
 
     if ($html) {
+        // DOM Parsing
         $dom = new DOMDocument();
         libxml_use_internal_errors(true);
         @$dom->loadHTML($html);
@@ -255,22 +257,47 @@ function getTraffic($domain) {
             $nodes = $xpath->query($query);
             if ($nodes && $nodes->length > 0) {
                 $val = trim($nodes->item(0)->nodeValue);
-                return ['success' => true, 'source' => 'similarsites', 'value' => parseTrafficString($val), 'raw' => strtoupper($val)];
+                if (!empty($val)) {
+                    return ['success' => true, 'source' => 'similarsites', 'value' => parseTrafficString($val), 'raw' => strtoupper($val)];
+                }
             }
         }
         
+        // Regex Fallback
         if (preg_match('/"(MonthlyVisits|monthly_visits|TotalVisits)"\s*:\s*(\d+)/i', $html, $matches)) {
              $rawNum = (int)$matches[2];
              return ['success' => true, 'source' => 'similarsites-regex', 'value' => $rawNum, 'raw' => formatNumber($rawNum)];
         }
     }
 
+    // 2. Fallback: Hypestat Page Impressions
     $hypeUrl = "https://hypestat.com/info/" . urlencode($domain);
     $htmlHype = fetchUrl($hypeUrl);
-    if ($htmlHype && preg_match('/Daily Unique Visitors\s*[:\n]+\s*([\d,]+)/i', $htmlHype, $matches)) {
-        $daily = (int)str_replace(',', '', $matches[1]);
-        $monthly = $daily * 30;
-        return ['success' => true, 'source' => 'hypestat', 'value' => $monthly, 'raw' => formatNumber($monthly)];
+
+    if ($htmlHype) {
+        // Kullanıcının özel isteği: "597 page impressions" gibi bir ifadeyi bul
+        // Regex: Sayılar (virgüllü olabilir) + "page impressions" kelimesi
+        if (preg_match('/([\d,]+)\s+page\s+impressions/i', $htmlHype, $matches)) {
+            // Virgülleri temizle ve sayıya çevir
+            $dailyImpressions = (int)str_replace(',', '', $matches[1]);
+            
+            // Günlük değeri 30 ile çarp
+            $monthlyEstimated = $dailyImpressions * 30;
+            
+            return [
+                'success' => true, 
+                'source' => 'hypestat-impressions', 
+                'value' => $monthlyEstimated, 
+                'raw' => formatNumber($monthlyEstimated)
+            ];
+        }
+        
+        // Eğer "page impressions" bulunamazsa, eski "Unique Visitors" yedeğini de kontrol edelim (Yedek plan)
+        if (preg_match('/Daily Unique Visitors\s*[:\n]+\s*([\d,]+)/i', $htmlHype, $matches)) {
+            $daily = (int)str_replace(',', '', $matches[1]);
+            $monthly = $daily * 30;
+            return ['success' => true, 'source' => 'hypestat-visitors', 'value' => $monthly, 'raw' => formatNumber($monthly)];
+        }
     }
 
     return ['success' => false, 'error' => 'Veri bulunamadı.'];
