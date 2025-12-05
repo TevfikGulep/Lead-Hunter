@@ -580,21 +580,41 @@ const LeadHunter = () => {
     const handleEditSave = async () => {
         if (!editingRowId || !isDbConnected) return;
         try {
+            // Form verilerini kopyala
             const updates = { ...editFormData };
+
+            // --- DÜZELTME BAŞLANGICI ---
+            // HATA ÇÖZÜMÜ: Firebase 'undefined' değeri kabul etmez. 
+            // Obje içindeki undefined olan alanları siliyoruz (veya null yapıyoruz).
+            Object.keys(updates).forEach(key => {
+                if (updates[key] === undefined) {
+                    delete updates[key]; 
+                }
+            });
+
+            // Ayrıca UI için hesaplanan ama veritabanında olmayan alanları da temizlemek iyi bir pratiktir
+            delete updates.id;            // ID zaten doküman referansında var
+            delete updates.needsFollowUp; // Bu hesaplanan bir değer, DB'ye yazmaya gerek yok
+            // --- DÜZELTME BİTİŞİ ---
+
             if (updates.statusKey && window.LEAD_STATUSES[updates.statusKey]) {
                 updates.statusLabel = window.LEAD_STATUSES[updates.statusKey].label;
             } else if (updates.statusKey === 'New') {
                 updates.statusLabel = 'New';
             }
+            
             if (updates.potential && updates.potential !== (crmData.find(i=>i.id===editingRowId).trafficStatus?.label)) {
                  const newVal = window.parseTrafficToNumber(updates.potential);
                  updates.trafficStatus = { ...(updates.trafficStatus || {}), label: updates.potential, value: newVal, viable: newVal > 20000 };
             }
+
             await dbInstance.collection("leads").doc(editingRowId).update(updates);
+            
             setCrmData(prev => prev.map(item => item.id === editingRowId ? { ...item, ...updates } : item));
             setEditingRowId(null);
             setEditFormData({});
         } catch (e) {
+            console.error(e); // Hatayı konsola detaylı bas
             alert("Güncelleme hatası: " + e.message);
         }
     };
@@ -923,3 +943,4 @@ const LeadHunter = () => {
         </div>
     );
 };
+
