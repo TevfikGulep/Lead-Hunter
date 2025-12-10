@@ -1,21 +1,21 @@
-//google script dosyası
+//google script dosyası - FOLLOW-UP FIX v3.0
 
 function doPost(e) {
+  var debugLogs = []; // Olay günlüğü
+  function log(msg) { 
+    var time = new Date().toLocaleTimeString('tr-TR');
+    debugLogs.push("[" + time + "] " + msg); 
+  }
+
   try {
-    // Veriyi güvenli parse et
     var content = e.postData ? e.postData.contents : "{}";
     var data = JSON.parse(content);
     var myEmail = Session.getActiveUser().getEmail();
 
-    // Action kontrolü
-    if (!data.action) {
-      return createJSON({ 'status': 'error', 'message': 'Action belirtilmedi.' });
-    }
-
     // --- 1. CEVAP KONTROL ---
     if (data.action === 'check_reply') {
-      if (!data.threadId) return createJSON({ 'status': 'error', 'message': 'Thread ID yok' });
-      return createJSON({ 'status': 'success', ...checkSingleThread(data.threadId, myEmail) });
+      if (!data.threadId) return createJSON({ 'status': 'error', 'message': 'Thread ID yok', 'logs': debugLogs });
+      return createJSON({ 'status': 'success', 'logs': debugLogs, ...checkSingleThread(data.threadId, myEmail) });
     }
 
     // --- 2. TOPLU KONTROL ---
@@ -24,7 +24,6 @@ function doPost(e) {
       var foundCount = 0;
       var bounceCount = 0;
       var ids = data.threadIds || [];
-      
       for (var i = 0; i < ids.length; i++) {
         try {
           var check = checkSingleThread(ids[i], myEmail);
@@ -34,161 +33,130 @@ function doPost(e) {
           }
         } catch (err) {}
       }
-      return createJSON({ 'status': 'success', 'results': results, 'foundCount': foundCount, 'bounceCount': bounceCount });
+      return createJSON({ 'status': 'success', 'results': results, 'foundCount': foundCount, 'bounceCount': bounceCount, 'logs': debugLogs });
     }
 
-    // --- 3. MAIL GÖNDERME ---
+    // --- 3. MAIL GÖNDERME (FOLLOW-UP FIX) ---
     else if (data.action === 'send_mail') {
-        
         var rawTo = data.to;
-        var cleanTo = "";
-
-        // Alıcı adresi temizliği
-        if (rawTo && typeof rawTo === 'string' && rawTo.trim().length > 0) {
-            cleanTo = rawTo.trim();
-        }
-
-        // KRİTİK KONTROL: Alıcı yoksa işlemi durdur.
+        var cleanTo = rawTo ? rawTo.trim() : "";
+        
         if (cleanTo === "") {
-            return createJSON({ 
-                'status': 'error', 
-                'message': 'Mail gönderilemedi: Alıcı adresi (to) boş veya geçersiz.' 
-            });
+            return createJSON({ 'status': 'error', 'message': 'Alıcı adresi boş.', 'logs': debugLogs });
         }
 
         var subject = data.subject || "(Konu Yok)";
-        var body = data.body || "";
+        var body = data.body || " "; 
         var htmlBody = data.htmlBody || body;
         var threadId = data.threadId;
         var resultThreadId = null;
+        var methodUsed = "Bilinmiyor";
 
-        // Thread ID varsa işlem yap
+        log("Mail Gönderimi: " + cleanTo);
+
+        // THREAD KONTROLÜ
         if (threadId) {
           try {
             var thread = GmailApp.getThreadById(threadId);
+            
             if (thread) {
-                // --- THREADING (GRUPLAMA) İÇİN KRİTİK DÜZELTME ---
-                // Gmail'in mailleri aynı zincirde tutması için konu başlığının (Subject)
-                // karakteri karakterine aynı olması gerekir. Şablondan gelen konu bazen
-                // farklı olabilir. Bu yüzden mevcut thread'in konusunu alıp onu kullanıyoruz.
-                var threadSubject = thread.getFirstMessageSubject();
-                if (threadSubject && threadSubject !== "") {
-                   subject = threadSubject; 
-                }
-
                 var messages = thread.getMessages();
-                var myEmailLower = myEmail.toLowerCase();
+                var lastMsg = messages[messages.length - 1];
+                var lastSender = lastMsg.getFrom();
                 
-                // Müşteriden gelen bir mesaj var mı diye bak
-                var msgFromCustomer = null;
-                // Sondan başa doğru tara
-                for (var k = messages.length - 1; k >= 0; k--) {
-                     // Eğer gönderen ben değilsem, müşteridir.
-                     if (messages[k].getFrom().toLowerCase().indexOf(myEmailLower) === -1) {
-                         msgFromCustomer = messages[k];
-                         break;
-                     }
-                }
+                var myEmailNorm = myEmail.toLowerCase();
+                var lastSenderNorm = lastSender.toLowerCase();
+                // Basit string kontrolü yetmeyebilir, bazen "Isim <mail>" formatında gelir.
+                var senderMatch = lastSenderNorm.indexOf(myEmailNorm) !== -1;
+                
+                log("Son gönderen ben miyim? " + (senderMatch ? "EVET" : "HAYIR"));
 
-                if (msgFromCustomer) {
-                    // DURUM A: Müşteriden bir mesaj var (Cevap vermiş).
-                    // O zaman doğrudan o mesaja 'reply' atıyoruz.
-                    // Bu fonksiyon, "Reply" headerlarını ekler ve zinciri kesin olarak korur.
-                    msgFromCustomer.reply(body, { htmlBody: htmlBody, from: myEmail });
+                var commonOptions = { 
+                    htmlBody: htmlBody
+                };
+
+                if (!senderMatch) {
+                    // Müşteriden gelmiş -> Normal Cevap (Reply)
+                    // Reply otomatik olarak gönderene (Müşteriye) gider.
+                    log("Yöntem: lastMsg.reply() (Müşteriye Cevap)");
+                    lastMsg.reply(body, commonOptions);
                     resultThreadId = threadId;
+                    methodUsed = "lastMsg.reply";
                 } else {
-                    // DURUM B: Müşteriden hiç mesaj yok (Sadece ben takip mailleri atmışım).
-                    // Eğer 'reply' kullanırsam, son mesaj benden olduğu için mail BANA gelir.
-                    // Bu yüzden 'createDraft' (veya sendEmail) ile yeni bir mail atıyoruz.
-                    // ANCAK: Yukarıda 'subject' değişkenini thread'in konusuyla eşitlediğimiz için
-                    // Gmail bunları otomatik olarak gruplayacaktır.
-                    resultThreadId = null; // null yaparak aşağıda createDraft bloğuna düşmesini sağlıyoruz.
+                    // Benden gelmiş -> Takip Maili (Follow-up)
+                    // Reply veya ReplyAll kullanırsak kendimize atarız.
+                    // ÇÖZÜM: Forward!
+                    // Forward, threading'i korur (Referansları taşır) ama alıcıyı (To) manuel seçmemize izin verir.
+                    log("Yöntem: lastMsg.forward() (Takip Maili -> " + cleanTo + ")");
+                    
+                    // Forward normalde "Fwd:" ekler. Bunu engellemek için subject'i manuel set ediyoruz.
+                    var fwdOptions = {
+                        htmlBody: htmlBody,
+                        subject: subject 
+                    };
+                    
+                    lastMsg.forward(cleanTo, fwdOptions);
+                    resultThreadId = threadId;
+                    methodUsed = "lastMsg.forward";
                 }
+            } else {
+                log("HATA: Thread ID Gmail'de bulunamadı (Null).");
             }
           } catch (err) { 
-              // Thread ID bozuksa null yap, sıfırdan mail at
-              threadId = null; 
+            log("Thread İşlem Hatası: " + err.toString());
+            threadId = null; 
           }
         }
 
-        // Eğer yukarıda bir reply işlemi yapılmadıysa (veya thread yoksa)
+        // Thread başarısızsa veya yoksa yeni mail at
         if (!resultThreadId) {
+          log("Fallback: Yeni Draft/Mail oluşturuluyor.");
           try {
-              // Yeni mail oluştur (veya takip maili)
-              // Konu başlığı (subject) yukarıda thread ile eşitlendiği için gruplanacaktır.
               var draft = GmailApp.createDraft(cleanTo, subject, body, { htmlBody: htmlBody });
               var message = draft.send(); 
               resultThreadId = message.getThread().getId();
+              methodUsed = "createDraft (New)";
           } catch (sendErr) {
-              return createJSON({ 'status': 'error', 'message': 'Gmail Hatası: ' + sendErr.toString() });
+              log("KRİTİK HATA (Draft): " + sendErr.toString());
+              return createJSON({ 'status': 'error', 'message': sendErr.toString(), 'logs': debugLogs });
           }
         }
 
-        return createJSON({ 'status': 'success', 'threadId': resultThreadId });
+        log("Başarılı. Thread ID: " + resultThreadId);
+        
+        return createJSON({ 
+            'status': 'success', 
+            'threadId': resultThreadId, 
+            'debug_logs': debugLogs,
+            'method_used': methodUsed
+        });
     }
 
-    return createJSON({ 'status': 'error', 'message': 'Bilinmeyen işlem: ' + data.action });
+    return createJSON({ 'status': 'error', 'message': 'Bilinmeyen işlem', 'logs': debugLogs });
 
   } catch (globalError) {
-    return createJSON({ 'status': 'error', 'message': 'Global Hata: ' + globalError.toString() });
+    return createJSON({ 'status': 'error', 'message': 'Global Hata: ' + globalError.toString(), 'logs': debugLogs });
   }
-}
-
-// --- AKILLI TARAMA FONKSİYONU ---
-function checkSingleThread(threadId, myEmail) {
-  try {
-    var thread = GmailApp.getThreadById(threadId);
-    if (!thread) return { hasReply: false };
-    
-    var msgs = thread.getMessages();
-    var myEmailLower = myEmail.toLowerCase();
-    
-    // Sondan başa doğru son 3 mesajı tara
-    var scanLimit = Math.max(0, msgs.length - 3);
-
-    for (var i = msgs.length - 1; i >= scanLimit; i--) {
-        var msg = msgs[i];
-        var from = msg.getFrom().toLowerCase();
-        var subj = msg.getSubject().toLowerCase();
-        var body = msg.getPlainBody().toLowerCase(); 
-
-        // 1. BOUNCE (HATA) KONTROLÜ
-        var isBounceSender = (from.includes('mailer-daemon') || from.includes('postmaster') || from.includes('delivery') || from.includes('google') || from.includes('notify'));
-        
-        var isBounceContent = (
-            subj.includes('failure') || subj.includes('delivery status') || subj.includes('undeliverable') || subj.includes('iletilemedi') ||
-            body.includes('address not found') || body.includes('adres bulunamadı') || body.includes('blocked') || body.includes('rejected') || 
-            body.includes('message not delivered') || body.includes('returned to sender')
-        );
-
-        if (isBounceSender && isBounceContent) {
-             return {
-                hasReply: true,
-                isBounce: true,
-                snippet: "⚠️ HATA: " + msg.getSubject(),
-                from: msg.getFrom(),
-                date: msg.getDate()
-            };
-        }
-
-        // 2. NORMAL CEVAP KONTROLÜ
-        if (from.indexOf(myEmailLower) === -1) {
-             if (!isBounceSender) {
-                 return {
-                    hasReply: true,
-                    isBounce: false,
-                    snippet: msg.getSnippet(),
-                    from: msg.getFrom(),
-                    date: msg.getDate()
-                };
-             }
-        }
-    }
-    
-    return { hasReply: false };
-  } catch (e) { return { hasReply: false }; }
 }
 
 function createJSON(content) {
   return ContentService.createTextOutput(JSON.stringify(content)).setMimeType(ContentService.MimeType.JSON);
+}
+
+function checkSingleThread(threadId, myEmail) {
+  try {
+    var thread = GmailApp.getThreadById(threadId);
+    if (!thread) return { hasReply: false };
+    var msgs = thread.getMessages();
+    var myEmailLower = myEmail.toLowerCase();
+    var scanLimit = Math.max(0, msgs.length - 3);
+    for (var i = msgs.length - 1; i >= scanLimit; i--) {
+        var msg = msgs[i];
+        var from = msg.getFrom().toLowerCase();
+        if (from.indexOf(myEmailLower) === -1 && !from.includes('mailer-daemon')) {
+             return { hasReply: true, isBounce: false, snippet: msg.getSnippet(), from: msg.getFrom(), date: msg.getDate() };
+        }
+    }
+    return { hasReply: false };
+  } catch (e) { return { hasReply: false }; }
 }
