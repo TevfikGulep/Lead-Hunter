@@ -62,18 +62,35 @@ function doPost(e) {
         var threadId = data.threadId;
         var resultThreadId = null;
 
-        // Thread ID varsa oradan dene
+        // Thread ID varsa kontrol et
         if (threadId) {
           try {
             var thread = GmailApp.getThreadById(threadId);
             if (thread) {
-              thread.reply(body, { htmlBody: htmlBody, from: myEmail });
-              resultThreadId = threadId;
+                // Thread mantığı düzeltmesi:
+                // Eğer son mesajı ben attıysam ve cevap gelmediyse, 'reply' metodu maili bana (gönderene) atar.
+                // Bu yüzden son mesajın kimden geldiğini kontrol ediyoruz.
+                
+                var messages = thread.getMessages();
+                var lastMsg = messages[messages.length - 1];
+                var lastSender = lastMsg.getFrom();
+                
+                // Eğer son mesaj benden değilse (Müşteriden geldiyse), REPLY ile cevap ver (Zinciri korur)
+                if (lastSender.toLowerCase().indexOf(myEmail.toLowerCase()) === -1) {
+                    thread.reply(body, { htmlBody: htmlBody, from: myEmail });
+                    resultThreadId = threadId;
+                } else {
+                    // Eğer son mesaj bendense (Takip maili), REPLY kullanma.
+                    // Çünkü reply kendine mail atar.
+                    // Bunun yerine aşağıda createDraft ile gönderilecek.
+                    // Gmail, konu başlığı (Subject) aynı olduğu sürece bunları otomatik birleştirir.
+                    resultThreadId = null; 
+                }
             }
           } catch (err) { threadId = null; }
         }
 
-        // Yoksa sıfırdan gönder
+        // Thread bulunamadıysa veya takip maili ise (Reply kullanılmadıysa)
         if (!resultThreadId) {
           try {
               var draft = GmailApp.createDraft(cleanTo, subject, body, { htmlBody: htmlBody });
