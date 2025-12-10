@@ -1,50 +1,20 @@
 // CrmTab.js
-// GÜNCELLEME: 'Tüm filtreli kayıtları seç' özelliği, yeni sayfalama yapısı ve Mail Takip İkonu eklendi.
+// GÜNCELLEME: Global seçim onayı, temizleme butonu ve Mail Takip İkonu.
 
 window.CrmTab = ({
-    crmData,
-    filters,
-    setFilters,
-    selectedIds,
-    setShowBulkModal,
-    activeTab,
-    fixAllTrafficData,
-    onBulkCheck,
-    isCheckingBulk,
-    paginatedItems,
-    selectedCount,
-    toggleSelectAll,
-    toggleSelection,
-    handleSort,
-    sortConfig,
-    editingRowId,
-    editFormData,
-    handleEditChange,
-    handleEditSave,
-    handleEditCancel,
-    handleEditClick,
-    setHistoryModalLead,
-    openMailModal,
-    currentPage,
-    totalPages,
-    setCurrentPage,
-    totalRecords,
-    emailMap,
-    getStageInfo,
-    enrichDatabase,
-    isEnriching,
-    setShowImportModal,
-    bulkUpdateStatus,
-    itemsPerPage,    // YENİ
-    setItemsPerPage, // YENİ
-    selectAllFiltered // YENİ
+    crmData, filters, setFilters, selectedIds, setShowBulkModal, activeTab, fixAllTrafficData, onBulkCheck, isCheckingBulk,
+    paginatedItems, selectedCount, toggleSelectAll, toggleSelection, handleSort, sortConfig,
+    editingRowId, editFormData, handleEditChange, handleEditSave, handleEditCancel, handleEditClick,
+    setHistoryModalLead, openMailModal, currentPage, totalPages, setCurrentPage, totalRecords, emailMap, getStageInfo,
+    enrichDatabase, isEnriching, setShowImportModal, bulkUpdateStatus,
+    itemsPerPage, setItemsPerPage, selectAllFiltered, clearSelection
 }) => {
     
     // Global seçim mantığı:
-    // Eğer sayfadaki tüm kayıtlar seçiliyse VE toplam kayıt sayısı sayfadaki kayıt sayısından büyükse
-    // "Tümünü seç" seçeneğini göster.
-    const isAllPageSelected = paginatedItems.length > 0 && selectedIds.size >= paginatedItems.length;
-    const canSelectAllGlobal = isAllPageSelected && totalRecords > paginatedItems.length && selectedIds.size < totalRecords;
+    const isAllPageSelected = paginatedItems.length > 0 && paginatedItems.every(i => selectedIds.has(i.id));
+    const isGlobalSelectionActive = selectedIds.size > paginatedItems.length && selectedIds.size >= totalRecords;
+    // Banner gösterme koşulu: Sayfa seçili, toplam kayıt sayfadan fazla ve global seçim henüz aktif DEĞİL.
+    const canSelectAllGlobal = isAllPageSelected && totalRecords > paginatedItems.length && !isGlobalSelectionActive;
 
     return (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in">
@@ -81,31 +51,26 @@ window.CrmTab = ({
             </div>
             
             <div className="overflow-x-auto">
-                {/* --- GLOBAL SELECTION BANNER (YENİ) --- */}
+                {/* --- SELECTION BANNERS --- */}
                 {canSelectAllGlobal && (
-                    <div className="bg-indigo-50 border-b border-indigo-100 p-2 text-center text-xs text-indigo-800 animate-in slide-in-from-top-2">
+                    <div className="bg-indigo-50 border-b border-indigo-100 p-2 text-center text-xs text-indigo-800 animate-in slide-in-from-top-2 flex items-center justify-center gap-1">
                         Bu sayfadaki <strong>{paginatedItems.length}</strong> kayıt seçildi. 
-                        <button 
-                            onClick={selectAllFiltered} 
-                            className="ml-2 font-bold underline hover:text-indigo-900 cursor-pointer"
-                        >
-                            Filtrelenmiş listenin tamamındaki {totalRecords} kaydı seçmek için tıklayın.
-                        </button>
+                        <button onClick={selectAllFiltered} className="ml-1 font-bold underline hover:text-indigo-900 cursor-pointer">Listenin tamamındaki {totalRecords} kaydı seç.</button>
                     </div>
                 )}
-                {/* ------------------------------------- */}
+                {isGlobalSelectionActive && (
+                    <div className="bg-green-50 border-b border-green-100 p-2 text-center text-xs text-green-800 animate-in slide-in-from-top-2 flex items-center justify-center gap-1">
+                        <window.Icon name="check-circle" className="w-3 h-3"/>
+                        Listedeki <strong>{totalRecords}</strong> kaydın tamamı seçildi.
+                        <button onClick={clearSelection} className="ml-2 font-bold underline hover:text-green-900 cursor-pointer">Seçimi Temizle</button>
+                    </div>
+                )}
+                {/* ------------------------- */}
 
                 <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50 text-slate-500 border-b">
                         <tr>
-                            <th className="p-4 w-10">
-                                <input 
-                                    type="checkbox" 
-                                    className="custom-checkbox" 
-                                    checked={isAllPageSelected} 
-                                    onChange={() => toggleSelectAll(paginatedItems)}
-                                />
-                            </th>
+                            <th className="p-4 w-10"><input type="checkbox" className="custom-checkbox" checked={isAllPageSelected} onChange={() => toggleSelectAll(paginatedItems)}/></th>
                             <th className="p-4 cursor-pointer" onClick={() => handleSort('url')}>Site (Mail Takip)</th>
                             <th className="p-4">Email</th>
                             <th className="p-4">Son Gönderilen</th>
@@ -132,19 +97,9 @@ window.CrmTab = ({
                                         <input value={editFormData.url} onChange={e => handleEditChange('url', e.target.value)} className="w-full p-1 border rounded" />
                                     ) : (
                                         <div className="flex items-center gap-2">
-                                            {/* MAIL TRACKING ICON */}
-                                            {isMailOpened ? (
-                                                <div className="w-3 h-3 rounded-full bg-green-500 shadow-sm animate-pulse" title={`Mail Okundu: ${new Date(item.mailOpenedAt).toLocaleString('tr-TR')}`}></div>
-                                            ) : (
-                                                <div className="w-3 h-3 rounded-full bg-red-200" title="Mail henüz okunmadı"></div>
-                                            )}
-                                            
-                                            <span onClick={() => toggleSelection(item.id)} className="cursor-pointer hover:text-indigo-600 transition-colors">
-                                                {window.cleanDomain(item.url)}
-                                            </span>
-                                            <a href={`http://${window.cleanDomain(item.url)}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-slate-400 hover:text-indigo-500" title="Siteye Git">
-                                                <window.Icon name="external-link" className="w-4 h-4"/>
-                                            </a>
+                                            {isMailOpened ? <div className="w-3 h-3 rounded-full bg-green-500 shadow-sm animate-pulse" title={`Mail Okundu: ${new Date(item.mailOpenedAt).toLocaleString('tr-TR')}`}></div> : <div className="w-3 h-3 rounded-full bg-red-200" title="Mail henüz okunmadı"></div>}
+                                            <span onClick={() => toggleSelection(item.id)} className="cursor-pointer hover:text-indigo-600 transition-colors">{window.cleanDomain(item.url)}</span>
+                                            <a href={`http://${window.cleanDomain(item.url)}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-slate-400 hover:text-indigo-500"><window.Icon name="external-link" className="w-4 h-4"/></a>
                                         </div>
                                     )}
                                 </td>
@@ -152,11 +107,7 @@ window.CrmTab = ({
                                     {editingRowId === item.id ? <input value={editFormData.email} onChange={e => handleEditChange('email', e.target.value)} className="w-full p-1 border rounded" /> : (
                                         <div className="flex flex-col">
                                             <span className="truncate" title={item.email}>{item.email || '-'}</span>
-                                            {siteCount > 1 && (
-                                                <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded-full w-fit mt-1 cursor-pointer hover:bg-purple-100" title={`Diğer Siteler: ${relatedSites.join(', ')}`} onClick={(e) => { e.stopPropagation(); alert(`Bu E-posta Adresine Bağlı Siteler:\n\n${relatedSites.join('\n')}`); }}>
-                                                    {siteCount} Site Sahibi
-                                                </span>
-                                            )}
+                                            {siteCount > 1 && <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded-full w-fit mt-1 cursor-pointer hover:bg-purple-100" title={`Diğer Siteler: ${relatedSites.join(', ')}`} onClick={(e) => { e.stopPropagation(); alert(`Bu E-posta Adresine Bağlı Siteler:\n\n${relatedSites.join('\n')}`); }}>{siteCount} Site Sahibi</span>}
                                         </div>
                                     )}
                                 </td>
@@ -164,11 +115,7 @@ window.CrmTab = ({
                                 <td className="p-4 text-slate-500">{item.lastContactDate ? new Date(item.lastContactDate).toLocaleDateString('tr-TR') : '-'}</td>
                                 <td className="p-4 text-slate-600 font-mono text-xs flex items-center gap-1">
                                     {editingRowId === item.id ? <input value={editFormData.potential} onChange={e => handleEditChange('potential', e.target.value)} className="w-20 p-1 border rounded" /> : (
-                                        item.trafficStatus && item.trafficStatus.label ? (
-                                            <span className={`flex items-center gap-1 ${item.trafficStatus.viable ? 'text-green-600 font-bold' : 'text-slate-400'}`}>
-                                                <window.Icon name={item.trafficStatus.viable ? "trending-up" : "minus"} className="w-3 h-3"/> {item.trafficStatus.label}
-                                            </span>
-                                        ) : <span className="text-slate-300">-</span>
+                                        item.trafficStatus && item.trafficStatus.label ? <span className={`flex items-center gap-1 ${item.trafficStatus.viable ? 'text-green-600 font-bold' : 'text-slate-400'}`}><window.Icon name={item.trafficStatus.viable ? "trending-up" : "minus"} className="w-3 h-3"/> {item.trafficStatus.label}</span> : <span className="text-slate-300">-</span>
                                     )}
                                 </td>
                                 <td className="p-4 text-slate-500 text-xs max-w-[150px] truncate" title={item.notes}>{editingRowId === item.id ? <input value={editFormData.notes} onChange={e => handleEditChange('notes', e.target.value)} className="w-full p-1 border rounded" /> : item.notes || '-'}</td>
@@ -189,14 +136,7 @@ window.CrmTab = ({
                         )})}
                     </tbody>
                 </table>
-                <window.PaginationControls 
-                    currentPage={currentPage} 
-                    totalPages={totalPages} 
-                    setCurrentPage={setCurrentPage} 
-                    totalRecords={totalRecords}
-                    itemsPerPage={itemsPerPage}     // YENİ
-                    setItemsPerPage={setItemsPerPage} // YENİ
-                />
+                <window.PaginationControls currentPage={currentPage} totalPages={totalPages} setCurrentPage={setCurrentPage} totalRecords={totalRecords} itemsPerPage={itemsPerPage} setItemsPerPage={setItemsPerPage} />
             </div>
         </div>
     );
