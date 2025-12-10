@@ -1,6 +1,5 @@
 // LeadHunter_Data.js
-// Görev: Veritabanı Dinleme, Filtreleme, Sıralama, Sayfalama ve Seçim Yönetimi
-// GÜNCELLEME: Dinamik sayfalama limiti ve Global "Tümünü Seç" özelliği eklendi.
+// GÜNCELLEME: Seçim mantığı iyileştirildi (Smart Toggle) ve Sayfalama Limiti State eklendi.
 
 const { useState, useEffect, useMemo } = React;
 
@@ -10,37 +9,30 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
     const [emailMap, setEmailMap] = useState({});
     const [currentPage, setCurrentPage] = useState(1);
     
-    // YENİ: Sayfalama limiti state'i (Varsayılan 50)
+    // YENİ: Sayfalama limiti (Varsayılan 50)
     const [itemsPerPage, setItemsPerPage] = useState(50);
     
     const [sortConfig, setSortConfig] = useState({ key: 'lastContactDate', direction: 'desc' });
-    
     const [filters, setFilters] = useState({ 
         search: '', language: 'ALL', status: [], lastSentStage: 'ALL', quality: 'ALL', startDate: '', endDate: ''
     });
-
     const [selectedIds, setSelectedIds] = useState(new Set());
 
     // --- EFFECTS ---
-
-    // 1. Veritabanını Dinle (Real-time Listener)
     useEffect(() => {
         if (!dbInstance) return;
-
         const unsubscribe = dbInstance.collection("leads").onSnapshot((snapshot) => {
             const leadsData = [];
             snapshot.forEach((doc) => leadsData.push({ id: doc.id, ...doc.data() }));
             processAndSetCrmData(leadsData);
         });
-
         return () => unsubscribe();
     }, [dbInstance, settings.followUpDays]); 
 
-    // 2. Filtre veya Tab değişince sayfayı başa al
-    useEffect(() => { setCurrentPage(1); }, [filters, activeTab, itemsPerPage]); // itemsPerPage değişince de başa dön
+    // Filtre, Tab veya Limit değişince sayfayı başa al
+    useEffect(() => { setCurrentPage(1); }, [filters, activeTab, itemsPerPage]);
 
     // --- HELPERS ---
-
     const processAndSetCrmData = (rawData) => {
         const terminalStatuses = ['DEAL_ON', 'DEAL_OFF', 'DENIED', 'NOT_VIABLE', 'MAIL_ERROR', 'NON_RESPONSIVE', 'NOT_POSSIBLE'];
         const map = {}; 
@@ -51,10 +43,8 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
                 const cleanDomain = window.cleanDomain(item.url);
                 if (!map[mainEmail].includes(cleanDomain)) map[mainEmail].push(cleanDomain);
             }
-            
             const effectiveLastDate = window.getLastInteractionDate(item) || item.lastContactDate;
             let needsFollowUp = false;
-            
             if (effectiveLastDate && !terminalStatuses.includes(item.statusKey) && item.statusKey !== 'New') {
                 const diff = Math.ceil(Math.abs(Date.now() - new Date(effectiveLastDate)) / (1000 * 60 * 60 * 24));
                 if (diff >= settings.followUpDays && item.statusKey === 'NO_REPLY') needsFollowUp = true;
@@ -72,21 +62,31 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
         setSelectedIds(newSet); 
     };
     
-    // Mevcut sayfadakileri seç
-    const toggleSelectAll = (items) => { 
-        if (selectedIds.size === items.length && items.length > 0) { 
-            setSelectedIds(new Set()); // Hepsini kaldır
+    // AKILLI TOPLU SEÇİM (Smart Toggle)
+    const toggleSelectAll = (pageItems) => { 
+        // Sayfadaki HER BİR öğe zaten seçili mi?
+        const allPageSelected = pageItems.length > 0 && pageItems.every(item => selectedIds.has(item.id));
+
+        if (allPageSelected) {
+            // Eğer hepsi seçiliyse (veya global seçim varsa), işareti kaldırınca TEMİZLE.
+            // Kullanıcı kafası karışmasın diye seçimden çıkmak istiyordur.
+            setSelectedIds(new Set()); 
         } else { 
-            // Mevcut seçimleri koru, üstüne sayfadakileri ekle (veya sadece sayfadakileri seç)
-            // Kullanıcı deneyimi: Genelde o sayfadaki hepsini seçer, diğerlerini temizlemez.
-            // Ama basitlik için o anki sayfayı set edelim.
-            setSelectedIds(new Set(items.map(i => i.id))); 
+            // Değilse, mevcut seçimleri koru ve bu sayfadakileri ekle
+            const newSet = new Set(selectedIds);
+            pageItems.forEach(item => newSet.add(item.id));
+            setSelectedIds(newSet);
         } 
     };
 
-    // YENİ: Filtrelenmiş TÜM kayıtları seç
     const selectAllFiltered = () => {
-        setSelectedIds(new Set(processedData.map(i => i.id)));
+        // Filtrelenmiş listenin TAMAMINI seç
+        const allIds = processedData.map(i => i.id);
+        setSelectedIds(new Set(allIds));
+    };
+    
+    const clearSelection = () => {
+        setSelectedIds(new Set());
     };
 
     const handleSort = (key) => { 
@@ -99,12 +99,10 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
     // --- MEMOIZED DATA ---
     const processedData = useMemo(() => {
         let data = [...crmData];
-
         if (activeTab === 'dashboard') {
             const terminalStatuses = ['DEAL_ON', 'DEAL_OFF', 'DENIED', 'NOT_VIABLE', 'NON_RESPONSIVE', 'NOT_POSSIBLE', 'MAIL_ERROR'];
             data = data.filter(i => !terminalStatuses.includes(i.statusKey));
         }
-
         if (filters.search) {
             const searchLower = filters.search.toLowerCase();
             data = data.filter(item => 
@@ -130,17 +128,9 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
             data = data.filter(item => (item.stage || 0) === targetStage + 1);
         }
         if (filters.quality === 'GOOD') {
-            data = data.filter(item => {
-                const hasEmail = item.email && item.email.length > 5 && item.email !== '-';
-                const hasTraffic = item.trafficStatus && item.trafficStatus.viable;
-                return hasEmail && hasTraffic;
-            });
+            data = data.filter(item => item.email && item.email.length > 5 && item.email !== '-' && item.trafficStatus && item.trafficStatus.viable);
         } else if (filters.quality === 'MISSING') {
-            data = data.filter(item => {
-                const noEmail = !item.email || item.email.length < 5 || item.email === '-';
-                const noTraffic = !item.trafficStatus || !item.trafficStatus.viable || item.trafficStatus.label === 'Bilinmiyor';
-                return noEmail || noTraffic;
-            });
+            data = data.filter(item => (!item.email || item.email.length < 5 || item.email === '-') || (!item.trafficStatus || !item.trafficStatus.viable));
         }
         if (filters.startDate) {
             const start = new Date(filters.startDate).getTime();
@@ -153,23 +143,16 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
         
         data.sort((a, b) => {
             let valA = a[sortConfig.key], valB = b[sortConfig.key];
-            
-            if (sortConfig.key === 'stage') { 
-                valA = a.stage || 0; valB = b.stage || 0; 
-            } else if (sortConfig.key === 'lastContactDate' || sortConfig.key === 'addedDate') { 
-                valA = valA ? new Date(valA).getTime() : 0; valB = valB ? new Date(valB).getTime() : 0; 
-            } else if (sortConfig.key === 'potential') {
-                let numA = a.trafficStatus?.value || 0;
-                if (!numA && a.trafficStatus?.label) numA = window.parseTrafficToNumber(a.trafficStatus.label);
-                let numB = b.trafficStatus?.value || 0;
-                if (!numB && b.trafficStatus?.label) numB = window.parseTrafficToNumber(b.trafficStatus.label);
+            if (sortConfig.key === 'stage') { valA = a.stage || 0; valB = b.stage || 0; } 
+            else if (sortConfig.key === 'lastContactDate') { valA = valA ? new Date(valA).getTime() : 0; valB = valB ? new Date(valB).getTime() : 0; } 
+            else if (sortConfig.key === 'potential') {
+                let numA = a.trafficStatus?.value || (a.trafficStatus?.label ? window.parseTrafficToNumber(a.trafficStatus.label) : 0);
+                let numB = b.trafficStatus?.value || (b.trafficStatus?.label ? window.parseTrafficToNumber(b.trafficStatus.label) : 0);
                 valA = numA; valB = numB;
             } else if (sortConfig.key === 'statusKey') {
                 valA = window.LEAD_STATUSES[a.statusKey]?.label || a.statusLabel || 'New';
                 valB = window.LEAD_STATUSES[b.statusKey]?.label || b.statusLabel || 'New';
-            } else if (typeof valA === 'string') { 
-                valA = valA.toLowerCase(); valB = valB ? valB.toLowerCase() : ''; 
-            }
+            } else if (typeof valA === 'string') { valA = valA.toLowerCase(); valB = valB ? valB.toLowerCase() : ''; }
 
             if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
             if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
@@ -178,7 +161,7 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
         return data;
     }, [crmData, filters, sortConfig, activeTab]);
 
-    // itemsPerPage dinamik kullanılıyor
+    // Dinamik itemsPerPage kullanımı
     const getPaginatedData = () => { 
         const startIndex = (currentPage - 1) * itemsPerPage; 
         return processedData.slice(startIndex, startIndex + itemsPerPage); 
@@ -187,20 +170,15 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
     const totalPages = Math.ceil(processedData.length / itemsPerPage);
 
     return {
-        crmData, setCrmData,
-        emailMap,
-        currentPage, setCurrentPage,
-        itemsPerPage, setItemsPerPage, // DIŞARI AKTARILDI
-        sortConfig, setSortConfig,
-        filters, setFilters,
-        selectedIds, setSelectedIds,
-        processedData,
-        getPaginatedData,
-        totalPages,
-        toggleSelection,
-        toggleSelectAll,
-        selectAllFiltered, // DIŞARI AKTARILDI
-        handleSort,
-        processAndSetCrmData
+        crmData, setCrmData, emailMap,
+        currentPage, setCurrentPage, 
+        itemsPerPage, setItemsPerPage, // DIŞA AKTARILDI
+        sortConfig, setSortConfig, filters, setFilters,
+        selectedIds, setSelectedIds, processedData,
+        getPaginatedData, totalPages,
+        toggleSelection, toggleSelectAll, 
+        selectAllFiltered, // DIŞA AKTARILDI 
+        clearSelection,
+        handleSort, processAndSetCrmData
     };
 };
