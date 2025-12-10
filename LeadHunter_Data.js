@@ -1,5 +1,6 @@
 // LeadHunter_Data.js
 // Görev: Veritabanı Dinleme, Filtreleme, Sıralama, Sayfalama ve Seçim Yönetimi
+// GÜNCELLEME: Dinamik sayfalama limiti ve Global "Tümünü Seç" özelliği eklendi.
 
 const { useState, useEffect, useMemo } = React;
 
@@ -8,6 +9,10 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
     const [crmData, setCrmData] = useState([]);
     const [emailMap, setEmailMap] = useState({});
     const [currentPage, setCurrentPage] = useState(1);
+    
+    // YENİ: Sayfalama limiti state'i (Varsayılan 50)
+    const [itemsPerPage, setItemsPerPage] = useState(50);
+    
     const [sortConfig, setSortConfig] = useState({ key: 'lastContactDate', direction: 'desc' });
     
     const [filters, setFilters] = useState({ 
@@ -28,12 +33,11 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
             processAndSetCrmData(leadsData);
         });
 
-        // Cleanup function
         return () => unsubscribe();
     }, [dbInstance, settings.followUpDays]); 
 
     // 2. Filtre veya Tab değişince sayfayı başa al
-    useEffect(() => { setCurrentPage(1); }, [filters, activeTab]);
+    useEffect(() => { setCurrentPage(1); }, [filters, activeTab, itemsPerPage]); // itemsPerPage değişince de başa dön
 
     // --- HELPERS ---
 
@@ -41,7 +45,6 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
         const terminalStatuses = ['DEAL_ON', 'DEAL_OFF', 'DENIED', 'NOT_VIABLE', 'MAIL_ERROR', 'NON_RESPONSIVE', 'NOT_POSSIBLE'];
         const map = {}; 
         const processed = rawData.map(item => {
-            // Email Map oluşturma (Aynı mail'e sahip siteleri bulmak için)
             if (item.email && item.email.length > 5 && item.email !== '-') {
                 const mainEmail = item.email.split(',')[0].trim();
                 if (!map[mainEmail]) map[mainEmail] = [];
@@ -49,7 +52,6 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
                 if (!map[mainEmail].includes(cleanDomain)) map[mainEmail].push(cleanDomain);
             }
             
-            // Takip tarihi hesaplama
             const effectiveLastDate = window.getLastInteractionDate(item) || item.lastContactDate;
             let needsFollowUp = false;
             
@@ -70,12 +72,21 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
         setSelectedIds(newSet); 
     };
     
+    // Mevcut sayfadakileri seç
     const toggleSelectAll = (items) => { 
         if (selectedIds.size === items.length && items.length > 0) { 
-            setSelectedIds(new Set()); 
+            setSelectedIds(new Set()); // Hepsini kaldır
         } else { 
+            // Mevcut seçimleri koru, üstüne sayfadakileri ekle (veya sadece sayfadakileri seç)
+            // Kullanıcı deneyimi: Genelde o sayfadaki hepsini seçer, diğerlerini temizlemez.
+            // Ama basitlik için o anki sayfayı set edelim.
             setSelectedIds(new Set(items.map(i => i.id))); 
         } 
+    };
+
+    // YENİ: Filtrelenmiş TÜM kayıtları seç
+    const selectAllFiltered = () => {
+        setSelectedIds(new Set(processedData.map(i => i.id)));
     };
 
     const handleSort = (key) => { 
@@ -85,17 +96,15 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
         })); 
     };
 
-    // --- MEMOIZED DATA (Filtreleme ve Sıralama Mantığı) ---
+    // --- MEMOIZED DATA ---
     const processedData = useMemo(() => {
         let data = [...crmData];
 
-        // 1. Dashboard'a Özel Filtre (MAIL_ERROR DAHİL EDİLDİ)
         if (activeTab === 'dashboard') {
             const terminalStatuses = ['DEAL_ON', 'DEAL_OFF', 'DENIED', 'NOT_VIABLE', 'NON_RESPONSIVE', 'NOT_POSSIBLE', 'MAIL_ERROR'];
             data = data.filter(i => !terminalStatuses.includes(i.statusKey));
         }
 
-        // 2. Global Filtreler
         if (filters.search) {
             const searchLower = filters.search.toLowerCase();
             data = data.filter(item => 
@@ -142,7 +151,6 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
             data = data.filter(item => item.lastContactDate && new Date(item.lastContactDate).getTime() <= end + 86400000);
         }
         
-        // 3. Sıralama
         data.sort((a, b) => {
             let valA = a[sortConfig.key], valB = b[sortConfig.key];
             
@@ -170,17 +178,19 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
         return data;
     }, [crmData, filters, sortConfig, activeTab]);
 
+    // itemsPerPage dinamik kullanılıyor
     const getPaginatedData = () => { 
-        const startIndex = (currentPage - 1) * window.ITEMS_PER_PAGE; 
-        return processedData.slice(startIndex, startIndex + window.ITEMS_PER_PAGE); 
+        const startIndex = (currentPage - 1) * itemsPerPage; 
+        return processedData.slice(startIndex, startIndex + itemsPerPage); 
     };
     
-    const totalPages = Math.ceil(processedData.length / window.ITEMS_PER_PAGE);
+    const totalPages = Math.ceil(processedData.length / itemsPerPage);
 
     return {
         crmData, setCrmData,
         emailMap,
         currentPage, setCurrentPage,
+        itemsPerPage, setItemsPerPage, // DIŞARI AKTARILDI
         sortConfig, setSortConfig,
         filters, setFilters,
         selectedIds, setSelectedIds,
@@ -189,7 +199,8 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
         totalPages,
         toggleSelection,
         toggleSelectAll,
+        selectAllFiltered, // DIŞARI AKTARILDI
         handleSort,
-        processAndSetCrmData // Gerekirse dışarıdan çağrılabilmesi için
+        processAndSetCrmData
     };
 };
