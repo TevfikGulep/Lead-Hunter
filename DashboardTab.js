@@ -15,21 +15,20 @@ window.DashboardTab = ({
     fixAllTrafficData,
     onBulkCheck,
     isCheckingBulk,
-    paginatedItems, // getPaginatedData() sonucu buraya verilmeli
+    paginatedItems, 
     currentPage,
     totalPages,
     setCurrentPage,
     totalRecords,
     setHistoryModalLead,
-    getStageInfo, // app.js'deki getStageInfo fonksiyonu prop olarak gelmeli
-    handleSort, // YENİ: Sıralama fonksiyonu
-    sortConfig, // YENİ: Sıralama durumu
-    onStageChange, // YENİ: Manuel aşama değiştirme fonksiyonu
-    workflow, // YENİ: Workflow listesi (Dropdown için)
-    bulkUpdateStatus // YENİ: Toplu durum güncelleme fonksiyonu
+    getStageInfo, 
+    handleSort, 
+    sortConfig, 
+    onStageChange, 
+    workflow, 
+    bulkUpdateStatus 
 }) => {
 
-    // İstatistik Verileri
     const stats = [
         { label: 'Toplam Kayıt', val: crmData.length, icon: 'users', color: 'text-slate-600' },
         { label: 'Olumlu', val: crmData.filter(i => i.statusKey === 'DEAL_ON').length, icon: 'check-circle', color: 'text-green-600' },
@@ -37,14 +36,10 @@ window.DashboardTab = ({
         { label: 'Takip', val: crmData.filter(i => i.needsFollowUp).length, icon: 'alert-triangle', color: 'text-orange-600' }
     ];
 
-    // ÖNEMLİ DÜZELTME: Artık yerel filtreleme yapmıyoruz.
-    // 'paginatedItems' zaten LeadHunter.js tarafında filtrelenmiş ve sıralanmış ana listeden
-    // doğru şekilde kesilip geliyor.
     const displayItems = paginatedItems;
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
-            {/* İstatistik Kartları */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 {stats.map((stat, i) => (
                     <div key={i} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
@@ -57,20 +52,8 @@ window.DashboardTab = ({
                 ))}
             </div>
             
-            {/* Filtre Çubuğu */}
-            <window.FilterBar 
-                filters={filters} 
-                setFilters={setFilters} 
-                selectedCount={selectedCount} 
-                setShowBulkModal={setShowBulkModal} 
-                activeTab={activeTab} 
-                fixAllTrafficData={fixAllTrafficData}
-                onBulkCheck={onBulkCheck}
-                isCheckingBulk={isCheckingBulk}
-                onBulkStatusChange={bulkUpdateStatus} /* EKLENDİ: FilterBar'a fonksiyon iletiliyor */
-            />
+            <window.FilterBar filters={filters} setFilters={setFilters} selectedCount={selectedCount} setShowBulkModal={setShowBulkModal} activeTab={activeTab} fixAllTrafficData={fixAllTrafficData} onBulkCheck={onBulkCheck} isCheckingBulk={isCheckingBulk} onBulkStatusChange={bulkUpdateStatus} />
             
-            {/* Tablo */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-6 border-b flex justify-between items-center bg-slate-50/50">
                     <h3 className="font-bold text-slate-800 flex items-center gap-2">
@@ -81,30 +64,13 @@ window.DashboardTab = ({
                     <table className="w-full text-left text-sm">
                         <thead className="bg-slate-50 text-slate-500">
                             <tr>
-                                <th className="p-4 w-10">
-                                    <input 
-                                        type="checkbox" 
-                                        className="custom-checkbox" 
-                                        checked={selectedIds.size > 0 && selectedIds.size === paginatedItems.length} 
-                                        onChange={() => toggleSelectAll(paginatedItems)}
-                                    />
-                                </th>
+                                <th className="p-4 w-10"><input type="checkbox" className="custom-checkbox" checked={selectedIds.size > 0 && selectedIds.size === paginatedItems.length} onChange={() => toggleSelectAll(paginatedItems)}/></th>
                                 <th className="p-4">Site</th>
                                 <th className="p-4">Email</th>
-                                {/* YENİ EKLENEN SÜTUN: Trafik */}
-                                <th className="p-4 cursor-pointer hover:text-indigo-600" onClick={() => handleSort('potential')}>
-                                    <div className="flex items-center gap-1">Trafik <window.SortIcon column="potential" sortConfig={sortConfig}/></div>
-                                </th>
-                                <th className="p-4 cursor-pointer hover:text-indigo-600" onClick={() => handleSort('stage')}>
-                                    <div className="flex items-center gap-1">Son Gönderilen <window.SortIcon column="stage" sortConfig={sortConfig}/></div>
-                                </th>
-                                <th className="p-4 cursor-pointer hover:text-indigo-600" onClick={() => handleSort('lastContactDate')}>
-                                    <div className="flex items-center gap-1">Son Temas <window.SortIcon column="lastContactDate" sortConfig={sortConfig}/></div>
-                                </th> 
-                                {/* YENİ EKLENEN SÜTUN: Durum */}
-                                <th className="p-4 cursor-pointer hover:text-indigo-600" onClick={() => handleSort('statusKey')}>
-                                    <div className="flex items-center gap-1">Durum <window.SortIcon column="statusKey" sortConfig={sortConfig}/></div>
-                                </th>
+                                <th className="p-4 cursor-pointer hover:text-indigo-600" onClick={() => handleSort('potential')}><div className="flex items-center gap-1">Trafik <window.SortIcon column="potential" sortConfig={sortConfig}/></div></th>
+                                <th className="p-4 cursor-pointer hover:text-indigo-600" onClick={() => handleSort('stage')}><div className="flex items-center gap-1">Son Gönderilen <window.SortIcon column="stage" sortConfig={sortConfig}/></div></th>
+                                <th className="p-4 cursor-pointer hover:text-indigo-600" onClick={() => handleSort('lastContactDate')}><div className="flex items-center gap-1">Son Temas <window.SortIcon column="lastContactDate" sortConfig={sortConfig}/></div></th> 
+                                <th className="p-4 cursor-pointer hover:text-indigo-600" onClick={() => handleSort('statusKey')}><div className="flex items-center gap-1">Durum <window.SortIcon column="statusKey" sortConfig={sortConfig}/></div></th>
                                 <th className="p-4">Aksiyon</th>
                                 <th className="p-4 text-right">Geçmiş</th>
                             </tr>
@@ -112,13 +78,20 @@ window.DashboardTab = ({
                         <tbody className="divide-y divide-slate-100">
                             {displayItems.map(lead => {
                                 const nextStageInfo = getStageInfo(lead.stage, lead.language);
+                                const isMailOpened = !!lead.mailOpenedAt;
+
                                 return (
                                     <tr key={lead.id} className="hover:bg-slate-50">
-                                        <td className="p-4">
-                                            <input type="checkbox" className="custom-checkbox" checked={selectedIds.has(lead.id)} onChange={() => toggleSelection(lead.id)}/>
-                                        </td>
+                                        <td className="p-4"><input type="checkbox" className="custom-checkbox" checked={selectedIds.has(lead.id)} onChange={() => toggleSelection(lead.id)}/></td>
                                         <td className="p-4 font-medium">
                                             <div className="flex items-center gap-2">
+                                                {/* OKUNDU İŞARETİ */}
+                                                {isMailOpened ? (
+                                                    <div className="w-3 h-3 rounded-full bg-green-500 shadow-sm" title={`Okundu: ${new Date(lead.mailOpenedAt).toLocaleString('tr-TR')}`}></div>
+                                                ) : (
+                                                    <div className="w-3 h-3 rounded-full bg-red-200" title="Okunmadı"></div>
+                                                )}
+
                                                 <span onClick={() => toggleSelection(lead.id)} className="cursor-pointer hover:text-indigo-600 transition-colors">
                                                     {window.cleanDomain(lead.url)}
                                                 </span>
@@ -128,8 +101,6 @@ window.DashboardTab = ({
                                             </div>
                                         </td>
                                         <td className="p-4 text-sm text-slate-600">{lead.email || '-'}</td>
-                                        
-                                        {/* YENİ SÜTUN: Trafik Verisi */}
                                         <td className="p-4 text-slate-600 font-mono text-xs">
                                             {lead.trafficStatus && lead.trafficStatus.label ? (
                                                 <span className={`flex items-center gap-1 ${lead.trafficStatus.viable ? 'text-green-600 font-bold' : 'text-slate-400'}`}>
@@ -139,7 +110,6 @@ window.DashboardTab = ({
                                         </td>
 
                                         <td className="p-4">
-                                            {/* GÜNCELLENDİ: Manuel Düzenlenebilir Select */}
                                             <div className="relative inline-block">
                                                 <select
                                                     value={lead.stage || 0}
@@ -159,7 +129,6 @@ window.DashboardTab = ({
                                         </td>
                                         <td className="p-4 text-slate-500">{lead.lastContactDate ? new Date(lead.lastContactDate).toLocaleDateString('tr-TR') : '-'}</td>
                                         
-                                        {/* YENİ SÜTUN: Mevcut Durum */}
                                         <td className="p-4">
                                             <span className={`px-2 py-1 rounded text-xs font-bold border ${window.LEAD_STATUSES[lead.statusKey]?.color || 'bg-gray-100'}`}>
                                                 {window.LEAD_STATUSES[lead.statusKey]?.label || lead.statusLabel || 'New'}
@@ -185,12 +154,7 @@ window.DashboardTab = ({
                         </tbody>
                     </table>
                 </div>
-                <window.PaginationControls 
-                    currentPage={currentPage} 
-                    totalPages={totalPages} 
-                    setCurrentPage={setCurrentPage} 
-                    totalRecords={totalRecords} 
-                />
+                <window.PaginationControls currentPage={currentPage} totalPages={totalPages} setCurrentPage={setCurrentPage} totalRecords={totalRecords} />
             </div>
         </div>
     );
