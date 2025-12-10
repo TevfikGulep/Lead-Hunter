@@ -1,36 +1,14 @@
 // DashboardTab.js
-// GÜNCELLEME: 'Tümünü Seç' özelliği, Sayfalama Limiti ve Mail Takip İkonu eklendi.
+// GÜNCELLEME: Global seçim onayı, temizleme butonu ve Mail Takip İkonu eklendi.
 
 window.DashboardTab = ({ 
-    crmData, 
-    filters, 
-    setFilters, 
-    selectedIds, 
-    toggleSelection, 
-    toggleSelectAll, 
-    selectedCount,
-    setShowBulkModal,
-    activeTab,
-    fixAllTrafficData,
-    onBulkCheck,
-    isCheckingBulk,
-    paginatedItems, 
-    currentPage,
-    totalPages,
-    setCurrentPage,
-    totalRecords,
-    setHistoryModalLead,
-    getStageInfo, 
-    handleSort, 
-    sortConfig, 
-    onStageChange, 
-    workflow, 
-    bulkUpdateStatus,
-    itemsPerPage,    // YENİ: Sayfa başı kayıt sayısı
-    setItemsPerPage, // YENİ: Sayfa başı kayıt değiştirme fonksiyonu
-    selectAllFiltered // YENİ: Filtrelenmiş tüm kayıtları seçme fonksiyonu
+    crmData, filters, setFilters, selectedIds, toggleSelection, toggleSelectAll, selectedCount,
+    setShowBulkModal, activeTab, fixAllTrafficData, onBulkCheck, isCheckingBulk, paginatedItems, 
+    currentPage, totalPages, setCurrentPage, totalRecords, setHistoryModalLead, getStageInfo, 
+    handleSort, sortConfig, onStageChange, workflow, bulkUpdateStatus,
+    itemsPerPage, setItemsPerPage, selectAllFiltered, clearSelection
 }) => {
-
+    
     // İstatistikler
     const stats = [
         { label: 'Toplam Kayıt', val: crmData.length, icon: 'users', color: 'text-slate-600' },
@@ -41,10 +19,10 @@ window.DashboardTab = ({
 
     const displayItems = paginatedItems;
     
-    // Global seçim mantığı:
-    // Sayfadaki tüm kayıtlar seçiliyse VE toplam kayıt sayısı sayfadaki kayıttan fazlaysa banner göster
-    const isAllPageSelected = paginatedItems.length > 0 && selectedIds.size >= paginatedItems.length;
-    const canSelectAllGlobal = isAllPageSelected && totalRecords > paginatedItems.length && selectedIds.size < totalRecords;
+    // Global seçim mantığı
+    const isAllPageSelected = paginatedItems.length > 0 && paginatedItems.every(i => selectedIds.has(i.id));
+    const isGlobalSelectionActive = selectedIds.size > paginatedItems.length && selectedIds.size >= totalRecords;
+    const canSelectAllGlobal = isAllPageSelected && totalRecords > paginatedItems.length && !isGlobalSelectionActive;
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
@@ -73,31 +51,25 @@ window.DashboardTab = ({
                 </div>
                 <div className="overflow-x-auto">
                     
-                    {/* --- GLOBAL SELECTION BANNER (YENİ) --- */}
+                    {/* --- SELECTION BANNERS --- */}
                     {canSelectAllGlobal && (
-                        <div className="bg-indigo-50 border-b border-indigo-100 p-2 text-center text-xs text-indigo-800 animate-in slide-in-from-top-2">
+                        <div className="bg-indigo-50 border-b border-indigo-100 p-2 text-center text-xs text-indigo-800 animate-in slide-in-from-top-2 flex items-center justify-center gap-1">
                             Bu sayfadaki <strong>{paginatedItems.length}</strong> kayıt seçildi. 
-                            <button 
-                                onClick={selectAllFiltered} 
-                                className="ml-2 font-bold underline hover:text-indigo-900 cursor-pointer"
-                            >
-                                Filtrelenmiş listenin tamamındaki {totalRecords} kaydı seçmek için tıklayın.
-                            </button>
+                            <button onClick={selectAllFiltered} className="ml-1 font-bold underline hover:text-indigo-900 cursor-pointer">Listenin tamamındaki {totalRecords} kaydı seç.</button>
                         </div>
                     )}
-                    {/* ------------------------------------- */}
+                    {isGlobalSelectionActive && (
+                        <div className="bg-green-50 border-b border-green-100 p-2 text-center text-xs text-green-800 animate-in slide-in-from-top-2 flex items-center justify-center gap-1">
+                            <window.Icon name="check-circle" className="w-3 h-3"/>
+                            Listedeki <strong>{totalRecords}</strong> kaydın tamamı seçildi.
+                            <button onClick={clearSelection} className="ml-2 font-bold underline hover:text-green-900 cursor-pointer">Seçimi Temizle</button>
+                        </div>
+                    )}
 
                     <table className="w-full text-left text-sm">
                         <thead className="bg-slate-50 text-slate-500">
                             <tr>
-                                <th className="p-4 w-10">
-                                    <input 
-                                        type="checkbox" 
-                                        className="custom-checkbox" 
-                                        checked={isAllPageSelected} 
-                                        onChange={() => toggleSelectAll(paginatedItems)}
-                                    />
-                                </th>
+                                <th className="p-4 w-10"><input type="checkbox" className="custom-checkbox" checked={isAllPageSelected} onChange={() => toggleSelectAll(paginatedItems)}/></th>
                                 <th className="p-4">Site (Mail Takip)</th>
                                 <th className="p-4">Email</th>
                                 <th className="p-4 cursor-pointer hover:text-indigo-600" onClick={() => handleSort('potential')}><div className="flex items-center gap-1">Trafik <window.SortIcon column="potential" sortConfig={sortConfig}/></div></th>
@@ -118,7 +90,7 @@ window.DashboardTab = ({
                                         <td className="p-4"><input type="checkbox" className="custom-checkbox" checked={selectedIds.has(lead.id)} onChange={() => toggleSelection(lead.id)}/></td>
                                         <td className="p-4 font-medium">
                                             <div className="flex items-center gap-2">
-                                                {/* MAIL TRACKING ICON (YENİ) */}
+                                                {/* MAIL TRACKING ICON */}
                                                 {isMailOpened ? (
                                                     <div className="w-3 h-3 rounded-full bg-green-500 shadow-sm animate-pulse" title={`Mail Okundu: ${new Date(lead.mailOpenedAt).toLocaleString('tr-TR')}`}></div>
                                                 ) : (
@@ -192,8 +164,8 @@ window.DashboardTab = ({
                     totalPages={totalPages} 
                     setCurrentPage={setCurrentPage} 
                     totalRecords={totalRecords} 
-                    itemsPerPage={itemsPerPage}     // YENİ
-                    setItemsPerPage={setItemsPerPage} // YENİ
+                    itemsPerPage={itemsPerPage}     
+                    setItemsPerPage={setItemsPerPage}
                 />
             </div>
         </div>
