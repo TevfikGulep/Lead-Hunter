@@ -1,5 +1,6 @@
 // LeadHunter_Services.js
 // Görev: Mail Gönderimi, Toplu İşlemler, Veri Zenginleştirme ve Hunter Taramaları
+// DÜZELTME: 'services is not defined' hatası giderildi.
 
 const { useState, useRef, useEffect } = React;
 
@@ -44,8 +45,7 @@ window.useLeadHunterServices = (
     const scanIntervalRef = useRef(false);
     const hunterLogsEndRef = useRef(null);
 
-    // --- TRACKING SYNC (NEW) ---
-    // Her 60 saniyede bir PHP sunucusundan açılma verilerini kontrol et
+    // --- TRACKING SYNC (MAIL TAKİP SENKRONİZASYONU) ---
     useEffect(() => {
         if (!isDbConnected) return;
 
@@ -238,8 +238,6 @@ window.useLeadHunterServices = (
                 let signatureHtml = settings.signature ? window.decodeHtmlEntities(settings.signature).replace(/class="MsoNormal"/g, 'style="margin:0;"') : '';
                 
                 // --- TRACKING PIXEL (TOPLU) ---
-                // Not: Grup halinde gönderimde sadece ilk lead'in ID'sini tracking ID olarak kullanıyoruz.
-                // İdealde her siteye ayrı mail gerekir ama toplu gönderimde birleştirme mantığı var.
                 const trackingPixel = serverUrl ? `<img src="${serverUrl}?type=track&id=${mainLead.id}" width="1" height="1" style="display:none;" alt="" />` : '';
                 // ------------------------------
 
@@ -297,11 +295,285 @@ window.useLeadHunterServices = (
         setShowBulkModal(false);
     };
 
-    // ... Diğer fonksiyonlar aynen kalacak (checkReply, enrich, hunter, actions vb.)
-    // Kod kalabalığı yapmamak için sadece değişen fonksiyonları yukarıda verdim.
-    // Diğer fonksiyonlar (handleBulkReplyCheck, fixAllTrafficData, bulkUpdateStatus vb.) orijinal dosyadaki gibi kalmalıdır.
-    
-    // NOT: Bu `return` bloğunda diğer tüm eski fonksiyonları da döndürmeyi unutma.
+    // 4. Toplu Cevap Kontrolü
+    const handleBulkReplyCheck = async () => {
+        if (selectedIds.size === 0) return alert("Kayıt seçin.");
+        const candidates = crmData.filter(lead => selectedIds.has(lead.id) && lead.threadId);
+        if (candidates.length === 0) return alert("Thread ID bulunamadı.");
+        if (!confirm(`${candidates.length} kayıt kontrol edilecek. Devam?`)) return;
+        
+        setIsCheckingBulk(true);
+        try {
+            const response = await fetch(settings.googleScriptUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'check_replies_bulk', threadIds: candidates.map(c => c.threadId) }) });
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                const results = data.results; 
+                let updatedCount = 0; 
+                let bounceCount = 0; 
+                const batch = dbInstance.batch(); 
+                let hasUpdates = false;
+                
+                candidates.forEach(lead => {
+                    const result = results[lead.threadId];
+                    if (result && result.hasReply) {
+                        const ref = dbInstance.collection("leads").doc(lead.id);
+                        if (result.isBounce) {
+                            const newLog = {
+                                date: new Date().toISOString(),
+                                type: 'BOUNCE',
+                                content: `Otomatik Tarama: Mail İletilemedi (Bounce)`
+                            };
+                            batch.update(ref, { 
+                                statusKey: 'MAIL_ERROR', 
+                                statusLabel: 'Error in mail (Bounced)', 
+                                email: '', 
+                                lastContactDate: new Date().toISOString(),
+                                activityLog: firebase.firestore.FieldValue.arrayUnion(newLog)
+                            });
+                            bounceCount++; hasUpdates = true;
+                        } else if (!['INTERESTED', 'DEAL_ON', 'NOT_POSSIBLE', 'DENIED', 'MAIL_ERROR'].includes(lead.statusKey)) {
+                            const newLog = {
+                                date: new Date().toISOString(),
+                                type: 'REPLY',
+                                content: `Yeni Cevap Alındı: ${result.snippet?.substring(0, 50)}...`
+                            };
+                            batch.update(ref, { 
+                                statusKey: 'INTERESTED', 
+                                statusLabel: 'Showed interest (Reply Found)', 
+                                lastContactDate: new Date().toISOString(),
+                                activityLog: firebase.firestore.FieldValue.arrayUnion(newLog)
+                            });
+                            updatedCount++; hasUpdates = true;
+                        }
+                    }
+                });
+                
+                if (hasUpdates) { await batch.commit(); alert(`Tarama Tamamlandı!\n✅ ${updatedCount} yeni cevap\n❌ ${bounceCount} bounce`); } 
+                else { alert("Değişiklik yok."); }
+            } else { alert("Hata: " + data.message); }
+        } catch (e) { alert("Bağlantı Hatası: " + e.message); }
+        setIsCheckingBulk(false);
+    };
+
+    // 5. Trafik Verisi Düzeltme
+    const fixAllTrafficData = async () => {
+        if (!isDbConnected) return alert("Veritabanı bağlı değil.");
+        if (!confirm("Trafik verileri düzeltilecek. Onay?")) return;
+        const batch = dbInstance.batch(); let count = 0;
+        
+        crmData.forEach(lead => {
+            if (lead.trafficStatus && lead.trafficStatus.label && (lead.trafficStatus.value === undefined || lead.trafficStatus.value === 0)) {
+                const parsedValue = window.parseTrafficToNumber(lead.trafficStatus.label);
+                batch.update(dbInstance.collection("leads").doc(lead.id), { trafficStatus: { ...lead.trafficStatus, value: parsedValue } }); count++;
+            }
+        });
+        
+        if (count > 0) { await batch.commit(); alert(`${count} kayıt güncellendi!`); } 
+        else { alert("Düzeltilecek kayıt yok."); }
+    };
+
+    // 6. Toplu Durum Güncelleme
+    const bulkUpdateStatus = async (newStatusKey) => {
+        if (selectedIds.size === 0) return alert("Lütfen kayıt seçin.");
+        if (!isDbConnected) return alert("Veritabanı bağlı değil.");
+        
+        const statusLabel = window.LEAD_STATUSES[newStatusKey]?.label || newStatusKey;
+        if (!confirm(`Seçili ${selectedIds.size} kaydın durumu '${statusLabel}' olarak güncellenecek. Onaylıyor musunuz?`)) return;
+        
+        const batch = dbInstance.batch();
+        const timestamp = new Date().toISOString();
+        const newLog = {
+            date: timestamp,
+            type: 'SYSTEM',
+            content: `Durum manuel olarak '${statusLabel}' yapıldı (Toplu İşlem).`
+        };
+        
+        selectedIds.forEach(id => {
+            const ref = dbInstance.collection("leads").doc(id);
+            batch.update(ref, { 
+                statusKey: newStatusKey, 
+                statusLabel: statusLabel,
+                activityLog: firebase.firestore.FieldValue.arrayUnion(newLog)
+            });
+        });
+        
+        try {
+            await batch.commit();
+            setCrmData(prev => prev.map(item => {
+                if (selectedIds.has(item.id)) {
+                    return { ...item, statusKey: newStatusKey, statusLabel: statusLabel, activityLog: [...(item.activityLog || []), newLog] };
+                }
+                return item;
+            }));
+            setSelectedIds(new Set()); 
+            alert("Durumlar başarıyla güncellendi.");
+        } catch (e) {
+            alert("Hata: " + e.message);
+        }
+    };
+
+    // 7. Toplu Dil Ayarlama
+    const bulkSetLanguage = async (lang) => {
+        if (selectedIds.size === 0) return alert("Lütfen kayıt seçin.");
+        if (!confirm(`Seçili ${selectedIds.size} kaydın dili '${lang}' yapılacak. Onay?`)) return;
+        
+        const batch = dbInstance.batch(); 
+        selectedIds.forEach(id => batch.update(dbInstance.collection("leads").doc(id), { language: lang }));
+        
+        await batch.commit(); 
+        setSelectedIds(new Set()); 
+        alert("Dil güncellendi.");
+    };
+
+    // 8. Toplu 'Not Viable' Ekleme
+    const bulkAddNotViable = async () => {
+        if (selectedIds.size === 0 || !isDbConnected) return;
+        if (!confirm(`${selectedIds.size} adet site 'Not Viable' olarak eklenecek.`)) return;
+        
+        const batch = dbInstance.batch(); 
+        let count = 0;
+        
+        selectedIds.forEach(id => {
+            const lead = leads.find(l => l.id === id);
+            if (lead && !crmData.some(c => window.cleanDomain(c.url) === window.cleanDomain(lead.url))) {
+                batch.set(dbInstance.collection("leads").doc(), { url: lead.url, email: lead.email || '', statusKey: 'NOT_VIABLE', statusLabel: 'Not Viable', stage: 0, language: 'TR', trafficStatus: lead.trafficStatus || { viable: false }, addedDate: new Date().toISOString() }); count++;
+            }
+        });
+        
+        if (count > 0) { 
+            await batch.commit(); 
+            setLeads(prev => prev.filter(l => !selectedIds.has(l.id))); 
+            setSelectedIds(new Set()); 
+            alert(`${count} site eklendi.`); 
+        }
+    };
+
+    // 9. Veri Zenginleştirme (Enrich)
+    const enrichDatabase = async (mode = 'BOTH') => {
+        const negativeStatuses = ['NOT_VIABLE', 'NOT_POSSIBLE', 'DENIED', 'DEAL_OFF', 'NON_RESPONSIVE'];
+        
+        const targets = crmData.filter(item => {
+            if (negativeStatuses.includes(item.statusKey)) return false;
+            const missingEmail = !item.email || item.email.length < 5 || item.email === '-' || item.statusKey === 'MAIL_ERROR';
+            const missingTraffic = !item.trafficStatus || !item.trafficStatus.label || ['Bilinmiyor', 'Veri Yok', 'Hata', '-', 'API Ayarı Yok'].includes(item.trafficStatus.label) || !item.trafficStatus.value || item.trafficStatus.value < 100;
+            if (mode === 'EMAIL') return missingEmail;
+            if (mode === 'TRAFFIC') return missingTraffic;
+            return missingEmail || missingTraffic; 
+        });
+
+        if (targets.length === 0) return alert("Seçilen kriterlere uygun eksik veri bulunamadı.");
+        
+        setShowEnrichModal(true); 
+        setIsEnriching(true); 
+        setEnrichLogs([]); 
+        setEnrichProgress({ current: 0, total: targets.length });
+
+        const addEnrichLog = (msg, type = 'info') => {
+            setEnrichLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), msg: msg, type: type }]);
+        };
+
+        addEnrichLog(`Toplam ${targets.length} site taranacak...`, 'info');
+        
+        for (let i = 0; i < targets.length; i++) {
+            const lead = targets[i]; 
+            let updates = {};
+            setEnrichProgress(prev => ({ ...prev, current: i + 1 }));
+            
+            const missingEmail = !lead.email || lead.email.length < 5 || lead.statusKey === 'MAIL_ERROR';
+            const missingTraffic = !lead.trafficStatus || !lead.trafficStatus.label || ['Bilinmiyor', 'Veri Yok', 'Hata', '-', 'API Ayarı Yok'].includes(lead.trafficStatus.label) || !lead.trafficStatus.value || lead.trafficStatus.value < 100;
+
+            addEnrichLog(`${window.cleanDomain(lead.url)} analizi başlıyor...`, 'info');
+
+            if ((mode === 'TRAFFIC' || mode === 'BOTH') && missingTraffic) {
+                addEnrichLog(`> Trafik aranıyor...`, 'warning');
+                try { 
+                    const t = await window.checkTraffic(lead.url); 
+                    if(t && t.label !== 'Hata' && t.label !== 'API Ayarı Yok') {
+                        updates.trafficStatus = t; 
+                        addEnrichLog(`> Trafik bulundu: ${t.label}`, 'success');
+                    } else {
+                        addEnrichLog(`> Trafik verisi alınamadı (${t.label}).`, 'error');
+                    }
+                } catch(e){
+                    addEnrichLog(`> Trafik API hatası: ${e.message}`, 'error');
+                }
+            }
+
+            if ((mode === 'EMAIL' || mode === 'BOTH') && missingEmail) {
+                addEnrichLog(`> Email taranıyor...`, 'warning');
+                try { 
+                    const e = await window.findEmailsOnSite(lead.url); 
+                    if(e) { 
+                        updates.email = e; 
+                        addEnrichLog(`> Email bulundu: ${e}`, 'success');
+                        if(lead.statusKey === 'MAIL_ERROR') { 
+                            updates.statusKey = 'New'; 
+                            updates.stage = 0; 
+                            addEnrichLog(`> Durum düzeltildi (New).`, 'success');
+                        } 
+                    } else {
+                        addEnrichLog(`> Email bulunamadı.`, 'error');
+                    }
+                } catch(err){
+                    addEnrichLog(`> Email hatası: ${err.message}`, 'error');
+                }
+            }
+
+            const hasUpdates = Object.keys(updates).length > 0;
+            
+            if (hasUpdates && isDbConnected) {
+                try {
+                    await dbInstance.collection("leads").doc(lead.id).update(updates);
+                    addEnrichLog(`✓ Veritabanı güncellendi.`, 'success');
+                    setCrmData(prev => prev.map(p => p.id === lead.id ? { ...p, ...updates } : p));
+                } catch(dbErr) {
+                    addEnrichLog(`x DB Yazma Hatası: ${dbErr.message}`, 'error');
+                }
+            } else {
+                addEnrichLog(`- Güncelleme yapılmadı.`, 'info');
+            }
+            
+            await new Promise(r => setTimeout(r, 1000));
+        }
+        
+        addEnrichLog(`Tüm işlemler tamamlandı.`, 'success');
+        setIsEnriching(false);
+    };
+
+    // 10. Hunter Tarama Başlatma
+    const startScan = async () => {
+        const keywordList = keywords.split(/[\n,]+/).map(k => k.trim()).filter(k => k.length > 0);
+        if (keywordList.length === 0) return alert("Kelime giriniz.");
+        
+        scanIntervalRef.current = true; 
+        setIsScanning(true); 
+        setLeads([]); 
+        setHunterLogs([]); 
+        setHunterProgress(0); 
+        
+        const addLog = (msg, type='info') => setHunterLogs(p => [...p, {time: new Date().toLocaleTimeString(), message: msg, type}]);
+
+        for (let i = 0; i < keywordList.length; i++) {
+            if (!scanIntervalRef.current) break;
+            const kw = keywordList[i]; 
+            addLog(`Aranıyor: ${kw}`);
+            
+            addLog(`${kw} için sonuçlar taranıyor... (Mock)`, 'warning');
+            await new Promise(r => setTimeout(r, 1000));
+            setHunterProgress(((i + 1) / keywordList.length) * 100);
+        }
+        
+        setIsScanning(false); 
+        scanIntervalRef.current = false; 
+        addLog("Bitti.", 'success');
+    };
+
+    const stopScan = () => { 
+        scanIntervalRef.current = false; 
+        setIsScanning(false); 
+    };
+
     return {
         selectedLead, setSelectedLead,
         isSending,
@@ -313,7 +585,7 @@ window.useLeadHunterServices = (
         bulkConfig, setBulkConfig,
         executeBulkSend,
         isCheckingBulk,
-        handleBulkReplyCheck: services?.handleBulkReplyCheck || window.useLeadHunterServices.handleBulkReplyCheck, // Geri kalanlar orijinalden gelecek
+        handleBulkReplyCheck,
         bulkUpdateStatus,
         bulkSetLanguage,
         bulkAddNotViable,
@@ -330,8 +602,6 @@ window.useLeadHunterServices = (
         hunterLogsEndRef,
         startScan,
         stopScan,
-        fixAllTrafficData,
-        // Diğerleri... (handleBulkReplyCheck vs. için closure içinde tanımlı olmalı, burada kısaltıldı)
-        handleBulkReplyCheck, bulkUpdateStatus, bulkSetLanguage, bulkAddNotViable, enrichDatabase, startScan, stopScan, fixAllTrafficData
+        fixAllTrafficData
     };
 };
