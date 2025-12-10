@@ -62,37 +62,60 @@ function doPost(e) {
         var threadId = data.threadId;
         var resultThreadId = null;
 
-        // Thread ID varsa kontrol et
+        // Thread ID varsa işlem yap
         if (threadId) {
           try {
             var thread = GmailApp.getThreadById(threadId);
             if (thread) {
-                // Thread mantığı düzeltmesi:
-                // Eğer son mesajı ben attıysam ve cevap gelmediyse, 'reply' metodu maili bana (gönderene) atar.
-                // Bu yüzden son mesajın kimden geldiğini kontrol ediyoruz.
-                
+                // --- THREADING (GRUPLAMA) İÇİN KRİTİK DÜZELTME ---
+                // Gmail'in mailleri aynı zincirde tutması için konu başlığının (Subject)
+                // karakteri karakterine aynı olması gerekir. Şablondan gelen konu bazen
+                // farklı olabilir. Bu yüzden mevcut thread'in konusunu alıp onu kullanıyoruz.
+                var threadSubject = thread.getFirstMessageSubject();
+                if (threadSubject && threadSubject !== "") {
+                   subject = threadSubject; 
+                }
+
                 var messages = thread.getMessages();
-                var lastMsg = messages[messages.length - 1];
-                var lastSender = lastMsg.getFrom();
+                var myEmailLower = myEmail.toLowerCase();
                 
-                // Eğer son mesaj benden değilse (Müşteriden geldiyse), REPLY ile cevap ver (Zinciri korur)
-                if (lastSender.toLowerCase().indexOf(myEmail.toLowerCase()) === -1) {
-                    thread.reply(body, { htmlBody: htmlBody, from: myEmail });
+                // Müşteriden gelen bir mesaj var mı diye bak
+                var msgFromCustomer = null;
+                // Sondan başa doğru tara
+                for (var k = messages.length - 1; k >= 0; k--) {
+                     // Eğer gönderen ben değilsem, müşteridir.
+                     if (messages[k].getFrom().toLowerCase().indexOf(myEmailLower) === -1) {
+                         msgFromCustomer = messages[k];
+                         break;
+                     }
+                }
+
+                if (msgFromCustomer) {
+                    // DURUM A: Müşteriden bir mesaj var (Cevap vermiş).
+                    // O zaman doğrudan o mesaja 'reply' atıyoruz.
+                    // Bu fonksiyon, "Reply" headerlarını ekler ve zinciri kesin olarak korur.
+                    msgFromCustomer.reply(body, { htmlBody: htmlBody, from: myEmail });
                     resultThreadId = threadId;
                 } else {
-                    // Eğer son mesaj bendense (Takip maili), REPLY kullanma.
-                    // Çünkü reply kendine mail atar.
-                    // Bunun yerine aşağıda createDraft ile gönderilecek.
-                    // Gmail, konu başlığı (Subject) aynı olduğu sürece bunları otomatik birleştirir.
-                    resultThreadId = null; 
+                    // DURUM B: Müşteriden hiç mesaj yok (Sadece ben takip mailleri atmışım).
+                    // Eğer 'reply' kullanırsam, son mesaj benden olduğu için mail BANA gelir.
+                    // Bu yüzden 'createDraft' (veya sendEmail) ile yeni bir mail atıyoruz.
+                    // ANCAK: Yukarıda 'subject' değişkenini thread'in konusuyla eşitlediğimiz için
+                    // Gmail bunları otomatik olarak gruplayacaktır.
+                    resultThreadId = null; // null yaparak aşağıda createDraft bloğuna düşmesini sağlıyoruz.
                 }
             }
-          } catch (err) { threadId = null; }
+          } catch (err) { 
+              // Thread ID bozuksa null yap, sıfırdan mail at
+              threadId = null; 
+          }
         }
 
-        // Thread bulunamadıysa veya takip maili ise (Reply kullanılmadıysa)
+        // Eğer yukarıda bir reply işlemi yapılmadıysa (veya thread yoksa)
         if (!resultThreadId) {
           try {
+              // Yeni mail oluştur (veya takip maili)
+              // Konu başlığı (subject) yukarıda thread ile eşitlendiği için gruplanacaktır.
               var draft = GmailApp.createDraft(cleanTo, subject, body, { htmlBody: htmlBody });
               var message = draft.send(); 
               resultThreadId = message.getThread().getId();
@@ -111,7 +134,7 @@ function doPost(e) {
   }
 }
 
-// --- GÜNCELLENMİŞ AKILLI TARAMA FONKSİYONU ---
+// --- AKILLI TARAMA FONKSİYONU ---
 function checkSingleThread(threadId, myEmail) {
   try {
     var thread = GmailApp.getThreadById(threadId);
@@ -120,8 +143,7 @@ function checkSingleThread(threadId, myEmail) {
     var msgs = thread.getMessages();
     var myEmailLower = myEmail.toLowerCase();
     
-    // Sondan başa doğru son 3 mesajı tara (Böylece en son mesaj bounce olmasa bile yakalarız)
-    // Örnek: Siz mail attınız, bounce geldi, sonra siz tekrar mail attınız. Aradaki bounce'u kaçırmayalım.
+    // Sondan başa doğru son 3 mesajı tara
     var scanLimit = Math.max(0, msgs.length - 3);
 
     for (var i = msgs.length - 1; i >= scanLimit; i--) {
@@ -130,7 +152,7 @@ function checkSingleThread(threadId, myEmail) {
         var subj = msg.getSubject().toLowerCase();
         var body = msg.getPlainBody().toLowerCase(); 
 
-        // 1. BOUNCE (HATA) KONTROLÜ - Çok sıkı filtreler
+        // 1. BOUNCE (HATA) KONTROLÜ
         var isBounceSender = (from.includes('mailer-daemon') || from.includes('postmaster') || from.includes('delivery') || from.includes('google') || from.includes('notify'));
         
         var isBounceContent = (
@@ -150,9 +172,7 @@ function checkSingleThread(threadId, myEmail) {
         }
 
         // 2. NORMAL CEVAP KONTROLÜ
-        // Eğer mesaj benden değilse, bu bir müşteri cevabıdır.
         if (from.indexOf(myEmailLower) === -1) {
-             // Ancak bu mesajın bounce olmadığından emin olalım (yukarıdaki if'e girmediyse bounce değildir ama yine de)
              if (!isBounceSender) {
                  return {
                     hasReply: true,
