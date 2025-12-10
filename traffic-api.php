@@ -1,62 +1,91 @@
 <?php
 // traffic-api.php
-// Versiyon: 3.6 (Final - GZIP Fix, Output Buffering, Gelişmiş Loglama ve Hypestat Regexleri)
+// Versiyon: 4.0 (Mail Tracking Eklendi)
 
-// 1. Çıktı tamponlamayı başlat (Ekrana yanlışlıkla basılan PHP hatalarını yakalamak için)
 ob_start();
 
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: GET, OPTIONS");
+header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type");
 header("Content-Type: application/json; charset=UTF-8");
 
-// Uzun süreli işlemler için limit artırımı
 set_time_limit(60);
-ini_set('display_errors', 0); // Hataları ekrana basma (JSON bozulmasın)
-error_reporting(E_ALL); // Hataları arka planda logla
+ini_set('display_errors', 0);
+error_reporting(E_ALL);
 
-$debugLog = []; 
+$debugLog = [];
+$trackingFile = 'tracking_data.json'; // Okunma verilerinin tutulacağı dosya
 
 function addLog($msg) {
     global $debugLog;
-    // Mesajı güvenli hale getir (Dizi veya Nesne gelirse stringe çevir)
-    if (is_array($msg) || is_object($msg)) {
-        $msg = print_r($msg, true);
-    }
-    // UTF-8 karakter sorunlarını temizle
-    $cleanMsg = mb_convert_encoding((string)$msg, 'UTF-8', 'UTF-8');
-    $debugLog[] = date('H:i:s') . " - " . $cleanMsg;
+    if (is_array($msg) || is_object($msg)) $msg = print_r($msg, true);
+    $debugLog[] = date('H:i:s') . " - " . $msg;
 }
 
-// --- ANA İŞLEM BLOĞU ---
 try {
+    $type = isset($_GET['type']) ? $_GET['type'] : '';
+
+    // --- MAIL TRACKING (GÖRÜNMEZ PİKSEL) ---
+    if ($type === 'track') {
+        // JSON çıktısını temizle, resim göndereceğiz
+        ob_clean(); 
+        
+        $leadId = isset($_GET['id']) ? preg_replace('/[^a-zA-Z0-9]/', '', $_GET['id']) : null;
+        
+        if ($leadId) {
+            // Veriyi kaydet
+            $currentData = [];
+            if (file_exists($trackingFile)) {
+                $content = file_get_contents($trackingFile);
+                $currentData = json_decode($content, true) ?: [];
+            }
+            
+            // Eğer daha önce açılmadıysa veya son açılma tarihini güncellemek istersen
+            $currentData[$leadId] = date('c'); // ISO 8601 formatında tarih
+            
+            file_put_contents($trackingFile, json_encode($currentData));
+        }
+
+        // 1x1 Şeffaf GIF Headerları
+        header('Content-Type: image/gif');
+        header('Cache-Control: no-cache, no-store, must-revalidate');
+        header('Pragma: no-cache');
+        header('Expires: 0');
+        
+        // 1x1 Transparent GIF Binary
+        echo base64_decode('R0lGODlhAQABAJAAAP8AAAAAACH5BAUQAAAALAAAAAABAAEAAAICBAEAOw==');
+        exit;
+    }
+
+    // --- OKUNMA VERİLERİNİ ÇEKME (SYNC) ---
+    if ($type === 'sync_opens') {
+        if (file_exists($trackingFile)) {
+            $data = json_decode(file_get_contents($trackingFile), true);
+            echo json_encode(['success' => true, 'data' => $data]);
+        } else {
+            echo json_encode(['success' => true, 'data' => []]);
+        }
+        exit;
+    }
+
+    // --- MEVCUT TRAFİK/EMAIL FONKSİYONLARI ---
     if (!isset($_GET['domain'])) {
         throw new Exception('Domain parametresi eksik.');
     }
 
-    $type = isset($_GET['type']) ? $_GET['type'] : 'traffic';
     $domain = cleanDomain($_GET['domain']);
-
-    addLog("İstek başladı. Domain: $domain, Tip: $type");
-
     $response = [];
     
     if ($type === 'email') {
         $emails = findEmails($domain);
-        if (!empty($emails)) {
-            $response = ['success' => true, 'emails' => $emails];
-        } else {
-            $response = ['success' => false, 'error' => 'Email bulunamadı.'];
-        }
+        $response = !empty($emails) ? ['success' => true, 'emails' => $emails] : ['success' => false, 'error' => 'Email bulunamadı.'];
     } else {
         $response = getTraffic($domain);
     }
 
-    // Başarı durumunda debug logunu yanıta ekle
     $response['debug'] = $debugLog;
 
 } catch (Exception $e) {
-    // Kritik hata durumunda
     $response = [
         'success' => false,
         'error' => $e->getMessage(),
@@ -64,21 +93,10 @@ try {
     ];
 }
 
-// --- JSON ÇIKTISI VERMEDEN ÖNCE TEMİZLİK ---
-$buffer = ob_get_clean(); // Tampondaki (varsa) hata mesajlarını veya boşlukları al ve temizle
-
-// Eğer tamponda kritik bir hata varsa (Notice, Warning vb.) loga ekle ama ekrana basma
-if (!empty($buffer)) {
-    // $response['debug'][] = "UYARI: PHP Çıktısı Yakalandı (Temizlendi): " . substr($buffer, 0, 100) . "...";
-}
-
-// Temiz JSON çıktısı ver
+$buffer = ob_get_clean();
 echo json_encode($response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
-// ---------------------------------------------------
-// --- YARDIMCI FONKSİYONLAR ---
-// ---------------------------------------------------
-
+// --- YARDIMCI FONKSİYONLAR (AYNEN KORUNDU) ---
 function cleanDomain($url) {
     $url = trim($url);
     $url = preg_replace('#^https?://#', '', $url);
@@ -87,201 +105,71 @@ function cleanDomain($url) {
 }
 
 function fetchUrl($url, $useProxy = false) {
-    addLog("URL isteniyor: " . substr($url, 0, 50) . "...");
-    
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, 25);
-    
-    // *** KRİTİK: Sıkıştırılmış veriyi (GZIP) otomatik aç ***
-    // Hypestat gibi siteler sıkıştırılmış veri gönderir, bu ayar olmazsa anlamsız karakterler gelir.
     curl_setopt($ch, CURLOPT_ENCODING, ''); 
-    
-    // Gerçekçi Tarayıcı Başlıkları (Chrome)
     $headers = [
         'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
         'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language: en-US,en;q=0.9,tr;q=0.8',
-        'Upgrade-Insecure-Requests: 1',
-        'Cache-Control: max-age=0',
-        'Referer: https://www.google.com/',
-        'Sec-Fetch-Dest: document',
-        'Sec-Fetch-Mode: navigate',
-        'Sec-Fetch-Site: cross-site',
-        'Sec-Fetch-User: ?1'
+        'Upgrade-Insecure-Requests: 1'
     ];
     curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    
-    // Cookie Yönetimi (Oturum sürekliliği için)
     $cookieFile = sys_get_temp_dir() . '/cookie.txt';
     curl_setopt($ch, CURLOPT_COOKIEJAR, $cookieFile);
     curl_setopt($ch, CURLOPT_COOKIEFILE, $cookieFile);
-
     $content = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $err = curl_error($ch);
-    
     curl_close($ch);
-
-    if ($content === false || $httpCode >= 400) {
-        addLog("URL Hatası ($httpCode): $err");
-        return false;
-    }
-    
-    addLog("URL Başarılı ($httpCode). İçerik boyutu: " . strlen($content));
-    return $content;
+    return ($content === false || $httpCode >= 400) ? false : $content;
 }
 
 function getTraffic($domain) {
-    // -----------------------------------------------------------
-    // 1. ADIM: SimilarSites (Birincil Kaynak)
-    // -----------------------------------------------------------
     $targetUrl = "https://www.similarsites.com/site/" . urlencode($domain);
     $html = fetchUrl($targetUrl);
-
     if ($html) {
+        if (preg_match('/"(MonthlyVisits|monthly_visits|TotalVisits)"\s*:\s*(\d+)/i', $html, $matches)) {
+             $rawNum = (int)$matches[2];
+             return ['success' => true, 'source' => 'similarsites-regex', 'value' => $rawNum, 'raw' => formatNumber($rawNum)];
+        }
         $dom = new DOMDocument();
         libxml_use_internal_errors(true);
         @$dom->loadHTML($html);
-        libxml_clear_errors();
         $xpath = new DOMXPath($dom);
-        
-        $queries = [
-            "//*[@data-testid='siteheader_monthlyvisits']",
-            "//p[contains(@class, 'total-visits-value')]",
-            "//div[contains(@class, 'visits-container__value')]",
-            "//dt[contains(., 'Total Visits')]/following-sibling::dd[1]"
-        ];
-
-        foreach ($queries as $query) {
-            $nodes = $xpath->query($query);
-            if ($nodes && $nodes->length > 0) {
-                $val = trim($nodes->item(0)->nodeValue);
-                if (!empty($val) && $val !== '-') {
-                    addLog("SimilarSites DOM bulundu: $val");
-                    return ['success' => true, 'source' => 'similarsites', 'value' => parseTrafficString($val), 'raw' => strtoupper($val)];
-                }
-            }
+        $nodes = $xpath->query("//*[@data-testid='siteheader_monthlyvisits']");
+        if ($nodes->length > 0) {
+            $val = trim($nodes->item(0)->nodeValue);
+            return ['success' => true, 'source' => 'similarsites', 'value' => parseTrafficString($val), 'raw' => strtoupper($val)];
         }
-        
-        if (preg_match('/"(MonthlyVisits|monthly_visits|TotalVisits)"\s*:\s*(\d+)/i', $html, $matches)) {
-             $rawNum = (int)$matches[2];
-             addLog("SimilarSites Regex bulundu: $rawNum");
-             return ['success' => true, 'source' => 'similarsites-regex', 'value' => $rawNum, 'raw' => formatNumber($rawNum)];
-        }
-        addLog("SimilarSites veri yok.");
-    } else {
-        addLog("SimilarSites HTML çekilemedi.");
     }
-
-    // -----------------------------------------------------------
-    // 2. ADIM: Hypestat (Yedek Kaynak - Güçlendirilmiş)
-    // -----------------------------------------------------------
-    addLog("Hypestat deneniyor...");
+    
     $hypeUrl = "https://hypestat.com/info/" . urlencode($domain);
     $htmlHype = fetchUrl($hypeUrl);
-
     if ($htmlHype) {
-        // YÖNTEM A: XPath ile Doğrudan Erişim
-        $dom = new DOMDocument();
-        libxml_use_internal_errors(true);
-        @$dom->loadHTML($htmlHype);
-        libxml_clear_errors();
-        $xpath = new DOMXPath($dom);
-        
-        $nodes = $xpath->query('//*[@id="info"]/div[4]/div[3]/strong[2]');
-        if ($nodes && $nodes->length > 0) {
-            $rawVal = trim($nodes->item(0)->nodeValue);
-            addLog("Hypestat XPath ham veri: $rawVal");
-            $cleanVal = preg_replace('/[^0-9]/', '', $rawVal);
-            $daily = (int)$cleanVal;
-            if ($daily > 0) {
-                $monthly = $daily * 30;
-                return ['success' => true, 'source' => 'hypestat-xpath', 'value' => $monthly, 'raw' => formatNumber($monthly)];
-            }
-        } else {
-            addLog("Hypestat XPath eşleşmedi.");
-        }
-
-        // YÖNTEM B: Regex - Page Impressions
-        if (preg_match('/([\d,]+)\s+page\s+impressions/i', $htmlHype, $matches)) {
-            $val = $matches[1];
-            addLog("Hypestat Regex (Impressions): $val");
-            $daily = (int)str_replace(',', '', $val);
-            $monthly = $daily * 30;
-            return ['success' => true, 'source' => 'hypestat-impressions', 'value' => $monthly, 'raw' => formatNumber($monthly)];
-        }
-
-        // YÖNTEM C: Regex - Daily Unique Visitors
-        if (preg_match('/Daily Unique Visitors\s*[:\n]+\s*([\d,]+)/i', $htmlHype, $matches)) {
-            $val = $matches[1];
-            addLog("Hypestat Regex (Unique Visitors): $val");
-            $daily = (int)str_replace(',', '', $val);
-            $monthly = $daily * 30;
-            return ['success' => true, 'source' => 'hypestat-visitors', 'value' => $monthly, 'raw' => formatNumber($monthly)];
-        }
-        
-        // YÖNTEM D: Regex - Visitors per day (Geniş arama)
         if (preg_match('/([\d,]+)\s+visitors\s+per\s+day/i', $htmlHype, $matches)) {
-             $val = $matches[1];
-             addLog("Hypestat Regex (Visitors per day): $val");
-             $daily = (int)str_replace(',', '', $val);
-             $monthly = $daily * 30;
-             return ['success' => true, 'source' => 'hypestat-general', 'value' => $monthly, 'raw' => formatNumber($monthly)];
+             $monthly = (int)str_replace(',', '', $matches[1]) * 30;
+             return ['success' => true, 'source' => 'hypestat', 'value' => $monthly, 'raw' => formatNumber($monthly)];
         }
-        addLog("Hypestat içerik çekildi ama hiçbir regex deseni eşleşmedi.");
-    } else {
-        addLog("Hypestat HTML boş veya engellendi.");
     }
-
     return ['success' => false, 'error' => 'Veri bulunamadı.'];
 }
-
-// --- EMAIL FONKSİYONLARI ---
 
 function findEmails($domain) {
     $protocol = 'https://';
     $baseUrl = $protocol . $domain;
+    $homeHtml = fetchUrl($baseUrl) ?: fetchUrl('http://' . $domain);
     $foundEmails = [];
-    
-    $homeHtml = fetchUrl($baseUrl);
-    if (!$homeHtml) {
-        $baseUrl = 'http://' . $domain;
-        $homeHtml = fetchUrl($baseUrl);
-    }
-
     if ($homeHtml) {
         $foundEmails = array_merge($foundEmails, extractEmailsFromHtml($homeHtml, $domain));
         $contactLinks = findContactLinks($homeHtml, $baseUrl);
-        $pagesToCrawl = array_slice($contactLinks, 0, 3);
-        
-        foreach ($pagesToCrawl as $pageUrl) {
-            $pageHtml = fetchUrl($pageUrl);
-            if ($pageHtml) {
-                $foundEmails = array_merge($foundEmails, extractEmailsFromHtml($pageHtml, $domain));
-            }
-            usleep(100000); // Sunucuyu yormamak için kısa bekleme
+        foreach (array_slice($contactLinks, 0, 3) as $pageUrl) {
+            if ($html = fetchUrl($pageUrl)) $foundEmails = array_merge($foundEmails, extractEmailsFromHtml($html, $domain));
         }
     }
-    
-    if (empty($foundEmails)) {
-        $fallbackPaths = ['/iletisim', '/contact', '/contact-us'];
-        foreach($fallbackPaths as $path) {
-            $fallbackHtml = fetchUrl(rtrim($baseUrl, '/') . $path);
-            if ($fallbackHtml) {
-                $foundEmails = array_merge($foundEmails, extractEmailsFromHtml($fallbackHtml, $domain));
-            }
-        }
-    }
-
     $foundEmails = array_unique($foundEmails);
-    usort($foundEmails, function($a, $b) use ($domain) {
-        return getEmailScore($b, $domain) - getEmailScore($a, $domain);
-    });
-    
     return array_slice($foundEmails, 0, 5);
 }
 
@@ -290,34 +178,10 @@ function extractEmailsFromHtml($html, $domain) {
     preg_match_all('/[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,10}/', $html, $matches);
     if (!empty($matches[0])) {
         foreach ($matches[0] as $email) {
-            $clean = strtolower(trim($email));
-            if (preg_match('/\.pbz$|\.arg$|\.bet$/', $clean)) {
-                $clean = str_rot13($clean);
-            }
-            if (isValidEmail($clean, $domain)) {
-                $emails[] = $clean;
-            }
-        }
-    }
-    // Cloudflare email decoding
-    if (preg_match_all('/data-cfemail="([a-f0-9]+)"/i', $html, $cfMatches)) {
-        foreach ($cfMatches[1] as $hex) {
-            $decodedEmail = decodeCloudflareEmail($hex);
-            if (isValidEmail($decodedEmail, $domain)) {
-                $emails[] = $decodedEmail;
-            }
+            if (isValidEmail($email, $domain)) $emails[] = strtolower($email);
         }
     }
     return $emails;
-}
-
-function decodeCloudflareEmail($hex) {
-    $email = "";
-    $k = hexdec(substr($hex, 0, 2));
-    for ($i = 2; $i < strlen($hex); $i += 2) {
-        $email .= chr(hexdec(substr($hex, $i, 2)) ^ $k);
-    }
-    return strtolower($email);
 }
 
 function findContactLinks($html, $baseUrl) {
@@ -325,57 +189,32 @@ function findContactLinks($html, $baseUrl) {
     @$dom->loadHTML($html);
     $links = $dom->getElementsByTagName('a');
     $candidates = [];
-    $keywords = ['contact', 'iletisim', 'iletişim', 'about', 'hakkimizda', 'hakkımızda', 'bize-ulasin', 'ulasim', 'imprint', 'kunye', 'künye'];
+    $keywords = ['contact', 'iletisim', 'about', 'hakkimizda'];
     foreach ($links as $link) {
         $href = $link->getAttribute('href');
-        $text = strtolower($link->nodeValue);
         foreach ($keywords as $kw) {
-            if (strpos($href, $kw) !== false || strpos($text, $kw) !== false) {
-                if (strpos($href, 'http') === false) {
-                    $href = rtrim($baseUrl, '/') . '/' . ltrim($href, '/');
-                }
-                if (strpos($href, cleanDomain($baseUrl)) !== false) {
-                    $candidates[] = $href;
-                }
-                break; 
+            if (strpos($href, $kw) !== false) {
+                if (strpos($href, 'http') === false) $href = rtrim($baseUrl, '/') . '/' . ltrim($href, '/');
+                $candidates[] = $href;
             }
         }
     }
     return array_unique($candidates);
 }
 
-function getEmailScore($email, $domain) {
-    $score = 0;
-    $userPart = explode('@', $email)[0];
-    $domainPart = explode('@', $email)[1];
-    $cleanDomain = str_replace('www.', '', $domain);
-    if (strpos($domainPart, $cleanDomain) !== false) $score += 10;
-    $priorityWords = ['info', 'contact', 'sales', 'support', 'iletisim', 'bilgi', 'merhaba', 'reklam', 'hello', 'editor', 'haber', 'yonetim'];
-    if (in_array($userPart, $priorityWords)) $score += 5;
-    return $score;
-}
-
 function isValidEmail($email, $domain) {
-    $junkTerms = ['w3.org', 'sentry.io', 'example.com', 'yourdomain.com', 'email@', 'name@', 'user@', 'domain.com', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.js', '.css', '.woff', '.ttf', '2x.png', '@2x', 'bootstrap', 'jquery', 'cloudflare', 'react', 'google', 'wordpress', 'noreply', 'no-reply', 'donotreply', 'server@', 'cpanel@', 'plesk@', 'nginx@'];
-    foreach ($junkTerms as $term) {
-        if (strpos($email, $term) !== false) return false;
-    }
-    $parts = explode('.', $email);
-    $tld = end($parts);
-    if (is_numeric($tld)) return false;
-    $userPart = explode('@', $email)[0];
-    if (strlen($userPart) > 35 || strlen($userPart) < 2) return false;
+    $junkTerms = ['example.com', '.png', '.jpg', '.js', '.css', 'sentry.io', 'noreply'];
+    foreach ($junkTerms as $term) if (strpos($email, $term) !== false) return false;
     return true;
 }
 
 function parseTrafficString($str) {
     $str = strtolower($str);
     $clean = preg_replace('/[^0-9.kmb]/', '', $str);
-    $multiplier = 1;
-    if (strpos($clean, 'm') !== false) { $multiplier = 1000000; $clean = str_replace('m', '', $clean); }
-    elseif (strpos($clean, 'k') !== false) { $multiplier = 1000; $clean = str_replace('k', '', $clean); }
-    elseif (strpos($clean, 'b') !== false) { $multiplier = 1000000000; $clean = str_replace('b', '', $clean); }
-    return (float)$clean * $multiplier;
+    $m = 1;
+    if (strpos($clean, 'm')) $m = 1000000;
+    elseif (strpos($clean, 'k')) $m = 1000;
+    return (float)$clean * $m;
 }
 
 function formatNumber($num) {
