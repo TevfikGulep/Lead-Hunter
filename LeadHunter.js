@@ -1,5 +1,5 @@
 // LeadHunter.js
-// Görev: Ana Bileşen (Controller) - Tüm Hook'ları birleştirir ve arayüzü oluşturur.
+// GÜNCELLEME: Veri akışı düzeltildi. itemsPerPage ve selectAllFiltered özellikleri tab'lara iletiliyor.
 
 const { useState, useEffect } = React;
 
@@ -114,6 +114,13 @@ const LeadHunter = () => {
                             totalPages={data.totalPages} 
                             setCurrentPage={data.setCurrentPage} 
                             totalRecords={data.processedData.length} 
+                            
+                            // YENİ EKLENEN PROPS
+                            itemsPerPage={data.itemsPerPage}
+                            setItemsPerPage={data.setItemsPerPage}
+                            selectAllFiltered={data.selectAllFiltered}
+                            clearSelection={data.clearSelection}
+                            
                             setHistoryModalLead={setHistoryModalLead} 
                             getStageInfo={actions.getStageInfo} 
                             handleSort={data.handleSort} 
@@ -171,6 +178,12 @@ const LeadHunter = () => {
                             toggleSelection={data.toggleSelection} 
                             handleSort={data.handleSort} 
                             sortConfig={data.sortConfig} 
+                            
+                            // YENİ EKLENEN PROPS
+                            itemsPerPage={data.itemsPerPage}
+                            setItemsPerPage={data.setItemsPerPage}
+                            selectAllFiltered={data.selectAllFiltered}
+                            clearSelection={data.clearSelection}
                             
                             // Edit Props
                             editingRowId={actions.editingRowId} 
