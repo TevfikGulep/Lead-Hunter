@@ -1,5 +1,5 @@
 // CrmTab.js
-// Görev: Müşteri veritabanı listeleme (Mail Okunma İkonu Eklendi)
+// GÜNCELLEME: 'Tüm filtreli kayıtları seç' özelliği, yeni sayfalama yapısı ve Mail Takip İkonu eklendi.
 
 window.CrmTab = ({
     crmData,
@@ -34,12 +34,21 @@ window.CrmTab = ({
     enrichDatabase,
     isEnriching,
     setShowImportModal,
-    bulkUpdateStatus
+    bulkUpdateStatus,
+    itemsPerPage,    // YENİ
+    setItemsPerPage, // YENİ
+    selectAllFiltered // YENİ
 }) => {
+    
+    // Global seçim mantığı:
+    // Eğer sayfadaki tüm kayıtlar seçiliyse VE toplam kayıt sayısı sayfadaki kayıt sayısından büyükse
+    // "Tümünü seç" seçeneğini göster.
+    const isAllPageSelected = paginatedItems.length > 0 && selectedIds.size >= paginatedItems.length;
+    const canSelectAllGlobal = isAllPageSelected && totalRecords > paginatedItems.length && selectedIds.size < totalRecords;
+
     return (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in">
             <div className="p-6 border-b border-slate-100 flex flex-col gap-4">
-                {/* Üst Bar (Başlık ve Butonlar) - Değişiklik Yok */}
                 <div className="flex flex-wrap justify-between items-center gap-4">
                     <div className="flex items-center gap-3">
                         <h3 className="font-bold text-slate-800 text-lg">Müşteri Veritabanı</h3>
@@ -72,10 +81,31 @@ window.CrmTab = ({
             </div>
             
             <div className="overflow-x-auto">
+                {/* --- GLOBAL SELECTION BANNER (YENİ) --- */}
+                {canSelectAllGlobal && (
+                    <div className="bg-indigo-50 border-b border-indigo-100 p-2 text-center text-xs text-indigo-800 animate-in slide-in-from-top-2">
+                        Bu sayfadaki <strong>{paginatedItems.length}</strong> kayıt seçildi. 
+                        <button 
+                            onClick={selectAllFiltered} 
+                            className="ml-2 font-bold underline hover:text-indigo-900 cursor-pointer"
+                        >
+                            Filtrelenmiş listenin tamamındaki {totalRecords} kaydı seçmek için tıklayın.
+                        </button>
+                    </div>
+                )}
+                {/* ------------------------------------- */}
+
                 <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50 text-slate-500 border-b">
                         <tr>
-                            <th className="p-4 w-10"><input type="checkbox" className="custom-checkbox" checked={selectedIds.size > 0 && selectedIds.size === paginatedItems.length} onChange={() => toggleSelectAll(paginatedItems)}/></th>
+                            <th className="p-4 w-10">
+                                <input 
+                                    type="checkbox" 
+                                    className="custom-checkbox" 
+                                    checked={isAllPageSelected} 
+                                    onChange={() => toggleSelectAll(paginatedItems)}
+                                />
+                            </th>
                             <th className="p-4 cursor-pointer" onClick={() => handleSort('url')}>Site (Mail Takip)</th>
                             <th className="p-4">Email</th>
                             <th className="p-4">Son Gönderilen</th>
@@ -92,8 +122,6 @@ window.CrmTab = ({
                             const mainEmail = item.email ? item.email.split(',')[0].trim() : '';
                             const relatedSites = emailMap[mainEmail] || [];
                             const siteCount = relatedSites.length;
-                            
-                            // MAIL OKUNDU KONTROLÜ
                             const isMailOpened = !!item.mailOpenedAt;
                             
                             return (
@@ -104,7 +132,7 @@ window.CrmTab = ({
                                         <input value={editFormData.url} onChange={e => handleEditChange('url', e.target.value)} className="w-full p-1 border rounded" />
                                     ) : (
                                         <div className="flex items-center gap-2">
-                                            {/* OKUNDU GÖSTERGESİ */}
+                                            {/* MAIL TRACKING ICON */}
                                             {isMailOpened ? (
                                                 <div className="w-3 h-3 rounded-full bg-green-500 shadow-sm animate-pulse" title={`Mail Okundu: ${new Date(item.mailOpenedAt).toLocaleString('tr-TR')}`}></div>
                                             ) : (
@@ -132,7 +160,6 @@ window.CrmTab = ({
                                         </div>
                                     )}
                                 </td>
-                                {/* Diğer kolonlar aynı */}
                                 <td className="p-4 text-xs text-slate-500">{getStageInfo((item.stage || 0) - 1, item.language).label}</td>
                                 <td className="p-4 text-slate-500">{item.lastContactDate ? new Date(item.lastContactDate).toLocaleDateString('tr-TR') : '-'}</td>
                                 <td className="p-4 text-slate-600 font-mono text-xs flex items-center gap-1">
@@ -162,7 +189,14 @@ window.CrmTab = ({
                         )})}
                     </tbody>
                 </table>
-                <window.PaginationControls currentPage={currentPage} totalPages={totalPages} setCurrentPage={setCurrentPage} totalRecords={totalRecords} />
+                <window.PaginationControls 
+                    currentPage={currentPage} 
+                    totalPages={totalPages} 
+                    setCurrentPage={setCurrentPage} 
+                    totalRecords={totalRecords}
+                    itemsPerPage={itemsPerPage}     // YENİ
+                    setItemsPerPage={setItemsPerPage} // YENİ
+                />
             </div>
         </div>
     );
