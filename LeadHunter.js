@@ -233,9 +233,9 @@ const LeadHunter = () => {
     const processedData = useMemo(() => {
         let data = [...crmData];
 
-        // 1. Dashboard'a Özel Filtre
+        // 1. Dashboard'a Özel Filtre (GÜNCELLENDİ: MAIL_ERROR eklendi)
         if (activeTab === 'dashboard') {
-            const terminalStatuses = ['DEAL_ON', 'DEAL_OFF', 'DENIED', 'NOT_VIABLE', 'NON_RESPONSIVE', 'NOT_POSSIBLE'];
+            const terminalStatuses = ['DEAL_ON', 'DEAL_OFF', 'DENIED', 'NOT_VIABLE', 'NON_RESPONSIVE', 'NOT_POSSIBLE', 'MAIL_ERROR'];
             data = data.filter(i => !terminalStatuses.includes(i.statusKey));
         }
 
@@ -943,4 +943,3 @@ const LeadHunter = () => {
         </div>
     );
 };
-
