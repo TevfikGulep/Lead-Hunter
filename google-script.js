@@ -158,7 +158,7 @@ function checkSingleThread(threadId, myEmail) {
       if (from.indexOf(myEmailLower) === -1) {
 
         // Bounce Kontrolü (Mailer-Daemon, Postmaster vb.)
-        if (from.includes('mailer-daemon') || from.includes('postmaster') || from.includes('delivery-status')) {
+        if (from.includes('mailer-daemon') || from.includes('postmaster') || from.includes('delivery-status') || from.includes('notification') || from.includes('notify') || from.includes('google')) {
           return {
             hasReply: true,
             isBounce: true,
@@ -178,6 +178,17 @@ function checkSingleThread(threadId, myEmail) {
         };
       }
     }
-    return { hasReply: false };
-  } catch (e) { return { hasReply: false }; }
+
+
+    // Döngü bitti, cevap yok. Ama debug için son mesajı (eğer varsa) dönelim.
+    var lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
+    var debugLastFrom = lastMsg ? lastMsg.getFrom() : "No Header";
+
+    return {
+      hasReply: false,
+      debug_last_from: debugLastFrom,
+      debug_count: msgs.length
+    };
+
+  } catch (e) { return { hasReply: false, error: e.toString() }; }
 }
