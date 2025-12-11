@@ -24,14 +24,22 @@ function doPost(e) {
       var foundCount = 0;
       var bounceCount = 0;
       var ids = data.threadIds || [];
+
+      log("BULK CHECK STARTED. IDs received: " + ids.length);
+      if (ids.length > 0) log("First ID: " + ids[0]);
+
       for (var i = 0; i < ids.length; i++) {
         try {
           var check = checkSingleThread(ids[i], myEmail);
+
+          results[ids[i]] = check; // Her sonucu kaydet (Debug icin)
+
           if (check.hasReply) {
-            results[ids[i]] = check;
             check.isBounce ? bounceCount++ : foundCount++;
           }
-        } catch (err) { }
+        } catch (err) {
+          results[ids[i]] = { error: err.toString() };
+        }
       }
       return createJSON({ 'status': 'success', 'results': results, 'foundCount': foundCount, 'bounceCount': bounceCount, 'logs': debugLogs });
     }
@@ -144,27 +152,50 @@ function createJSON(content) {
 }
 
 function checkSingleThread(threadId, myEmail) {
+  var debugMsgs = [];
   try {
     var thread = GmailApp.getThreadById(threadId);
-    if (!thread) return { hasReply: false };
+    if (!thread) return { hasReply: false, error: "Thread not found" };
+
     var msgs = thread.getMessages();
     var myEmailLower = myEmail.toLowerCase();
-    var scanLimit = Math.max(0, msgs.length - 3);
+
+    // Debug: Son 5 mesajı inceleyelim
+    var scanLimit = Math.max(0, msgs.length - 5);
+
     for (var i = msgs.length - 1; i >= scanLimit; i--) {
       var msg = msgs[i];
       var from = msg.getFrom().toLowerCase();
+      var snippet = msg.getSnippet();
 
-      // Eğer gönderen ben değilsem (Benden gelenleri zaten atlıyoruz)
+      // Her mesajı debug listesine ekle
+      debugMsgs.push({
+        index: i,
+        from: from,
+        snippet: snippet.substring(0, 50) + "...",
+        isMe: from.indexOf(myEmailLower) !== -1,
+        date: msg.getDate()
+      });
+
+      // Eğer gönderen ben değilsem
       if (from.indexOf(myEmailLower) === -1) {
 
-        // Bounce Kontrolü (Mailer-Daemon, Postmaster vb.)
-        if (from.includes('mailer-daemon') || from.includes('postmaster') || from.includes('delivery-status') || from.includes('notification') || from.includes('notify') || from.includes('google')) {
+        // Bounce Kontrolü - Genişletilmiş liste
+        var isBounce = from.includes('mailer-daemon') ||
+          from.includes('postmaster') ||
+          from.includes('delivery-status') ||
+          from.includes('notification') ||
+          from.includes('notify') ||
+          from.includes('google');
+
+        if (isBounce) {
           return {
             hasReply: true,
             isBounce: true,
-            snippet: "BOUNCE: " + msg.getSnippet(),
+            snippet: "BOUNCE DETECTED: " + snippet,
             from: msg.getFrom(),
-            date: msg.getDate()
+            debug_last_from: from,
+            messages_inspected: debugMsgs
           };
         }
 
@@ -172,23 +203,26 @@ function checkSingleThread(threadId, myEmail) {
         return {
           hasReply: true,
           isBounce: false,
-          snippet: msg.getSnippet(),
+          snippet: snippet,
           from: msg.getFrom(),
-          date: msg.getDate()
+          debug_last_from: from,
+          messages_inspected: debugMsgs
         };
       }
     }
 
-
-    // Döngü bitti, cevap yok. Ama debug için son mesajı (eğer varsa) dönelim.
-    var lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
-    var debugLastFrom = lastMsg ? lastMsg.getFrom() : "No Header";
-
+    // Döngü bitti, cevap bulunamadı
     return {
       hasReply: false,
-      debug_last_from: debugLastFrom,
-      debug_count: msgs.length
+      debug_last_from: msgs.length > 0 ? msgs[msgs.length - 1].getFrom() : "Empty",
+      messages_inspected: debugMsgs
     };
 
-  } catch (e) { return { hasReply: false, error: e.toString() }; }
+  } catch (e) {
+    return {
+      hasReply: false,
+      error: e.toString(),
+      messages_inspected: debugMsgs
+    };
+  }
 }

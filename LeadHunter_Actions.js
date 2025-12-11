@@ -7,7 +7,7 @@ window.useLeadHunterActions = (dbInstance, isDbConnected, crmData, setCrmData, s
     // --- STATE ---
     const [editingRowId, setEditingRowId] = useState(null);
     const [editFormData, setEditFormData] = useState({});
-    
+
     const [replyCheckResult, setReplyCheckResult] = useState(null);
     const [isCheckingReply, setIsCheckingReply] = useState(false);
 
@@ -27,11 +27,11 @@ window.useLeadHunterActions = (dbInstance, isDbConnected, crmData, setCrmData, s
         if (!isDbConnected || !leadId) return alert("Veritabanı bağlı değil.");
         const lead = crmData.find(l => l.id === leadId);
         if (!lead) return;
-        
+
         const stageLabel = newStage === 0 ? 'Başlamadı' : getStageInfo(newStage - 1, lead.language).label;
-        
+
         if (!confirm(`"${window.cleanDomain(lead.url)}" için son gönderilen aşamayı manuel olarak "${stageLabel}" şeklinde değiştirmek istiyor musunuz? Geçmiş buna göre güncellenecektir.`)) return;
-        
+
         try {
             const timestamp = new Date().toISOString();
             const newLog = {
@@ -44,14 +44,14 @@ window.useLeadHunterActions = (dbInstance, isDbConnected, crmData, setCrmData, s
                 lastContactDate: timestamp,
                 activityLog: firebase.firestore.FieldValue.arrayUnion(newLog)
             };
-            
+
             if (newStage > 0) {
                 const historyKey = newStage === 1 ? 'initial' : `repeat${newStage - 1}`;
                 updateData[`history.${historyKey}`] = timestamp;
             }
-            
+
             await dbInstance.collection("leads").doc(leadId).update(updateData);
-            
+
             // Optimistic Update
             setCrmData(prev => prev.map(p => {
                 if (p.id === leadId) {
@@ -72,21 +72,27 @@ window.useLeadHunterActions = (dbInstance, isDbConnected, crmData, setCrmData, s
     // 2. Gmail Cevap Kontrolü (Tekil)
     const checkGmailReply = async (lead) => {
         if (!lead.threadId) return alert("Bu kayıtla ilişkili bir mail konuşması (Thread ID) bulunamadı.");
-        
-        setIsCheckingReply(true); 
+
+        setIsCheckingReply(true);
         setReplyCheckResult(null);
-        
+
         try {
-            const response = await fetch(settings.googleScriptUrl, { 
-                method: 'POST', 
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
-                body: JSON.stringify({ action: 'check_reply', threadId: lead.threadId }) 
+            const response = await fetch(settings.googleScriptUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'check_reply', threadId: lead.threadId })
             });
             const data = await response.json();
-            
+
             if (data.status === 'success') {
+                console.log("--- DEBUG START: GMAIL CHECK ---");
+                console.log("FULL RESPONSE:", data);
+                if (data.messages_inspected) {
+                    console.table(data.messages_inspected);
+                }
+
                 setReplyCheckResult(data);
-                
+
                 if (data.isBounce) {
                     if (isDbConnected && confirm(`BU MAİL HATALI (BOUNCE)!\n\n"${data.snippet}"\n\nKayıt "Hatalı Mail" olarak güncellensin ve geçmişe işlensin mi?`)) {
                         const newLog = {
@@ -94,30 +100,30 @@ window.useLeadHunterActions = (dbInstance, isDbConnected, crmData, setCrmData, s
                             type: 'BOUNCE',
                             content: `Teslimat Hatası (Bounce): ${data.snippet || 'Adres bulunamadı'}`
                         };
-                        const updateData = { 
-                            statusKey: 'MAIL_ERROR', 
-                            statusLabel: 'Error in mail (Bounced)', 
-                            email: '', 
-                            lastContactDate: new Date().toISOString(), 
+                        const updateData = {
+                            statusKey: 'MAIL_ERROR',
+                            statusLabel: 'Error in mail (Bounced)',
+                            email: '',
+                            lastContactDate: new Date().toISOString(),
                             notes: (lead.notes || '') + ' [Sistem: Hatalı Mail Silindi]',
                             activityLog: [...(lead.activityLog || []), newLog]
                         };
-                        
+
                         await dbInstance.collection("leads").doc(lead.id).update(updateData);
-                        
+
                         const updatedLead = { ...lead, ...updateData };
                         setCrmData(prev => prev.map(p => p.id === lead.id ? updatedLead : p));
-                        
+
                         if (setHistoryModalLead) setHistoryModalLead(updatedLead);
-                        
+
                         alert("Kayıt güncellendi ve geçmişe işlendi.");
                     }
                 }
-            } else { 
-                alert("Kontrol başarısız: " + data.message); 
+            } else {
+                alert("Kontrol başarısız: " + data.message);
             }
-        } catch (e) { 
-            alert("Bağlantı hatası: " + e.message); 
+        } catch (e) {
+            alert("Bağlantı hatası: " + e.message);
         }
         setIsCheckingReply(false);
     };
@@ -130,13 +136,13 @@ window.useLeadHunterActions = (dbInstance, isDbConnected, crmData, setCrmData, s
             if (!lead) return;
             const newLog = { date: new Date().toISOString(), type: 'NOTE', content: noteContent };
             const updatedLogs = [...(lead.activityLog || []), newLog];
-            
+
             await dbInstance.collection("leads").doc(leadId).update({ activityLog: updatedLogs });
-            
+
             if (setHistoryModalLead) {
                 setHistoryModalLead(prev => ({ ...prev, activityLog: updatedLogs }));
             }
-        } catch(e) { console.error(e); alert("Not eklenirken hata oluştu."); }
+        } catch (e) { console.error(e); alert("Not eklenirken hata oluştu."); }
     };
 
     const handleDeleteNote = async (leadId, noteIndex) => {
@@ -147,13 +153,13 @@ window.useLeadHunterActions = (dbInstance, isDbConnected, crmData, setCrmData, s
             if (!lead || !lead.activityLog) return;
             const updatedLogs = [...lead.activityLog];
             updatedLogs.splice(noteIndex, 1);
-            
+
             await dbInstance.collection("leads").doc(leadId).update({ activityLog: updatedLogs });
-            
+
             if (setHistoryModalLead) {
                 setHistoryModalLead(prev => ({ ...prev, activityLog: updatedLogs }));
             }
-        } catch(e) { console.error(e); alert("Silme hatası."); }
+        } catch (e) { console.error(e); alert("Silme hatası."); }
     };
 
     const handleUpdateNote = async (leadId, noteIndex, newContent) => {
@@ -163,30 +169,30 @@ window.useLeadHunterActions = (dbInstance, isDbConnected, crmData, setCrmData, s
             if (!lead || !lead.activityLog) return;
             const updatedLogs = [...lead.activityLog];
             updatedLogs[noteIndex] = { ...updatedLogs[noteIndex], content: newContent };
-            
+
             await dbInstance.collection("leads").doc(leadId).update({ activityLog: updatedLogs });
-            
+
             if (setHistoryModalLead) {
                 setHistoryModalLead(prev => ({ ...prev, activityLog: updatedLogs }));
             }
-        } catch(e) { console.error(e); alert("Güncelleme hatası."); }
+        } catch (e) { console.error(e); alert("Güncelleme hatası."); }
     };
 
     // 4. Satır Düzenleme (Inline Edit)
-    const handleEditClick = (lead) => { 
-        setEditingRowId(lead.id); 
-        setEditFormData({ ...lead, potential: lead.trafficStatus?.label || '' }); 
+    const handleEditClick = (lead) => {
+        setEditingRowId(lead.id);
+        setEditFormData({ ...lead, potential: lead.trafficStatus?.label || '' });
     };
-    
+
     const handleEditChange = (key, value) => setEditFormData(prev => ({ ...prev, [key]: value }));
-    
+
     const handleEditCancel = () => { setEditingRowId(null); setEditFormData({}); };
 
     const handleEditSave = async () => {
         if (!editingRowId || !isDbConnected) return;
         try {
             const updates = { ...editFormData };
-            
+
             // Firebase undefined kabul etmez, temizle
             Object.keys(updates).forEach(key => {
                 if (updates[key] === undefined) delete updates[key];
@@ -200,20 +206,20 @@ window.useLeadHunterActions = (dbInstance, isDbConnected, crmData, setCrmData, s
             } else if (updates.statusKey === 'New') {
                 updates.statusLabel = 'New';
             }
-            
+
             // Trafik güncellemesi
-            if (updates.potential && updates.potential !== (crmData.find(i=>i.id===editingRowId).trafficStatus?.label)) {
-                 const newVal = window.parseTrafficToNumber(updates.potential);
-                 updates.trafficStatus = { ...(updates.trafficStatus || {}), label: updates.potential, value: newVal, viable: newVal > 20000 };
+            if (updates.potential && updates.potential !== (crmData.find(i => i.id === editingRowId).trafficStatus?.label)) {
+                const newVal = window.parseTrafficToNumber(updates.potential);
+                updates.trafficStatus = { ...(updates.trafficStatus || {}), label: updates.potential, value: newVal, viable: newVal > 20000 };
             }
 
             await dbInstance.collection("leads").doc(editingRowId).update(updates);
-            
+
             setCrmData(prev => prev.map(item => item.id === editingRowId ? { ...item, ...updates } : item));
             setEditingRowId(null);
             setEditFormData({});
         } catch (e) {
-            console.error(e); 
+            console.error(e);
             alert("Güncelleme hatası: " + e.message);
         }
     };
@@ -236,7 +242,7 @@ window.useLeadHunterActions = (dbInstance, isDbConnected, crmData, setCrmData, s
             const docRef = await dbInstance.collection("leads").add(newLead);
             setCrmData(prev => [...prev, { ...newLead, id: docRef.id }]);
             alert(`${window.cleanDomain(lead.url)} başarıyla eklendi!`);
-        } catch(e) { alert("Ekleme hatası: " + e.message); }
+        } catch (e) { alert("Ekleme hatası: " + e.message); }
     };
 
     return {
@@ -244,19 +250,19 @@ window.useLeadHunterActions = (dbInstance, isDbConnected, crmData, setCrmData, s
         editFormData, setEditFormData,
         replyCheckResult, setReplyCheckResult,
         isCheckingReply, setIsCheckingReply,
-        
+
         handleManualStageUpdate,
         checkGmailReply,
-        
-        handleAddNote, 
-        handleDeleteNote, 
+
+        handleAddNote,
+        handleDeleteNote,
         handleUpdateNote,
-        
-        handleEditClick, 
-        handleEditChange, 
-        handleEditSave, 
+
+        handleEditClick,
+        handleEditChange,
+        handleEditSave,
         handleEditCancel,
-        
+
         addToCrm,
         getStageInfo
     };
