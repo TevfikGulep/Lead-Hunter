@@ -174,7 +174,7 @@ window.useLeadHunterServices = (
             const domainsString = uniqueDomains.length > 2 ? `${uniqueDomains[0]}, ${uniqueDomains[1]}...` : uniqueDomains.join(' ve ');
             let template = null;
             let targetStage = mainLead.stage || 0;
-            if (bulkConfig.templateType === 'SPECIFIC') { targetStage = parseInt(bulkConfig.specificStage); template = getStageInfo(targetStage, mainLead.language || bulkConfig.language).template; } 
+            if (bulkConfig.templateType === 'SPECIFIC') { targetStage = parseInt(bulkConfig.specificStage); template = getStageInfo(targetStage, mainLead.language || bulkConfig.language).template; }
             else { const info = getStageInfo(targetStage, mainLead.language || bulkConfig.language); if (info.isFinished) { addBulkLog(`${email}: Süreç bitmiş`, false); continue; } template = info.template; }
             if (!template) { addBulkLog(`${email}: Şablon yok`, false); continue; }
             try {
@@ -314,7 +314,9 @@ window.useLeadHunterServices = (
                 if (!serverUrl) { addLog("HATA: Server API URL tanımlı değil.", 'error'); continue; }
 
                 const country = searchLocation || 'TR';
-                const url = `${serverUrl}?type=search&q=${encodeURIComponent(kw)}&depth=${searchDepth}&gl=${country}`;
+                const apiKey = settings.googleApiKey || '';
+                const cx = settings.searchEngineId || '';
+                const url = `${serverUrl}?type=search&q=${encodeURIComponent(kw)}&depth=${searchDepth}&gl=${country}&apiKey=${encodeURIComponent(apiKey)}&cx=${encodeURIComponent(cx)}`;
 
                 addLog(`İstek URL: ${url}`, 'info');
                 const response = await fetch(url);
@@ -348,7 +350,7 @@ window.useLeadHunterServices = (
                             trafficStatus: { label: 'Analiz Ediliyor...', value: 0 }, // Başlangıç durumu
                             email: 'Aranıyor...' // Başlangıç durumu
                         }));
-                        
+
                         // Listeye anında ekle
                         setLeads(prev => [...prev, ...newLeads]);
 
