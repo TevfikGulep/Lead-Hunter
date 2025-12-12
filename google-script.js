@@ -1,4 +1,4 @@
-//google script dosyası - FOLLOW-UP FIX v3.0
+//google script dosyası - FOLLOW-UP FIX v3.2 (Bounce Priority Fix)
 
 function doPost(e) {
   var debugLogs = []; // Olay günlüğü
@@ -10,7 +10,13 @@ function doPost(e) {
   try {
     var content = e.postData ? e.postData.contents : "{}";
     var data = JSON.parse(content);
+    
+    // Email alma yöntemini güçlendir
     var myEmail = Session.getActiveUser().getEmail();
+    if (!myEmail) myEmail = Session.getEffectiveUser().getEmail();
+    
+    // Debug için maili loglara ekle (güvenlik için maskelenebilir ama debugda lazım)
+    log("System User: " + myEmail);
 
     // --- 1. CEVAP KONTROL ---
     if (data.action === 'check_reply') {
@@ -74,8 +80,12 @@ function doPost(e) {
 
             var myEmailNorm = myEmail.toLowerCase();
             var lastSenderNorm = lastSender.toLowerCase();
-            // Basit string kontrolü yetmeyebilir, bazen "Isim <mail>" formatında gelir.
-            var senderMatch = lastSenderNorm.indexOf(myEmailNorm) !== -1;
+            
+            // Eğer myEmail boşsa eşleştirme yapma (false)
+            var senderMatch = false;
+            if (myEmailNorm && lastSenderNorm.indexOf(myEmailNorm) !== -1) {
+                senderMatch = true;
+            }
 
             log("Son gönderen ben miyim? " + (senderMatch ? "EVET" : "HAYIR"));
 
@@ -85,24 +95,17 @@ function doPost(e) {
 
             if (!senderMatch) {
               // Müşteriden gelmiş -> Normal Cevap (Reply)
-              // Reply otomatik olarak gönderene (Müşteriye) gider.
               log("Yöntem: lastMsg.reply() (Müşteriye Cevap)");
               lastMsg.reply(body, commonOptions);
               resultThreadId = threadId;
               methodUsed = "lastMsg.reply";
             } else {
-              // Benden gelmiş -> Takip Maili (Follow-up)
-              // Reply veya ReplyAll kullanırsak kendimize atarız.
-              // ÇÖZÜM: Forward!
-              // Forward, threading'i korur (Referansları taşır) ama alıcıyı (To) manuel seçmemize izin verir.
+              // Benden gelmiş -> Takip Maili (Follow-up) (Forward kullan)
               log("Yöntem: lastMsg.forward() (Takip Maili -> " + cleanTo + ")");
-
-              // Forward normalde "Fwd:" ekler. Bunu engellemek için subject'i manuel set ediyoruz.
               var fwdOptions = {
                 htmlBody: htmlBody,
                 subject: subject
               };
-
               lastMsg.forward(cleanTo, fwdOptions);
               resultThreadId = threadId;
               methodUsed = "lastMsg.forward";
@@ -158,7 +161,7 @@ function checkSingleThread(threadId, myEmail) {
     if (!thread) return { hasReply: false, error: "Thread not found" };
 
     var msgs = thread.getMessages();
-    var myEmailLower = myEmail.toLowerCase();
+    var myEmailLower = myEmail ? myEmail.toLowerCase() : "";
 
     // Debug: Son 5 mesajı inceleyelim
     var scanLimit = Math.max(0, msgs.length - 5);
@@ -166,29 +169,35 @@ function checkSingleThread(threadId, myEmail) {
     for (var i = msgs.length - 1; i >= scanLimit; i--) {
       var msg = msgs[i];
       var from = msg.getFrom().toLowerCase();
-      var snippet = msg.getSnippet();
+      
+      var plainBody = msg.getPlainBody();
+      var snippet = plainBody.length > 100 ? plainBody.substring(0, 100) + "..." : plainBody;
 
       // Her mesajı debug listesine ekle
       debugMsgs.push({
         index: i,
         from: from,
-        snippet: snippet.substring(0, 50) + "...",
-        isMe: from.indexOf(myEmailLower) !== -1,
+        snippet: snippet,
         date: msg.getDate()
       });
 
-      // Eğer gönderen ben değilsem
-      if (from.indexOf(myEmailLower) === -1) {
-
-        // Bounce Kontrolü - Genişletilmiş liste
-        var isBounce = from.includes('mailer-daemon') ||
+      // 1. ÖNCE BOUNCE KONTROLÜ (Kimden geldiğine bakmaksızın)
+      var isBounce = from.includes('mailer-daemon') ||
           from.includes('postmaster') ||
           from.includes('delivery-status') ||
           from.includes('notification') ||
           from.includes('notify') ||
-          from.includes('google');
+          from.includes('google') ||
+          from.includes('bounce') ||
+          from.includes('failed') ||
+          from.includes('failure') ||
+          from.includes('rejected') ||
+          from.includes('undeliverable') ||
+          from.includes('returned') ||
+          from.includes('blocked') ||
+          from.includes('spam');
 
-        if (isBounce) {
+      if (isBounce) {
           return {
             hasReply: true,
             isBounce: true,
@@ -197,9 +206,17 @@ function checkSingleThread(threadId, myEmail) {
             debug_last_from: from,
             messages_inspected: debugMsgs
           };
-        }
+      }
 
-        // Normal Cevap
+      // 2. SONRA "BEN MİYİM?" KONTROLÜ
+      // Eğer myEmailLower boşsa, kimseyi "ben" olarak işaretleme (false), böylece loop devam eder veya cevap sayılır.
+      var isMe = false;
+      if (myEmailLower && from.indexOf(myEmailLower) !== -1) {
+          isMe = true;
+      }
+
+      // Eğer gönderen ben değilsem (ve bounce değilse - yukarıda yakalanmadıysa) -> Normal Cevaptır
+      if (!isMe) {
         return {
           hasReply: true,
           isBounce: false,
