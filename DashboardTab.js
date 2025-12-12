@@ -1,5 +1,5 @@
 // DashboardTab.js
-// GÜNCELLEME: Global seçim onayı, temizleme butonu ve Mail Takip İkonu eklendi.
+// GÜNCELLEME: Mail Takip İkonu (Mavi/Yeşil/Kırmızı) mantığı eklendi.
 
 window.DashboardTab = ({ 
     crmData, filters, setFilters, selectedIds, toggleSelection, toggleSelectAll, selectedCount,
@@ -19,14 +19,15 @@ window.DashboardTab = ({
 
     const displayItems = paginatedItems;
     
-    // Global seçim mantığı
     const isAllPageSelected = paginatedItems.length > 0 && paginatedItems.every(i => selectedIds.has(i.id));
     const isGlobalSelectionActive = selectedIds.size > paginatedItems.length && selectedIds.size >= totalRecords;
     const canSelectAllGlobal = isAllPageSelected && totalRecords > paginatedItems.length && !isGlobalSelectionActive;
 
+    // YENİ: Cevap alınan statüler listesi
+    const replyStatuses = ['ASKED_MORE', 'INTERESTED', 'IN_PROCESS', 'DEAL_ON', 'DEAL_OFF', 'DENIED', 'NOT_POSSIBLE'];
+
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
-            {/* İstatistik Kartları */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 {stats.map((stat, i) => (
                     <div key={i} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
@@ -39,10 +40,8 @@ window.DashboardTab = ({
                 ))}
             </div>
             
-            {/* Filtre Bar */}
             <window.FilterBar filters={filters} setFilters={setFilters} selectedCount={selectedCount} setShowBulkModal={setShowBulkModal} activeTab={activeTab} fixAllTrafficData={fixAllTrafficData} onBulkCheck={onBulkCheck} isCheckingBulk={isCheckingBulk} onBulkStatusChange={bulkUpdateStatus} />
             
-            {/* Tablo Alanı */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-6 border-b flex justify-between items-center bg-slate-50/50">
                     <h3 className="font-bold text-slate-800 flex items-center gap-2">
@@ -50,8 +49,6 @@ window.DashboardTab = ({
                     </h3>
                 </div>
                 <div className="overflow-x-auto">
-                    
-                    {/* --- SELECTION BANNERS --- */}
                     {canSelectAllGlobal && (
                         <div className="bg-indigo-50 border-b border-indigo-100 p-2 text-center text-xs text-indigo-800 animate-in slide-in-from-top-2 flex items-center justify-center gap-1">
                             Bu sayfadaki <strong>{paginatedItems.length}</strong> kayıt seçildi. 
@@ -83,19 +80,29 @@ window.DashboardTab = ({
                         <tbody className="divide-y divide-slate-100">
                             {displayItems.map(lead => {
                                 const nextStageInfo = getStageInfo(lead.stage, lead.language);
+                                
+                                // YENİ: Renk Mantığı
+                                const isReplied = replyStatuses.includes(lead.statusKey);
                                 const isMailOpened = !!lead.mailOpenedAt;
+                                
+                                let dotColor = 'bg-red-200';
+                                let dotTitle = 'Mail henüz okunmadı';
+                                
+                                if (isReplied) {
+                                    dotColor = 'bg-blue-500';
+                                    dotTitle = 'Cevap Alındı';
+                                } else if (isMailOpened) {
+                                    dotColor = 'bg-green-500';
+                                    dotTitle = `Mail Okundu: ${new Date(lead.mailOpenedAt).toLocaleString('tr-TR')}`;
+                                }
 
                                 return (
                                     <tr key={lead.id} className="hover:bg-slate-50">
                                         <td className="p-4"><input type="checkbox" className="custom-checkbox" checked={selectedIds.has(lead.id)} onChange={() => toggleSelection(lead.id)}/></td>
                                         <td className="p-4 font-medium">
                                             <div className="flex items-center gap-2">
-                                                {/* MAIL TRACKING ICON */}
-                                                {isMailOpened ? (
-                                                    <div className="w-3 h-3 rounded-full bg-green-500 shadow-sm animate-pulse" title={`Mail Okundu: ${new Date(lead.mailOpenedAt).toLocaleString('tr-TR')}`}></div>
-                                                ) : (
-                                                    <div className="w-3 h-3 rounded-full bg-red-200" title="Mail henüz okunmadı"></div>
-                                                )}
+                                                {/* YENİ: Mail Tracking Icon */}
+                                                <div className={`w-3 h-3 rounded-full shadow-sm ${dotColor} ${isMailOpened && !isReplied ? 'animate-pulse' : ''}`} title={dotTitle}></div>
 
                                                 <span onClick={() => toggleSelection(lead.id)} className="cursor-pointer hover:text-indigo-600 transition-colors">
                                                     {window.cleanDomain(lead.url)}
