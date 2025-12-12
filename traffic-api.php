@@ -79,112 +79,96 @@ try {
         if (empty($query))
             throw new Exception("Arama sorgusu boş olamaz.");
 
-        $searchUrl = "https://www.google.com/search?q=" . urlencode($query) . "&gl=" . urlencode($gl) . "&num=" . $depth . "&hl=tr"; // hl=tr for Turkish UI to make parsing consistent maybe
-        addLog("Searching: $searchUrl");
+        // FORCE GOOGLE BASIC VERSION (gbv=1)
+        // This is much easier to scrape and less prone to blocking/consent screens
+        $searchUrl = "https://www.google.com/search?q=" . urlencode($query) . "&gl=" . urlencode($gl) . "&num=" . $depth . "&gbv=1&sei=0";
+        addLog("Searching (Basic Mode): $searchUrl");
 
         $html = fetchUrl($searchUrl);
         if (!$html)
-            throw new Exception("Google sonuçlarına erişilemedi (Curl Hatası veya Blok).");
-
-        addLog("HTML Length: " . strlen($html)); // HTML uzunluğunu logla
+            throw new Exception("Google verisi alınamadı (Boş Yanıt).");
+        addLog("HTML Length: " . strlen($html));
 
         $dom = new DOMDocument();
         @$dom->loadHTML($html);
         $xpath = new DOMXPath($dom);
 
-        // Strategy 2: Look for H3 headers directly (Titles) and go up to find 'a' tag
-        // This is often more robust than looking for 'div.g'
-        $titles = $xpath->query("//h3");
-        addLog("Found H3 tags: " . $titles->length);
-
         $results = [];
 
-        foreach ($titles as $titleNode) {
-            $title = $titleNode->nodeValue;
+        // Strategy for GBV=1 (Class 'BNeawe' is common for titles in basic mobile/legacy view)
+        // But simply searching for all 'a' tags with /url?q= is the most robust method for this version.
 
-            // Find parent 'a' tag
-            $anchor = $titleNode->parentNode;
-            while ($anchor && $anchor->nodeName !== 'a' && $anchor->nodeName !== 'body') {
-                $anchor = $anchor->parentNode;
+        $anchors = $xpath->query("//a[contains(@href, '/url?q=')]");
+        addLog("Found anchors with /url?q=: " . $anchors->length);
+
+        foreach ($anchors as $anchor) {
+            $href = $anchor->getAttribute('href');
+
+            // Extract real URL
+            // Href looks like: /url?q=https://example.com/&sa=U&ved=...
+            $parts = parse_url($href);
+            parse_str($parts['query'], $queryParts);
+            $cleanUrl = isset($queryParts['q']) ? $queryParts['q'] : '';
+
+            if (empty($cleanUrl) || strpos($cleanUrl, 'google.com') !== false)
+                continue;
+
+            // Find Title
+            // Inside the anchor, there is usually a div or h3 with the text.
+            // Or just the text string inside the anchor.
+            $title = trim($anchor->nodeValue);
+
+            // Sometimes the title is inside a child div with class 'vvjwJb' or 'BNeawe'
+            // Let's try to be specific if generic text is empty
+            if (empty($title)) {
+                $childDiv = $xpath->query(".//div[contains(@class, 'vvjwJb')]", $anchor)->item(0);
+                if ($childDiv)
+                    $title = trim($childDiv->nodeValue);
             }
 
-            if ($anchor && $anchor->nodeName === 'a') {
-                $href = $anchor->getAttribute('href');
+            if (empty($title))
+                continue;
 
-                // Skip internal Google links
-                if (strpos($href, '/search') === 0 || strpos($href, 'google') !== false)
-                    continue;
+            // Find Snippet
+            // In GBV=1, the snippet is often in a div appearing *after* the anchor's container.
+            // This is tricky to get with simple relation, so we will leave snippet empty for now 
+            // OR try to grab the parent's next sibling.
+            $snippet = "";
 
-                // Clean URL (Google redirection fix)
-                if (strpos($href, '/url?q=') === 0) {
-                    $parts = parse_url($href);
-                    parse_str($parts['query'], $qp);
-                    if (isset($qp['q']))
-                        $href = $qp['q'];
-                }
-
-                // Get Snippet (Try to find a description text near the title)
-                // This is hard to do generically, but we can try looking at the great-grandparent's text excluding the title
-                $snippet = "";
-                // Simple attempt: look for the next div sibling of the parent container? 
-                // For now, let's leave snippet empty or try a basic extraction if needed.
-
-                if (filter_var($href, FILTER_VALIDATE_URL)) {
-                    $results[] = [
-                        'url' => $href,
-                        'title' => $title,
-                        'snippet' => $snippet
-                    ];
-                }
+            // Basic deduplication
+            $isDuplicate = false;
+            foreach ($results as $r) {
+                if ($r['url'] === $cleanUrl)
+                    $isDuplicate = true;
             }
+            if ($isDuplicate)
+                continue;
+
+            $results[] = [
+                'url' => $cleanUrl,
+                'title' => $title,
+                'snippet' => $snippet
+            ];
+
+            if (count($results) >= $depth)
+                break;
         }
 
-        // Fallback: Regex extraction for "light" version (common for curl/bots)
+        // Just in case GBV fails and we get standard structure, keeping the Fallback regex is decent
         if (empty($results)) {
-            addLog("DOM parsing yielded 0 results. Trying Regex Fallback...");
-            // Pattern to match /url?q=... links which are standard in the basic HTML version
-            // <a href="/url?q=https://www.example.com/&amp;sa=U&amp;..." ... > ... </a>
-
-            // This regex tries to capture the URL and the content inside the anchor tag
+            addLog("GBV DOM parsing yielded 0 results. Checking fallback regex...");
             if (preg_match_all('/<a\s[^>]*href="\/url\?q=([^"&]+)[^"]*"[^>]*>(.*?)<\/a>/si', $html, $matches, PREG_SET_ORDER)) {
                 addLog("Regex found " . count($matches) . " raw matches.");
-
                 foreach ($matches as $m) {
-                    $rawUrl = urldecode($m[1]);
-                    $rawTitleHtml = $m[2];
-
-                    // Skip google internal links if any slip through (usually /url?q checks prevent this but good to be safe)
-                    if (strpos($rawUrl, 'google.com') !== false && strpos($rawUrl, 'search') !== false)
+                    $u = urldecode($m[1]);
+                    if (strpos($u, 'google') !== false)
                         continue;
-
-                    // Clean Title: Remove HTML tags (often has <b>...</b> or <h3>...</h3>)
-                    $title = strip_tags($rawTitleHtml);
-                    if (empty($title))
-                        continue;
-
-                    // Determine Snippet: Regex is blind to structure, so we might miss the snippet or have to guess.
-                    // On basic HTML, the snippet is usually in a <div> or <span> following the link.
-                    // For now, let's just return the result.
-
-                    $results[] = [
-                        'url' => $rawUrl,
-                        'title' => html_entity_decode($title),
-                        'snippet' => '' // Regex snippet extraction is risky/messy, identifying the result is the priority.
-                    ];
-
+                    $t = strip_tags($m[2]);
+                    $results[] = ['url' => $u, 'title' => html_entity_decode($t), 'snippet' => ''];
                     if (count($results) >= $depth)
                         break;
                 }
             }
-        }
-
-        // If even Regex fails
-        if (empty($results)) {
-            if (strpos($html, 'consent.google.com') !== false)
-                addLog("Detected Google Consent Page");
-            if (strpos($html, 'recaptcha') !== false)
-                addLog("Detected Google CAPTCHA");
-            addLog("No results found with any strategy.");
         }
 
         $response = ['success' => true, 'results' => $results, 'count' => count($results)];
