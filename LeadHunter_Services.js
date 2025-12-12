@@ -1,6 +1,6 @@
 // LeadHunter_Services.js
 // Görev: Mail Gönderimi, Toplu İşlemler, Veri Zenginleştirme ve Hunter Taramaları
-// DÜZELTME: 'services is not defined' hatası giderildi.
+// GÜNCELLEME: Otomatik Cevap Kontrolü (Auto Reply Check) eklendi.
 
 const { useState, useRef, useEffect } = React;
 
@@ -44,8 +44,12 @@ window.useLeadHunterServices = (
 
     const scanIntervalRef = useRef(false);
     const hunterLogsEndRef = useRef(null);
+    
+    // Auto Check için Ref (State bağımlılığını kırmak için)
+    const crmDataRef = useRef(crmData);
+    useEffect(() => { crmDataRef.current = crmData; }, [crmData]);
 
-    // --- TRACKING SYNC (MAIL TAKİP SENKRONİZASYONU) ---
+    // --- 1. TRACKING SYNC (MAIL TAKİP - PIXEL) ---
     useEffect(() => {
         if (!isDbConnected) return;
 
@@ -63,7 +67,11 @@ window.useLeadHunterServices = (
                     const batch = dbInstance.batch();
                     let updateCount = 0;
 
-                    crmData.forEach(lead => {
+                    // Ref yerine anlık crmData üzerinde dönebiliriz çünkü burası snapshot listener ile besleniyor
+                    // Ancak batch update yapacağımız için crmDataRef.current kullanmak daha güvenli olabilir
+                    const currentLeads = crmDataRef.current;
+
+                    currentLeads.forEach(lead => {
                         const openedAt = trackingData[lead.id];
                         // Eğer sunucuda açılma kaydı varsa VE (bizde kayıt yoksa VEYA tarih bizden yeniyse)
                         if (openedAt && (!lead.mailOpenedAt || new Date(openedAt) > new Date(lead.mailOpenedAt))) {
@@ -85,7 +93,7 @@ window.useLeadHunterServices = (
 
                     if (updateCount > 0) {
                         await batch.commit();
-                        console.log(`${updateCount} adet okunma bilgisi güncellendi.`);
+                        console.log(`[Tracking] ${updateCount} adet okunma bilgisi güncellendi.`);
                     }
                 }
             } catch (e) {
@@ -94,10 +102,115 @@ window.useLeadHunterServices = (
         };
 
         const intervalId = setInterval(checkOpens, 60000); // 1 Dakika
-        checkOpens(); // İlk yüklemede çalıştır
+        // İlk yüklemede çalıştır (biraz gecikmeli ki veri gelmiş olsun)
+        const timeoutId = setTimeout(checkOpens, 5000); 
 
-        return () => clearInterval(intervalId);
-    }, [isDbConnected, crmData]);
+        return () => {
+            clearInterval(intervalId);
+            clearTimeout(timeoutId);
+        };
+    }, [isDbConnected]); // crmData bağımlılığı kaldırıldı, ref kullanılıyor
+
+    // --- 2. AUTO REPLY CHECK (OTOMATİK CEVAP KONTROLÜ) ---
+    useEffect(() => {
+        if (!isDbConnected || !settings.googleScriptUrl) return;
+
+        const autoCheckReplies = async () => {
+            const currentData = crmDataRef.current;
+            
+            // Filtreleme: 
+            // 1. Thread ID'si olanlar
+            // 2. Statüsü 'MAIL_ERROR' veya 'NOT_VIABLE' olmayanlar (Bunlar zaten ölü)
+            // 3. Statüsü 'DEAL_ON', 'DEAL_OFF' olmayanlar (Süreç bitmiş, gereksiz API yormayalım)
+            // 4. Öncelik: Son temas tarihi en yeni olan 50 kayıt (Google API Kotası İçin Limit)
+            
+            const candidates = currentData.filter(l => 
+                l.threadId && 
+                !['MAIL_ERROR', 'NOT_VIABLE', 'DEAL_ON', 'DEAL_OFF', 'DENIED'].includes(l.statusKey)
+            );
+
+            if (candidates.length === 0) return;
+
+            // En son işlem görenleri önce tara
+            const sortedCandidates = [...candidates]
+                .sort((a,b) => new Date(b.lastContactDate || 0) - new Date(a.lastContactDate || 0))
+                .slice(0, 50); // Maksimum 50 kayıt tara
+
+            console.log(`[Auto Reply] ${sortedCandidates.length} aktif kayıt taranıyor...`);
+
+            try {
+                const response = await fetch(settings.googleScriptUrl, { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
+                    body: JSON.stringify({ action: 'check_replies_bulk', threadIds: sortedCandidates.map(c => c.threadId) }) 
+                });
+                const data = await response.json();
+
+                if (data.status === 'success' && data.results) {
+                    const batch = dbInstance.batch();
+                    let updatesCount = 0;
+
+                    sortedCandidates.forEach(lead => {
+                        const result = data.results[lead.threadId];
+                        
+                        // Eğer cevap bulunduysa
+                        if (result && result.hasReply) {
+                             const ref = dbInstance.collection("leads").doc(lead.id);
+                             
+                             if (result.isBounce) {
+                                 // Bounce (Hata) Durumu
+                                 // Zaten hata olarak işaretlenmediyse güncelle
+                                 if (lead.statusKey !== 'MAIL_ERROR') {
+                                     const newLog = { date: new Date().toISOString(), type: 'BOUNCE', content: `Sistem: Mail İletilemedi (Otomatik Tespit)` };
+                                     batch.update(ref, {
+                                         statusKey: 'MAIL_ERROR',
+                                         statusLabel: 'Error in mail (Bounced)',
+                                         email: '', // Hatalı maili temizle
+                                         lastContactDate: new Date().toISOString(),
+                                         activityLog: firebase.firestore.FieldValue.arrayUnion(newLog)
+                                     });
+                                     updatesCount++;
+                                 }
+                             } else {
+                                 // Normal Cevap Durumu
+                                 // Zaten 'Cevaplandı' statüsünde değilse güncelle (Örn: INTERESTED, ASKED_MORE)
+                                 if (!['INTERESTED', 'ASKED_MORE', 'IN_PROCESS'].includes(lead.statusKey)) {
+                                     const newLog = { date: new Date().toISOString(), type: 'REPLY', content: `Sistem: Yeni Cevap Alındı (${result.snippet?.substring(0,30)}...)` };
+                                     batch.update(ref, {
+                                         statusKey: 'INTERESTED',
+                                         statusLabel: 'Showed interest (Auto Check)',
+                                         lastContactDate: new Date().toISOString(),
+                                         activityLog: firebase.firestore.FieldValue.arrayUnion(newLog)
+                                     });
+                                     updatesCount++;
+                                 }
+                             }
+                        }
+                    });
+
+                    if (updatesCount > 0) {
+                        await batch.commit();
+                        console.log(`[Auto Reply] ${updatesCount} kayıt güncellendi.`);
+                    } else {
+                        console.log(`[Auto Reply] Yeni değişiklik yok.`);
+                    }
+                }
+            } catch (e) {
+                console.warn("[Auto Reply] Hata:", e);
+            }
+        };
+
+        // 50 Dakikada bir çalıştır (3.000.000 ms)
+        const intervalId = setInterval(autoCheckReplies, 3000000);
+        
+        // Sayfa açıldıktan 15 saniye sonra ilk kontrolü yap
+        const timeoutId = setTimeout(autoCheckReplies, 15000);
+
+        return () => {
+            clearInterval(intervalId);
+            clearTimeout(timeoutId);
+        };
+    }, [isDbConnected, settings.googleScriptUrl]); // Sadece bağlantı veya URL değişirse interval'i resetle
 
     // --- FUNCTIONS ---
 
@@ -308,7 +421,6 @@ window.useLeadHunterServices = (
             const data = await response.json();
 
             if (data.status === 'success') {
-                console.error("--- DEBUG START: BULK CHECK ---"); // Error used for visibility
                 console.warn("FULL RESPONSE:", data);
                 if (data.results) {
                     console.table(data.results);
@@ -325,19 +437,21 @@ window.useLeadHunterServices = (
                     if (result && result.hasReply) {
                         const ref = dbInstance.collection("leads").doc(lead.id);
                         if (result.isBounce) {
-                            const newLog = {
-                                date: new Date().toISOString(),
-                                type: 'BOUNCE',
-                                content: `Otomatik Tarama: Mail İletilemedi (Bounce)`
-                            };
-                            batch.update(ref, {
-                                statusKey: 'MAIL_ERROR',
-                                statusLabel: 'Error in mail (Bounced)',
-                                email: '',
-                                lastContactDate: new Date().toISOString(),
-                                activityLog: firebase.firestore.FieldValue.arrayUnion(newLog)
-                            });
-                            bounceCount++; hasUpdates = true;
+                            if (lead.statusKey !== 'MAIL_ERROR') {
+                                const newLog = {
+                                    date: new Date().toISOString(),
+                                    type: 'BOUNCE',
+                                    content: `Otomatik Tarama: Mail İletilemedi (Bounce)`
+                                };
+                                batch.update(ref, {
+                                    statusKey: 'MAIL_ERROR',
+                                    statusLabel: 'Error in mail (Bounced)',
+                                    email: '',
+                                    lastContactDate: new Date().toISOString(),
+                                    activityLog: firebase.firestore.FieldValue.arrayUnion(newLog)
+                                });
+                                bounceCount++; hasUpdates = true;
+                            }
                         } else if (!['INTERESTED', 'DEAL_ON', 'NOT_POSSIBLE', 'DENIED', 'MAIL_ERROR'].includes(lead.statusKey)) {
                             const newLog = {
                                 date: new Date().toISOString(),
