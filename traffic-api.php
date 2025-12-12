@@ -58,6 +58,75 @@ try {
         exit;
     }
 
+    // --- DEBUG HTML FUNCTIONALITY ---
+    if ($type === 'debug_html') {
+        if (!isset($_GET['url']))
+            throw new Exception("URL eksik.");
+        $url = $_GET['url'];
+
+        $debugLog[] = "Debug URL: $url";
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+        curl_setopt($ch, CURLOPT_ENCODING, ""); // Handle gzip
+
+        // Browser Headers
+        $headers = [
+            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+            'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language: tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Cache-Control: no-cache',
+            'Connection: keep-alive'
+        ];
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        curl_setopt($ch, CURLOPT_HEADER, true); // Headerları da al
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+        curl_close($ch);
+
+        $header = substr($response, 0, $headerSize);
+        $body = substr($response, $headerSize);
+
+        // Find snippets around '@'
+        $atSnippets = [];
+        $offset = 0;
+        while (($pos = strpos($body, '@', $offset)) !== false) {
+            $start = max(0, $pos - 20);
+            $length = 50; // 20 chars before, @, 29 chars after
+            $snippet = substr($body, $start, $length);
+            $atSnippets[] = htmlspecialchars($snippet); // Escape for safe JSON viewing
+            $offset = $pos + 1;
+            if (count($atSnippets) >= 10)
+                break; // Limit to 10 snippets
+        }
+
+        // Test Extraction
+        $extractedRaw = [];
+        preg_match_all('/[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,10}/', $body, $extractedRaw);
+
+        $response = [
+            'success' => true,
+            'http_code' => $httpCode,
+            'headers_length' => strlen($header),
+            'body_length' => strlen($body),
+            'preview_body' => substr(strip_tags($body), 0, 500),
+            'at_snippets' => $atSnippets, // <--- CRITICAL: Show what's around the @
+            'extracted_by_regex' => $extractedRaw[0] ?? [],
+            'contains_at_symbol' => strpos($body, '@') !== false,
+            'contains_gmail' => stripos($body, 'gmail') !== false,
+            'contains_yenimarmara' => stripos($body, 'yenimarmara16') !== false
+        ];
+        echo json_encode($response);
+        exit;
+    }
+
     // --- SEARCH FUNCTIONALITY ---
     if ($type === 'search') {
         $query = isset($_GET['q']) ? $_GET['q'] : '';
@@ -372,6 +441,7 @@ function fetchUrl($url, $mode = 'google', $rotateUA = false)
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
     curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+    curl_setopt($ch, CURLOPT_ENCODING, ""); // Handle gzip/deflate automatically
 
     // User Agent Havuzu (Rotasyon için)
     $userAgents = [
@@ -433,12 +503,39 @@ function getTraffic($domain)
 
     $hypeUrl = "https://hypestat.com/info/" . urlencode($domain);
     $htmlHype = fetchUrl($hypeUrl, 'other');
+
     if ($htmlHype) {
-        if (preg_match('/([\d,]+)\s+visitors\s+per\s+day/i', $htmlHype, $matches)) {
-            $hsValue = (int) str_replace(',', '', $matches[1]) * 30;
-            $hsResult = ['success' => true, 'source' => 'hypestat', 'value' => $hsValue, 'raw' => formatNumber($hsValue)];
-            addLog("Hypestat Buldu: $hsValue");
+        // Debug: HTML'in başını logla ki ne geldiğini görelim
+        addLog("Hypestat HTML Başlangıcı: " . substr(strip_tags($htmlHype), 0, 200) . "...");
+
+        // Regex 1: "<div>Monthly Visits<span>82.1K</span></div>" (Esnek yapı)
+        // <span>'dan sonra hemen </div> gelmeyebilir, aradaki etiketi yoksayalım.
+        if (preg_match('/<div>Monthly Visits<span>(.*?)<\/span>/si', $htmlHype, $matches)) {
+            $rawVal = strip_tags($matches[1]);
+            $hsValue = parseNumberStr($rawVal);
+            addLog("Hypestat (Specific Regex) Buldu: $hsValue (Ham: $rawVal)");
         }
+        // Regex 2: "1,234 visitors per day" -> Monthly = Daily * 30
+        elseif (preg_match('/([\d,]+)\s+visitors\s+per\s+day/i', $htmlHype, $matches)) {
+            $hsValue = (int) str_replace(',', '', $matches[1]) * 30;
+            addLog("Hypestat (Regex 2) Buldu: $hsValue");
+        }
+        // Regex 3: "Daily Unique Visitors: 1,234" -> Monthly = Daily * 30
+        elseif (preg_match('/Daily Unique Visitors:\s*([\d,]+)/i', $htmlHype, $matches)) {
+            $hsValue = (int) str_replace(',', '', $matches[1]) * 30;
+            addLog("Hypestat (Regex 3) Buldu: $hsValue");
+        }
+        // Regex 4: "Unique Visits to this site" bloğu
+        elseif (preg_match('/Unique Visits to this site.*?([\d,]+)/is', $htmlHype, $matches)) {
+            $hsValue = (int) str_replace(',', '', $matches[1]) * 30;
+            addLog("Hypestat (Regex 4) Buldu: $hsValue");
+        }
+
+        if ($hsValue > 0) {
+            $hsResult = ['success' => true, 'source' => 'hypestat', 'value' => $hsValue, 'raw' => formatNumber($hsValue)];
+        }
+    } else {
+        addLog("Hypestat yanıt vermedi (HTML boş).");
     }
 
     // 3. Karşılaştırma ve Sonuç
@@ -458,32 +555,84 @@ function getTraffic($domain)
 
 function findEmails($domain)
 {
+    global $debugLog;
+    addLog("Email Tarama Başlıyor: $domain");
+
     $protocol = 'https://';
     $baseUrl = $protocol . $domain;
+
+    // 1. Anasayfa Kontrolü
     $homeHtml = fetchUrl($baseUrl, 'other') ?: fetchUrl('http://' . $domain, 'other');
     $foundEmails = [];
+
     if ($homeHtml) {
+        addLog("Anasayfa tarandı.");
         $foundEmails = array_merge($foundEmails, extractEmailsFromHtml($homeHtml, $domain));
+
         $contactLinks = findContactLinks($homeHtml, $baseUrl);
-        foreach (array_slice($contactLinks, 0, 2) as $pageUrl) {
-            if ($html = fetchUrl($pageUrl, 'other'))
+        $uniqueLinks = array_unique($contactLinks);
+
+        // Limit 2'den 5'e çıkarıldı
+        $linksToScan = array_slice($uniqueLinks, 0, 5);
+
+        foreach ($linksToScan as $pageUrl) {
+            addLog("Alt sayfa taranıyor: $pageUrl");
+            if ($html = fetchUrl($pageUrl, 'other')) {
                 $foundEmails = array_merge($foundEmails, extractEmailsFromHtml($html, $domain));
+            }
         }
+    } else {
+        addLog("Anasayfaya ulaşılamadı.");
     }
-    return array_slice(array_unique($foundEmails), 0, 5);
+
+    $result = array_slice(array_unique($foundEmails), 0, 5);
+    addLog("Bulunan Email Sayısı: " . count($result));
+    return $result;
 }
 
 function extractEmailsFromHtml($html, $domain)
 {
+    global $debugLog;
     $emails = [];
-    preg_match_all('/[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,10}/', $html, $matches);
+
+    // 1. Standart Regex (Plain Text)
+    // "mailto:" linklerinde bazen %40 veya URL encoding olabilir, onu decode edelim
+    $decodedHtml = urldecode($html);
+    preg_match_all('/[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,10}/', $decodedHtml, $matches);
+
     if (!empty($matches[0])) {
         foreach ($matches[0] as $email) {
             if (isValidEmail($email, $domain))
                 $emails[] = strtolower($email);
         }
     }
+
+    // 2. Cloudflare Email Obfuscation Decoding
+    // CF, email'i data-cfemail="..." içinde hex string olarak saklar.
+    if (preg_match_all('/data-cfemail=["\']([a-f0-9]+)["\']/i', $html, $cfMatches)) {
+        addLog("Cloudflare korumalı email bulundu: " . count($cfMatches[1]) . " adet.");
+        foreach ($cfMatches[1] as $hex) {
+            $decodedEmail = decodeCfEmail($hex);
+            if (isValidEmail($decodedEmail, $domain)) {
+                $emails[] = strtolower($decodedEmail);
+                addLog("CF Decoded: $decodedEmail");
+            }
+        }
+    }
+
     return $emails;
+}
+
+function decodeCfEmail($hex)
+{
+    if (strlen($hex) < 2)
+        return '';
+    $k = hexdec(substr($hex, 0, 2));
+    $email = '';
+    for ($i = 2; $i < strlen($hex); $i += 2) {
+        $email .= chr(hexdec(substr($hex, $i, 2)) ^ $k);
+    }
+    return $email;
 }
 
 function findContactLinks($html, $baseUrl)
@@ -492,13 +641,16 @@ function findContactLinks($html, $baseUrl)
     @$dom->loadHTML($html);
     $links = $dom->getElementsByTagName('a');
     $candidates = [];
-    $keywords = ['contact', 'iletisim', 'about', 'hakkimizda', 'impressum'];
+    // Genişletilmiş anahtar kelimeler
+    $keywords = ['contact', 'iletisim', 'about', 'hakkimizda', 'impressum', 'kunye', 'künye', 'ulasim', 'ulaşım'];
+
     foreach ($links as $link) {
         $href = $link->getAttribute('href');
         foreach ($keywords as $kw) {
             if (stripos($href, $kw) !== false) {
-                if (strpos($href, 'http') === false)
+                if (strpos($href, 'http') === false) {
                     $href = rtrim($baseUrl, '/') . '/' . ltrim($href, '/');
+                }
                 $candidates[] = $href;
             }
         }
@@ -522,5 +674,30 @@ function formatNumber($num)
     if ($num > 1000)
         return number_format($num / 1000, 1) . 'K';
     return (string) $num;
+}
+
+function parseNumberStr($str)
+{
+    if (!$str)
+        return 0;
+
+    $s = trim(strtolower($str));
+    // Remove invisible characters
+    $s = preg_replace('/[\x00-\x1F\x7F]/u', '', $s);
+
+    $multiplier = 1;
+
+    if (strpos($s, 'b') !== false)
+        $multiplier = 1000000000;
+    elseif (strpos($s, 'm') !== false)
+        $multiplier = 1000000;
+    elseif (strpos($s, 'k') !== false)
+        $multiplier = 1000;
+
+    // Remove non-numeric chars except dot
+    $numPart = preg_replace('/[^0-9.]/', '', $s);
+    $num = (float) $numPart;
+
+    return (int) ($num * $multiplier);
 }
 ?>
