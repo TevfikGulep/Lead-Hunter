@@ -1,9 +1,8 @@
 // FilterBar.js
+// GÜNCELLEME: Mail Durum Filtresi (Select) eklendi.
 
-// Bağımlılıkları tanımla
 const StatusMultiSelect = window.StatusMultiSelect;
 
-// --- COMPONENT: FILTER BAR ---
 window.FilterBar = ({ filters, setFilters, selectedCount, setShowBulkModal, activeTab, fixAllTrafficData, onBulkCheck, isCheckingBulk, onBulkStatusChange }) => (
     <div className="flex flex-wrap items-center gap-3 mb-4 bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
         <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-lg border flex-1 min-w-[200px]">
@@ -16,14 +15,27 @@ window.FilterBar = ({ filters, setFilters, selectedCount, setShowBulkModal, acti
                 className="bg-transparent outline-none text-sm w-full"
             />
         </div>
+        
+        {/* YENİ: Mail Durum Filtresi */}
+        <select 
+            value={filters.mailStatus} 
+            onChange={(e) => setFilters(prev => ({ ...prev, mailStatus: e.target.value }))} 
+            className={`px-3 py-2 rounded-lg border text-sm font-medium outline-none cursor-pointer ${filters.mailStatus!=='ALL'?'bg-blue-50 text-blue-700 border-blue-200':'bg-slate-50 text-slate-600'}`}
+        >
+            <option value="ALL">Mail Takip: Tümü</option>
+            <option value="REPLIED">🔵 Cevaplandı (Mavi)</option>
+            <option value="OPENED">🟢 Okundu (Yeşil)</option>
+            <option value="UNOPENED">🔴 Okunmadı (Kırmızı)</option>
+        </select>
+
         <select value={filters.quality} onChange={(e) => setFilters(prev => ({ ...prev, quality: e.target.value }))} className={`px-3 py-2 rounded-lg border text-sm font-medium outline-none cursor-pointer ${filters.quality!=='ALL'?'bg-purple-50 text-purple-700 border-purple-200':'bg-slate-50 text-slate-600'}`}>
             <option value="ALL">Veri Durumu: Tümü</option>
             <option value="GOOD">✅ Sadece Tam Veriler</option>
             <option value="MISSING">⚠️ Eksik Veriler (Mail/Trafik Yok)</option>
         </select>
+        
         <select value={filters.language} onChange={(e) => setFilters(prev => ({ ...prev, language: e.target.value }))} className="px-3 py-2 bg-slate-50 rounded-lg border text-sm text-slate-600 font-medium outline-none cursor-pointer"><option value="ALL">Tüm Diller</option><option value="TR">TR (Türkçe)</option><option value="EN">EN (English)</option></select>
         
-        {/* StatusMultiSelect Bileşeni Kullanımı */}
         {StatusMultiSelect && (
             <StatusMultiSelect 
                 selectedStatuses={filters.status} 
@@ -40,16 +52,15 @@ window.FilterBar = ({ filters, setFilters, selectedCount, setShowBulkModal, acti
             <input type="date" value={filters.endDate} onChange={(e) => setFilters(p => ({ ...p, endDate: e.target.value }))} className="bg-transparent text-xs p-1 outline-none text-slate-600"/>
         </div>
 
-        <button onClick={() => setFilters({ search: '', language: 'ALL', status: [], lastSentStage: 'ALL', quality: 'ALL', startDate: '', endDate: '' })} className="px-3 py-2 text-xs text-red-500 hover:bg-red-50 rounded-lg transition-colors">Temizle</button>
+        <button onClick={() => setFilters({ search: '', language: 'ALL', status: [], lastSentStage: 'ALL', quality: 'ALL', mailStatus: 'ALL', startDate: '', endDate: '' })} className="px-3 py-2 text-xs text-red-500 hover:bg-red-50 rounded-lg transition-colors">Temizle</button>
         
         {selectedCount > 0 && (
             <div className="ml-auto flex gap-2 animate-in fade-in items-center">
-                {/* YENİ: TOPLU DURUM GÜNCELLEME MENÜSÜ */}
                 <select 
                     onChange={(e) => { 
                         if(e.target.value) {
                             onBulkStatusChange(e.target.value); 
-                            e.target.value = ''; // Seçimi sıfırla
+                            e.target.value = ''; 
                         }
                     }} 
                     className="bg-white text-slate-700 hover:bg-slate-50 px-3 py-2 rounded-lg text-xs font-bold border border-slate-300 shadow-sm transition-colors outline-none cursor-pointer"
