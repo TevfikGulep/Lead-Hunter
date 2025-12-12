@@ -16,9 +16,11 @@ error_reporting(E_ALL);
 $debugLog = [];
 $trackingFile = 'tracking_data.json'; // Okunma verilerinin tutulacağı dosya
 
-function addLog($msg) {
+function addLog($msg)
+{
     global $debugLog;
-    if (is_array($msg) || is_object($msg)) $msg = print_r($msg, true);
+    if (is_array($msg) || is_object($msg))
+        $msg = print_r($msg, true);
     $debugLog[] = date('H:i:s') . " - " . $msg;
 }
 
@@ -28,10 +30,10 @@ try {
     // --- MAIL TRACKING (GÖRÜNMEZ PİKSEL) ---
     if ($type === 'track') {
         // JSON çıktısını temizle, resim göndereceğiz
-        ob_clean(); 
-        
+        ob_clean();
+
         $leadId = isset($_GET['id']) ? preg_replace('/[^a-zA-Z0-9]/', '', $_GET['id']) : null;
-        
+
         if ($leadId) {
             // Veriyi kaydet
             $currentData = [];
@@ -39,10 +41,10 @@ try {
                 $content = file_get_contents($trackingFile);
                 $currentData = json_decode($content, true) ?: [];
             }
-            
+
             // Eğer daha önce açılmadıysa veya son açılma tarihini güncellemek istersen
             $currentData[$leadId] = date('c'); // ISO 8601 formatında tarih
-            
+
             file_put_contents($trackingFile, json_encode($currentData));
         }
 
@@ -51,7 +53,7 @@ try {
         header('Cache-Control: no-cache, no-store, must-revalidate');
         header('Pragma: no-cache');
         header('Expires: 0');
-        
+
         // 1x1 Transparent GIF Binary
         echo base64_decode('R0lGODlhAQABAJAAAP8AAAAAACH5BAUQAAAALAAAAAABAAEAAAICBAEAOw==');
         exit;
@@ -68,19 +70,141 @@ try {
         exit;
     }
 
-    // --- MEVCUT TRAFİK/EMAIL FONKSİYONLARI ---
-    if (!isset($_GET['domain'])) {
-        throw new Exception('Domain parametresi eksik.');
+    // --- SEARCH FUNCTIONALITY ---
+    if ($type === 'search') {
+        $query = isset($_GET['q']) ? $_GET['q'] : '';
+        $gl = isset($_GET['gl']) ? $_GET['gl'] : 'TR';
+        $depth = isset($_GET['depth']) ? (int) $_GET['depth'] : 10;
+
+        if (empty($query))
+            throw new Exception("Arama sorgusu boş olamaz.");
+
+        $searchUrl = "https://www.google.com/search?q=" . urlencode($query) . "&gl=" . urlencode($gl) . "&num=" . $depth . "&hl=tr"; // hl=tr for Turkish UI to make parsing consistent maybe
+        addLog("Searching: $searchUrl");
+
+        $html = fetchUrl($searchUrl);
+        if (!$html)
+            throw new Exception("Google sonuçlarına erişilemedi (Curl Hatası veya Blok).");
+
+        addLog("HTML Length: " . strlen($html)); // HTML uzunluğunu logla
+
+        $dom = new DOMDocument();
+        @$dom->loadHTML($html);
+        $xpath = new DOMXPath($dom);
+
+        // Strategy 2: Look for H3 headers directly (Titles) and go up to find 'a' tag
+        // This is often more robust than looking for 'div.g'
+        $titles = $xpath->query("//h3");
+        addLog("Found H3 tags: " . $titles->length);
+
+        $results = [];
+
+        foreach ($titles as $titleNode) {
+            $title = $titleNode->nodeValue;
+
+            // Find parent 'a' tag
+            $anchor = $titleNode->parentNode;
+            while ($anchor && $anchor->nodeName !== 'a' && $anchor->nodeName !== 'body') {
+                $anchor = $anchor->parentNode;
+            }
+
+            if ($anchor && $anchor->nodeName === 'a') {
+                $href = $anchor->getAttribute('href');
+
+                // Skip internal Google links
+                if (strpos($href, '/search') === 0 || strpos($href, 'google') !== false)
+                    continue;
+
+                // Clean URL (Google redirection fix)
+                if (strpos($href, '/url?q=') === 0) {
+                    $parts = parse_url($href);
+                    parse_str($parts['query'], $qp);
+                    if (isset($qp['q']))
+                        $href = $qp['q'];
+                }
+
+                // Get Snippet (Try to find a description text near the title)
+                // This is hard to do generically, but we can try looking at the great-grandparent's text excluding the title
+                $snippet = "";
+                // Simple attempt: look for the next div sibling of the parent container? 
+                // For now, let's leave snippet empty or try a basic extraction if needed.
+
+                if (filter_var($href, FILTER_VALIDATE_URL)) {
+                    $results[] = [
+                        'url' => $href,
+                        'title' => $title,
+                        'snippet' => $snippet
+                    ];
+                }
+            }
+        }
+
+        // Fallback: Regex extraction for "light" version (common for curl/bots)
+        if (empty($results)) {
+            addLog("DOM parsing yielded 0 results. Trying Regex Fallback...");
+            // Pattern to match /url?q=... links which are standard in the basic HTML version
+            // <a href="/url?q=https://www.example.com/&amp;sa=U&amp;..." ... > ... </a>
+
+            // This regex tries to capture the URL and the content inside the anchor tag
+            if (preg_match_all('/<a\s[^>]*href="\/url\?q=([^"&]+)[^"]*"[^>]*>(.*?)<\/a>/si', $html, $matches, PREG_SET_ORDER)) {
+                addLog("Regex found " . count($matches) . " raw matches.");
+
+                foreach ($matches as $m) {
+                    $rawUrl = urldecode($m[1]);
+                    $rawTitleHtml = $m[2];
+
+                    // Skip google internal links if any slip through (usually /url?q checks prevent this but good to be safe)
+                    if (strpos($rawUrl, 'google.com') !== false && strpos($rawUrl, 'search') !== false)
+                        continue;
+
+                    // Clean Title: Remove HTML tags (often has <b>...</b> or <h3>...</h3>)
+                    $title = strip_tags($rawTitleHtml);
+                    if (empty($title))
+                        continue;
+
+                    // Determine Snippet: Regex is blind to structure, so we might miss the snippet or have to guess.
+                    // On basic HTML, the snippet is usually in a <div> or <span> following the link.
+                    // For now, let's just return the result.
+
+                    $results[] = [
+                        'url' => $rawUrl,
+                        'title' => html_entity_decode($title),
+                        'snippet' => '' // Regex snippet extraction is risky/messy, identifying the result is the priority.
+                    ];
+
+                    if (count($results) >= $depth)
+                        break;
+                }
+            }
+        }
+
+        // If even Regex fails
+        if (empty($results)) {
+            if (strpos($html, 'consent.google.com') !== false)
+                addLog("Detected Google Consent Page");
+            if (strpos($html, 'recaptcha') !== false)
+                addLog("Detected Google CAPTCHA");
+            addLog("No results found with any strategy.");
+        }
+
+        $response = ['success' => true, 'results' => $results, 'count' => count($results)];
+        // Fallthrough will add debug log
     }
 
-    $domain = cleanDomain($_GET['domain']);
-    $response = [];
-    
-    if ($type === 'email') {
-        $emails = findEmails($domain);
-        $response = !empty($emails) ? ['success' => true, 'emails' => $emails] : ['success' => false, 'error' => 'Email bulunamadı.'];
-    } else {
-        $response = getTraffic($domain);
+    if ($type !== 'search') {
+        if (!isset($_GET['domain'])) {
+            throw new Exception('Domain parametresi eksik.');
+        }
+
+        $domain = cleanDomain($_GET['domain']);
+        $response = [];
+
+        if ($type === 'email') {
+            $emails = findEmails($domain);
+            $response = !empty($emails) ? ['success' => true, 'emails' => $emails] : ['success' => false, 'error' => 'Email bulunamadı.'];
+        } else {
+            $response = getTraffic($domain);
+        }
     }
 
     $response['debug'] = $debugLog;
@@ -97,20 +221,22 @@ $buffer = ob_get_clean();
 echo json_encode($response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
 // --- YARDIMCI FONKSİYONLAR (AYNEN KORUNDU) ---
-function cleanDomain($url) {
+function cleanDomain($url)
+{
     $url = trim($url);
     $url = preg_replace('#^https?://#', '', $url);
     $url = preg_replace('#^www\.#', '', $url);
     return explode('/', $url)[0];
 }
 
-function fetchUrl($url, $useProxy = false) {
+function fetchUrl($url, $useProxy = false)
+{
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, 25);
-    curl_setopt($ch, CURLOPT_ENCODING, ''); 
+    curl_setopt($ch, CURLOPT_ENCODING, '');
     $headers = [
         'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
         'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
@@ -127,13 +253,14 @@ function fetchUrl($url, $useProxy = false) {
     return ($content === false || $httpCode >= 400) ? false : $content;
 }
 
-function getTraffic($domain) {
+function getTraffic($domain)
+{
     $targetUrl = "https://www.similarsites.com/site/" . urlencode($domain);
     $html = fetchUrl($targetUrl);
     if ($html) {
         if (preg_match('/"(MonthlyVisits|monthly_visits|TotalVisits)"\s*:\s*(\d+)/i', $html, $matches)) {
-             $rawNum = (int)$matches[2];
-             return ['success' => true, 'source' => 'similarsites-regex', 'value' => $rawNum, 'raw' => formatNumber($rawNum)];
+            $rawNum = (int) $matches[2];
+            return ['success' => true, 'source' => 'similarsites-regex', 'value' => $rawNum, 'raw' => formatNumber($rawNum)];
         }
         $dom = new DOMDocument();
         libxml_use_internal_errors(true);
@@ -145,19 +272,20 @@ function getTraffic($domain) {
             return ['success' => true, 'source' => 'similarsites', 'value' => parseTrafficString($val), 'raw' => strtoupper($val)];
         }
     }
-    
+
     $hypeUrl = "https://hypestat.com/info/" . urlencode($domain);
     $htmlHype = fetchUrl($hypeUrl);
     if ($htmlHype) {
         if (preg_match('/([\d,]+)\s+visitors\s+per\s+day/i', $htmlHype, $matches)) {
-             $monthly = (int)str_replace(',', '', $matches[1]) * 30;
-             return ['success' => true, 'source' => 'hypestat', 'value' => $monthly, 'raw' => formatNumber($monthly)];
+            $monthly = (int) str_replace(',', '', $matches[1]) * 30;
+            return ['success' => true, 'source' => 'hypestat', 'value' => $monthly, 'raw' => formatNumber($monthly)];
         }
     }
     return ['success' => false, 'error' => 'Veri bulunamadı.'];
 }
 
-function findEmails($domain) {
+function findEmails($domain)
+{
     $protocol = 'https://';
     $baseUrl = $protocol . $domain;
     $homeHtml = fetchUrl($baseUrl) ?: fetchUrl('http://' . $domain);
@@ -166,25 +294,29 @@ function findEmails($domain) {
         $foundEmails = array_merge($foundEmails, extractEmailsFromHtml($homeHtml, $domain));
         $contactLinks = findContactLinks($homeHtml, $baseUrl);
         foreach (array_slice($contactLinks, 0, 3) as $pageUrl) {
-            if ($html = fetchUrl($pageUrl)) $foundEmails = array_merge($foundEmails, extractEmailsFromHtml($html, $domain));
+            if ($html = fetchUrl($pageUrl))
+                $foundEmails = array_merge($foundEmails, extractEmailsFromHtml($html, $domain));
         }
     }
     $foundEmails = array_unique($foundEmails);
     return array_slice($foundEmails, 0, 5);
 }
 
-function extractEmailsFromHtml($html, $domain) {
+function extractEmailsFromHtml($html, $domain)
+{
     $emails = [];
     preg_match_all('/[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,10}/', $html, $matches);
     if (!empty($matches[0])) {
         foreach ($matches[0] as $email) {
-            if (isValidEmail($email, $domain)) $emails[] = strtolower($email);
+            if (isValidEmail($email, $domain))
+                $emails[] = strtolower($email);
         }
     }
     return $emails;
 }
 
-function findContactLinks($html, $baseUrl) {
+function findContactLinks($html, $baseUrl)
+{
     $dom = new DOMDocument();
     @$dom->loadHTML($html);
     $links = $dom->getElementsByTagName('a');
@@ -194,7 +326,8 @@ function findContactLinks($html, $baseUrl) {
         $href = $link->getAttribute('href');
         foreach ($keywords as $kw) {
             if (strpos($href, $kw) !== false) {
-                if (strpos($href, 'http') === false) $href = rtrim($baseUrl, '/') . '/' . ltrim($href, '/');
+                if (strpos($href, 'http') === false)
+                    $href = rtrim($baseUrl, '/') . '/' . ltrim($href, '/');
                 $candidates[] = $href;
             }
         }
@@ -202,24 +335,33 @@ function findContactLinks($html, $baseUrl) {
     return array_unique($candidates);
 }
 
-function isValidEmail($email, $domain) {
+function isValidEmail($email, $domain)
+{
     $junkTerms = ['example.com', '.png', '.jpg', '.js', '.css', 'sentry.io', 'noreply'];
-    foreach ($junkTerms as $term) if (strpos($email, $term) !== false) return false;
+    foreach ($junkTerms as $term)
+        if (strpos($email, $term) !== false)
+            return false;
     return true;
 }
 
-function parseTrafficString($str) {
+function parseTrafficString($str)
+{
     $str = strtolower($str);
     $clean = preg_replace('/[^0-9.kmb]/', '', $str);
     $m = 1;
-    if (strpos($clean, 'm')) $m = 1000000;
-    elseif (strpos($clean, 'k')) $m = 1000;
-    return (float)$clean * $m;
+    if (strpos($clean, 'm'))
+        $m = 1000000;
+    elseif (strpos($clean, 'k'))
+        $m = 1000;
+    return (float) $clean * $m;
 }
 
-function formatNumber($num) {
-    if ($num > 1000000) return number_format($num / 1000000, 1) . 'M';
-    if ($num > 1000) return number_format($num / 1000, 1) . 'K';
-    return (string)$num;
+function formatNumber($num)
+{
+    if ($num > 1000000)
+        return number_format($num / 1000000, 1) . 'M';
+    if ($num > 1000)
+        return number_format($num / 1000, 1) . 'K';
+    return (string) $num;
 }
 ?>

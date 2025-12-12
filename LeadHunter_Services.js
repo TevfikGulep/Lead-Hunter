@@ -14,7 +14,8 @@ window.useLeadHunterServices = (
     setSelectedIds,
     leads,
     setLeads,
-    getStageInfo
+    getStageInfo,
+    searchLocation
 ) => {
     // --- STATE ---
 
@@ -44,7 +45,7 @@ window.useLeadHunterServices = (
 
     const scanIntervalRef = useRef(false);
     const hunterLogsEndRef = useRef(null);
-    
+
     // Auto Check için Ref (State bağımlılığını kırmak için)
     const crmDataRef = useRef(crmData);
     useEffect(() => { crmDataRef.current = crmData; }, [crmData]);
@@ -103,7 +104,7 @@ window.useLeadHunterServices = (
 
         const intervalId = setInterval(checkOpens, 60000); // 1 Dakika
         // İlk yüklemede çalıştır (biraz gecikmeli ki veri gelmiş olsun)
-        const timeoutId = setTimeout(checkOpens, 5000); 
+        const timeoutId = setTimeout(checkOpens, 5000);
 
         return () => {
             clearInterval(intervalId);
@@ -117,15 +118,15 @@ window.useLeadHunterServices = (
 
         const autoCheckReplies = async () => {
             const currentData = crmDataRef.current;
-            
+
             // Filtreleme: 
             // 1. Thread ID'si olanlar
             // 2. Statüsü 'MAIL_ERROR' veya 'NOT_VIABLE' olmayanlar (Bunlar zaten ölü)
             // 3. Statüsü 'DEAL_ON', 'DEAL_OFF' olmayanlar (Süreç bitmiş, gereksiz API yormayalım)
             // 4. Öncelik: Son temas tarihi en yeni olan 50 kayıt (Google API Kotası İçin Limit)
-            
-            const candidates = currentData.filter(l => 
-                l.threadId && 
+
+            const candidates = currentData.filter(l =>
+                l.threadId &&
                 !['MAIL_ERROR', 'NOT_VIABLE', 'DEAL_ON', 'DEAL_OFF', 'DENIED'].includes(l.statusKey)
             );
 
@@ -133,16 +134,16 @@ window.useLeadHunterServices = (
 
             // En son işlem görenleri önce tara
             const sortedCandidates = [...candidates]
-                .sort((a,b) => new Date(b.lastContactDate || 0) - new Date(a.lastContactDate || 0))
+                .sort((a, b) => new Date(b.lastContactDate || 0) - new Date(a.lastContactDate || 0))
                 .slice(0, 50); // Maksimum 50 kayıt tara
 
             console.log(`[Auto Reply] ${sortedCandidates.length} aktif kayıt taranıyor...`);
 
             try {
-                const response = await fetch(settings.googleScriptUrl, { 
-                    method: 'POST', 
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
-                    body: JSON.stringify({ action: 'check_replies_bulk', threadIds: sortedCandidates.map(c => c.threadId) }) 
+                const response = await fetch(settings.googleScriptUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'check_replies_bulk', threadIds: sortedCandidates.map(c => c.threadId) })
                 });
                 const data = await response.json();
 
@@ -152,39 +153,39 @@ window.useLeadHunterServices = (
 
                     sortedCandidates.forEach(lead => {
                         const result = data.results[lead.threadId];
-                        
+
                         // Eğer cevap bulunduysa
                         if (result && result.hasReply) {
-                             const ref = dbInstance.collection("leads").doc(lead.id);
-                             
-                             if (result.isBounce) {
-                                 // Bounce (Hata) Durumu
-                                 // Zaten hata olarak işaretlenmediyse güncelle
-                                 if (lead.statusKey !== 'MAIL_ERROR') {
-                                     const newLog = { date: new Date().toISOString(), type: 'BOUNCE', content: `Sistem: Mail İletilemedi (Otomatik Tespit)` };
-                                     batch.update(ref, {
-                                         statusKey: 'MAIL_ERROR',
-                                         statusLabel: 'Error in mail (Bounced)',
-                                         email: '', // Hatalı maili temizle
-                                         lastContactDate: new Date().toISOString(),
-                                         activityLog: firebase.firestore.FieldValue.arrayUnion(newLog)
-                                     });
-                                     updatesCount++;
-                                 }
-                             } else {
-                                 // Normal Cevap Durumu
-                                 // Zaten 'Cevaplandı' statüsünde değilse güncelle (Örn: INTERESTED, ASKED_MORE)
-                                 if (!['INTERESTED', 'ASKED_MORE', 'IN_PROCESS'].includes(lead.statusKey)) {
-                                     const newLog = { date: new Date().toISOString(), type: 'REPLY', content: `Sistem: Yeni Cevap Alındı (${result.snippet?.substring(0,30)}...)` };
-                                     batch.update(ref, {
-                                         statusKey: 'INTERESTED',
-                                         statusLabel: 'Showed interest (Auto Check)',
-                                         lastContactDate: new Date().toISOString(),
-                                         activityLog: firebase.firestore.FieldValue.arrayUnion(newLog)
-                                     });
-                                     updatesCount++;
-                                 }
-                             }
+                            const ref = dbInstance.collection("leads").doc(lead.id);
+
+                            if (result.isBounce) {
+                                // Bounce (Hata) Durumu
+                                // Zaten hata olarak işaretlenmediyse güncelle
+                                if (lead.statusKey !== 'MAIL_ERROR') {
+                                    const newLog = { date: new Date().toISOString(), type: 'BOUNCE', content: `Sistem: Mail İletilemedi (Otomatik Tespit)` };
+                                    batch.update(ref, {
+                                        statusKey: 'MAIL_ERROR',
+                                        statusLabel: 'Error in mail (Bounced)',
+                                        email: '', // Hatalı maili temizle
+                                        lastContactDate: new Date().toISOString(),
+                                        activityLog: firebase.firestore.FieldValue.arrayUnion(newLog)
+                                    });
+                                    updatesCount++;
+                                }
+                            } else {
+                                // Normal Cevap Durumu
+                                // Zaten 'Cevaplandı' statüsünde değilse güncelle (Örn: INTERESTED, ASKED_MORE)
+                                if (!['INTERESTED', 'ASKED_MORE', 'IN_PROCESS'].includes(lead.statusKey)) {
+                                    const newLog = { date: new Date().toISOString(), type: 'REPLY', content: `Sistem: Yeni Cevap Alındı (${result.snippet?.substring(0, 30)}...)` };
+                                    batch.update(ref, {
+                                        statusKey: 'INTERESTED',
+                                        statusLabel: 'Showed interest (Auto Check)',
+                                        lastContactDate: new Date().toISOString(),
+                                        activityLog: firebase.firestore.FieldValue.arrayUnion(newLog)
+                                    });
+                                    updatesCount++;
+                                }
+                            }
                         }
                     });
 
@@ -202,7 +203,7 @@ window.useLeadHunterServices = (
 
         // 50 Dakikada bir çalıştır (3.000.000 ms)
         const intervalId = setInterval(autoCheckReplies, 3000000);
-        
+
         // Sayfa açıldıktan 15 saniye sonra ilk kontrolü yap
         const timeoutId = setTimeout(autoCheckReplies, 15000);
 
@@ -679,7 +680,58 @@ window.useLeadHunterServices = (
             const kw = keywordList[i];
             addLog(`Aranıyor: ${kw}`);
 
-            addLog(`${kw} için sonuçlar taranıyor... (Mock)`, 'warning');
+            try {
+                addLog(`Sunucuya istek gönderiliyor: ${kw}`, 'info');
+
+                const serverUrl = (window.APP_CONFIG && window.APP_CONFIG.SERVER_API_URL) || '';
+                if (!serverUrl) {
+                    addLog("HATA: Server API URL tanımlı değil.", 'error');
+                } else {
+                    const country = searchLocation || 'TR';
+                    const url = `${serverUrl}?type=search&q=${encodeURIComponent(kw)}&depth=${searchDepth}&gl=${country}`;
+
+                    addLog(`İstek URL: ${url}`, 'info');
+
+                    const response = await fetch(url);
+                    const text = await response.text();
+                    addLog(`Ham Cevap: ${text.substring(0, 100)}...`, 'info');
+
+                    let json;
+                    try {
+                        json = JSON.parse(text);
+                    } catch (e) {
+                        addLog(`JSON Parse Hatası: ${e.message}`, 'error');
+                        continue;
+                    }
+
+                    if (json.success && Array.isArray(json.results)) {
+                        addLog(`${json.results.length} adet sonuç geldi.`, 'success');
+
+                        // Sonuçları işle
+                        const newLeads = json.results.map(r => ({
+                            id: Math.random().toString(36).substr(2, 9),
+                            url: r.url,
+                            title: r.title,
+                            description: r.snippet,
+                            trafficStatus: { label: 'Analiz Bekleniyor...', value: 0 },
+                            email: null
+                        }));
+
+                        // Sonuçları işle
+
+
+                        // Leads state'ini güncelle
+                        setLeads(prev => [...prev, ...newLeads]);
+
+                    } else {
+                        addLog(`API Hatası: ${json.error || 'Bilinmeyen Hata'}`, 'warning');
+                    }
+                }
+
+            } catch (err) {
+                addLog(`Kritik Hata: ${err.message}`, 'error');
+            }
+
             await new Promise(r => setTimeout(r, 1000));
             setHunterProgress(((i + 1) / keywordList.length) * 100);
         }
