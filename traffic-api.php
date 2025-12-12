@@ -1,6 +1,7 @@
 <?php
 // traffic-api.php
-// Versiyon: 4.0 (Mail Tracking Eklendi)
+// Versiyon: 7.0 (Bulldozer Mode: Persistent Pagination + UA Rotation)
+// Hedef: Google num parametresini yoksayarsa, zorla sayfalama yaparak hedefe ulaşır.
 
 ob_start();
 
@@ -9,57 +10,42 @@ header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type");
 header("Content-Type: application/json; charset=UTF-8");
 
-set_time_limit(60);
 ini_set('display_errors', 0);
+ini_set('log_errors', 1);
 error_reporting(E_ALL);
 
 $debugLog = [];
-$trackingFile = 'tracking_data.json'; // Okunma verilerinin tutulacağı dosya
+$trackingFile = 'tracking_data.json'; 
 
-function addLog($msg)
-{
+function addLog($msg) {
     global $debugLog;
-    if (is_array($msg) || is_object($msg))
-        $msg = print_r($msg, true);
+    if (is_array($msg) || is_object($msg)) $msg = print_r($msg, true);
     $debugLog[] = date('H:i:s') . " - " . $msg;
 }
 
 try {
     $type = isset($_GET['type']) ? $_GET['type'] : '';
 
-    // --- MAIL TRACKING (GÖRÜNMEZ PİKSEL) ---
+    // --- MAIL TRACKING ---
     if ($type === 'track') {
-        // JSON çıktısını temizle, resim göndereceğiz
         ob_clean();
-
         $leadId = isset($_GET['id']) ? preg_replace('/[^a-zA-Z0-9]/', '', $_GET['id']) : null;
-
         if ($leadId) {
-            // Veriyi kaydet
             $currentData = [];
             if (file_exists($trackingFile)) {
                 $content = file_get_contents($trackingFile);
                 $currentData = json_decode($content, true) ?: [];
             }
-
-            // Eğer daha önce açılmadıysa veya son açılma tarihini güncellemek istersen
-            $currentData[$leadId] = date('c'); // ISO 8601 formatında tarih
-
+            $currentData[$leadId] = date('c'); 
             file_put_contents($trackingFile, json_encode($currentData));
         }
-
-        // 1x1 Şeffaf GIF Headerları
         header('Content-Type: image/gif');
         header('Cache-Control: no-cache, no-store, must-revalidate');
-        header('Pragma: no-cache');
-        header('Expires: 0');
-
-        // 1x1 Transparent GIF Binary
         echo base64_decode('R0lGODlhAQABAJAAAP8AAAAAACH5BAUQAAAALAAAAAABAAEAAAICBAEAOw==');
         exit;
     }
 
-    // --- OKUNMA VERİLERİNİ ÇEKME (SYNC) ---
+    // --- SYNC OPENS ---
     if ($type === 'sync_opens') {
         if (file_exists($trackingFile)) {
             $data = json_decode(file_get_contents($trackingFile), true);
@@ -74,115 +60,190 @@ try {
     if ($type === 'search') {
         $query = isset($_GET['q']) ? $_GET['q'] : '';
         $gl = isset($_GET['gl']) ? $_GET['gl'] : 'TR';
-        $depth = isset($_GET['depth']) ? (int) $_GET['depth'] : 10;
+        $targetDepth = isset($_GET['depth']) ? (int) $_GET['depth'] : 10;
+        
+        if ($targetDepth > 100) $targetDepth = 100; // Max limit
 
-        if (empty($query))
-            throw new Exception("Arama sorgusu boş olamaz.");
+        if (empty($query)) throw new Exception("Arama sorgusu boş olamaz.");
 
-        // FORCE GOOGLE BASIC VERSION (gbv=1)
-        // This is much easier to scrape and less prone to blocking/consent screens
-        $searchUrl = "https://www.google.com/search?q=" . urlencode($query) . "&gl=" . urlencode($gl) . "&num=" . $depth . "&gbv=1&sei=0";
-        addLog("Searching (Basic Mode): $searchUrl");
+        $allResults = [];
+        addLog("Hedef: $targetDepth sonuç. Strateji: Israrcı Google Döngüsü.");
 
-        $html = fetchUrl($searchUrl);
-        if (!$html)
-            throw new Exception("Google verisi alınamadı (Boş Yanıt).");
-        addLog("HTML Length: " . strlen($html));
+        // ---------------------------------------------------------
+        // KAYNAK 1: GOOGLE (DÖNGÜSEL TARAMA)
+        // ---------------------------------------------------------
+        $page = 0;
+        $maxGooglePages = 10; // Sonsuz döngüye girmesin diye güvenlik limiti
+        $consecutiveEmptyPages = 0;
 
-        $dom = new DOMDocument();
-        @$dom->loadHTML($html);
-        $xpath = new DOMXPath($dom);
+        while (count($allResults) < $targetDepth && $page < $maxGooglePages) {
+            
+            // İlk sayfada şansımızı deneyip 100 isteyelim. Sonraki sayfalarda standart 10'luk dilimlerle gidelim.
+            // Google bazen start parametresi varken num parametresini sevmez.
+            $numParam = ($page == 0) ? $targetDepth : 20; 
+            $startParam = $page * 10; // Google indexi 0, 10, 20... diye gider
 
-        $results = [];
+            $searchUrl = "https://www.google.com/search?q=" . urlencode($query) . "&gl=" . urlencode($gl) . "&num=" . $numParam . "&gbv=1&start=" . $startParam;
+            
+            addLog("Google Döngüsü #$page (Start: $startParam) taranıyor...");
+            
+            // Her istekte farklı User-Agent kullan (Ban riskini azaltır)
+            $html = fetchUrl($searchUrl, 'google', true);
 
-        // Strategy for GBV=1 (Class 'BNeawe' is common for titles in basic mobile/legacy view)
-        // But simply searching for all 'a' tags with /url?q= is the most robust method for this version.
-
-        $anchors = $xpath->query("//a[contains(@href, '/url?q=')]");
-        addLog("Found anchors with /url?q=: " . $anchors->length);
-
-        foreach ($anchors as $anchor) {
-            $href = $anchor->getAttribute('href');
-
-            // Extract real URL
-            // Href looks like: /url?q=https://example.com/&sa=U&ved=...
-            $parts = parse_url($href);
-            parse_str($parts['query'], $queryParts);
-            $cleanUrl = isset($queryParts['q']) ? $queryParts['q'] : '';
-
-            if (empty($cleanUrl) || strpos($cleanUrl, 'google.com') !== false)
-                continue;
-
-            // Find Title
-            // Inside the anchor, there is usually a div or h3 with the text.
-            // Or just the text string inside the anchor.
-            $title = trim($anchor->nodeValue);
-
-            // Sometimes the title is inside a child div with class 'vvjwJb' or 'BNeawe'
-            // Let's try to be specific if generic text is empty
-            if (empty($title)) {
-                $childDiv = $xpath->query(".//div[contains(@class, 'vvjwJb')]", $anchor)->item(0);
-                if ($childDiv)
-                    $title = trim($childDiv->nodeValue);
-            }
-
-            if (empty($title))
-                continue;
-
-            // Find Snippet
-            // In GBV=1, the snippet is often in a div appearing *after* the anchor's container.
-            // This is tricky to get with simple relation, so we will leave snippet empty for now 
-            // OR try to grab the parent's next sibling.
-            $snippet = "";
-
-            // Basic deduplication
-            $isDuplicate = false;
-            foreach ($results as $r) {
-                if ($r['url'] === $cleanUrl)
-                    $isDuplicate = true;
-            }
-            if ($isDuplicate)
-                continue;
-
-            $results[] = [
-                'url' => $cleanUrl,
-                'title' => $title,
-                'snippet' => $snippet
-            ];
-
-            if (count($results) >= $depth)
+            if (!$html) {
+                addLog("Google Sayfa $page yanıt vermedi, döngü kırılıyor.");
                 break;
-        }
+            }
 
-        // Just in case GBV fails and we get standard structure, keeping the Fallback regex is decent
-        if (empty($results)) {
-            addLog("GBV DOM parsing yielded 0 results. Checking fallback regex...");
-            if (preg_match_all('/<a\s[^>]*href="\/url\?q=([^"&]+)[^"]*"[^>]*>(.*?)<\/a>/si', $html, $matches, PREG_SET_ORDER)) {
-                addLog("Regex found " . count($matches) . " raw matches.");
+            $pageResultsCount = 0;
+
+            // Regex Parsing
+            if (preg_match_all('/<a\s[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)<\/a>/si', $html, $matches, PREG_SET_ORDER)) {
                 foreach ($matches as $m) {
-                    $u = urldecode($m[1]);
-                    if (strpos($u, 'google') !== false)
-                        continue;
-                    $t = strip_tags($m[2]);
-                    $results[] = ['url' => $u, 'title' => html_entity_decode($t), 'snippet' => ''];
-                    if (count($results) >= $depth)
-                        break;
+                    // Hedefe ulaştıysak döngüyü işlemeyi bırak
+                    if (count($allResults) >= $targetDepth) break;
+
+                    $rawHref = $m[1];
+                    $rawInnerHtml = $m[2];
+                    $cleanUrl = '';
+
+                    if (strpos($rawHref, '/url?q=') !== false) {
+                        $parts = parse_url($rawHref);
+                        $queryParts = [];
+                        parse_str(isset($parts['query']) ? $parts['query'] : '', $queryParts);
+                        if (isset($queryParts['q'])) $cleanUrl = $queryParts['q'];
+                    } elseif (strpos($rawHref, 'http') === 0) {
+                        $cleanUrl = $rawHref;
+                    }
+
+                    if (empty($cleanUrl) || strpos($cleanUrl, 'google.com') !== false || strpos($cleanUrl, 'googleusercontent') !== false) continue;
+
+                    $title = strip_tags($rawInnerHtml);
+                    $title = html_entity_decode($title);
+                    $title = trim($title);
+
+                    if (empty($title) || $title === $cleanUrl) {
+                        if (preg_match('/<div[^>]*class="[^"]*BNeawe[^"]*"[^>]*>(.*?)<\/div>/si', $rawInnerHtml, $titleMatch)) {
+                            $title = strip_tags($titleMatch[1]);
+                        } else { continue; }
+                    }
+
+                    $isDuplicate = false;
+                    foreach ($allResults as $r) { if ($r['url'] === $cleanUrl) $isDuplicate = true; }
+
+                    if (!$isDuplicate) {
+                        $allResults[] = ['url' => $cleanUrl, 'title' => $title, 'snippet' => 'Google'];
+                        $pageResultsCount++;
+                    }
                 }
             }
+
+            addLog("Bu sayfadan eklenen: $pageResultsCount. Toplam: " . count($allResults));
+
+            // Eğer bu sayfadan hiç yeni sonuç çıkmadıysa, muhtemelen son sayfadayız veya Google kesti.
+            if ($pageResultsCount === 0) {
+                $consecutiveEmptyPages++;
+                if ($consecutiveEmptyPages >= 2) {
+                    addLog("Üst üste 2 boş sayfa, Google bitti.");
+                    break;
+                }
+            } else {
+                $consecutiveEmptyPages = 0;
+            }
+
+            // Hedefe ulaştıysak çık
+            if (count($allResults) >= $targetDepth) break;
+
+            $page++;
+            // Sayfalar arası bekleme (IP engellenmemesi için kritik)
+            usleep(800000); // 0.8 saniye
         }
 
-        $response = ['success' => true, 'results' => $results, 'count' => count($results)];
-        // Fallthrough will add debug log
+
+        // ---------------------------------------------------------
+        // KAYNAK 2: BING (Yedek - Hala eksik varsa)
+        // ---------------------------------------------------------
+        if (count($allResults) < $targetDepth) {
+            $needed = $targetDepth - count($allResults);
+            addLog("Hala eksik var ($needed). Bing devreye giriyor...");
+
+            try {
+                $bingUrl = "https://www.bing.com/search?q=" . urlencode($query) . "&format=rss&count=50"; // Bing'den de çok iste
+                $rssContent = fetchUrl($bingUrl, 'bing');
+
+                if ($rssContent) {
+                    $xml = @simplexml_load_string($rssContent);
+                    if ($xml && isset($xml->channel->item)) {
+                        foreach ($xml->channel->item as $item) {
+                            if (count($allResults) >= $targetDepth) break;
+
+                            $cleanUrl = (string)$item->link;
+                            $title = (string)$item->title;
+                            
+                            if (empty($cleanUrl)) continue;
+
+                            $isDuplicate = false;
+                            foreach ($allResults as $r) { if ($r['url'] === $cleanUrl) $isDuplicate = true; }
+
+                            if (!$isDuplicate) {
+                                $allResults[] = ['url' => $cleanUrl, 'title' => $title, 'snippet' => 'Bing'];
+                            }
+                        }
+                    }
+                }
+            } catch (Exception $e) { addLog("Bing Hata: " . $e->getMessage()); }
+        }
+
+
+        // ---------------------------------------------------------
+        // KAYNAK 3: DUCKDUCKGO (Son Çare)
+        // ---------------------------------------------------------
+        if (count($allResults) < $targetDepth) {
+            $needed = $targetDepth - count($allResults);
+            addLog("Hala eksik var. DDG devreye giriyor...");
+            
+            try {
+                $ddgUrl = "https://html.duckduckgo.com/html/?q=" . urlencode($query);
+                $htmlDDG = fetchUrl($ddgUrl, 'ddg');
+                
+                if ($htmlDDG) {
+                    if (preg_match_all('/<a[^>]*class=["\'][^"\']*result__a[^"\']*["\'][^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)<\/a>/si', $htmlDDG, $matches, PREG_SET_ORDER)) {
+                        foreach ($matches as $m) {
+                            if (count($allResults) >= $targetDepth) break;
+
+                            $href = $m[1];
+                            $title = strip_tags($m[2]);
+                            $cleanUrl = $href;
+
+                            if (strpos($href, 'uddg=') !== false) {
+                                $parts = parse_url($href);
+                                $qParts = [];
+                                parse_str(isset($parts['query']) ? $parts['query'] : '', $qParts);
+                                if (!empty($qParts['uddg'])) $cleanUrl = urldecode($qParts['uddg']);
+                            }
+                            $cleanUrl = urldecode($cleanUrl);
+
+                            if (empty($cleanUrl) || strpos($cleanUrl, 'duckduckgo.com') !== false) continue;
+                            
+                            $isDuplicate = false;
+                            foreach ($allResults as $r) { if ($r['url'] === $cleanUrl) $isDuplicate = true; }
+                            
+                            if (!$isDuplicate) {
+                                $allResults[] = ['url' => $cleanUrl, 'title' => $title, 'snippet' => 'DuckDuckGo'];
+                            }
+                        }
+                    }
+                }
+            } catch (Exception $e) { addLog("DDG Hata: " . $e->getMessage()); }
+        }
+
+        $response = ['success' => true, 'results' => $allResults, 'count' => count($allResults)];
     }
 
     if ($type !== 'search') {
-        if (!isset($_GET['domain'])) {
-            throw new Exception('Domain parametresi eksik.');
-        }
-
+        if (!isset($_GET['domain'])) throw new Exception('Domain parametresi eksik.');
         $domain = cleanDomain($_GET['domain']);
         $response = [];
-
         if ($type === 'email') {
             $emails = findEmails($domain);
             $response = !empty($emails) ? ['success' => true, 'emails' => $emails] : ['success' => false, 'error' => 'Email bulunamadı.'];
@@ -194,71 +255,76 @@ try {
     $response['debug'] = $debugLog;
 
 } catch (Exception $e) {
-    $response = [
-        'success' => false,
-        'error' => $e->getMessage(),
-        'debug' => $debugLog
-    ];
+    $response = ['success' => false, 'error' => $e->getMessage(), 'debug' => $debugLog];
 }
 
 $buffer = ob_get_clean();
 echo json_encode($response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
-// --- YARDIMCI FONKSİYONLAR (AYNEN KORUNDU) ---
-function cleanDomain($url)
-{
+// --- YARDIMCI FONKSİYONLAR ---
+function cleanDomain($url) {
     $url = trim($url);
     $url = preg_replace('#^https?://#', '', $url);
     $url = preg_replace('#^www\.#', '', $url);
     return explode('/', $url)[0];
 }
 
-function fetchUrl($url, $useProxy = false)
-{
+function fetchUrl($url, $mode = 'google', $rotateUA = false) {
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 25);
-    curl_setopt($ch, CURLOPT_ENCODING, '');
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+    curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+    
+    // User Agent Havuzu (Rotasyon için)
+    $userAgents = [
+        'Mozilla/5.0 (Linux; Android 10; SM-G960F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36',
+        'Mozilla/5.0 (Linux; Android 13; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36',
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+        'Mozilla/5.0 (Linux; Android 11; Redmi Note 9 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Mobile Safari/537.36'
+    ];
+
+    $ua = $rotateUA ? $userAgents[array_rand($userAgents)] : $userAgents[0];
+
     $headers = [
-        'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-        'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        "User-Agent: $ua",
+        'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Upgrade-Insecure-Requests: 1'
     ];
+
+    if ($mode === 'google') {
+        $headers[] = 'Cookie: CONSENT=YES+; SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg;';
+        $headers[] = 'Referer: https://www.google.com/';
+    } elseif ($mode === 'ddg') {
+        $headers[] = 'Referer: https://html.duckduckgo.com/';
+    }
+    
     curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    $cookieFile = sys_get_temp_dir() . '/cookie.txt';
-    curl_setopt($ch, CURLOPT_COOKIEJAR, $cookieFile);
-    curl_setopt($ch, CURLOPT_COOKIEFILE, $cookieFile);
     $content = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
+    
+    if ($httpCode == 429) { 
+        global $debugLog; 
+        $debugLog[] = "HATA: $mode 429 (Çok Fazla İstek)."; 
+    }
     return ($content === false || $httpCode >= 400) ? false : $content;
 }
 
-function getTraffic($domain)
-{
+function getTraffic($domain) {
     $targetUrl = "https://www.similarsites.com/site/" . urlencode($domain);
-    $html = fetchUrl($targetUrl);
+    $html = fetchUrl($targetUrl, 'other');
     if ($html) {
         if (preg_match('/"(MonthlyVisits|monthly_visits|TotalVisits)"\s*:\s*(\d+)/i', $html, $matches)) {
             $rawNum = (int) $matches[2];
             return ['success' => true, 'source' => 'similarsites-regex', 'value' => $rawNum, 'raw' => formatNumber($rawNum)];
         }
-        $dom = new DOMDocument();
-        libxml_use_internal_errors(true);
-        @$dom->loadHTML($html);
-        $xpath = new DOMXPath($dom);
-        $nodes = $xpath->query("//*[@data-testid='siteheader_monthlyvisits']");
-        if ($nodes->length > 0) {
-            $val = trim($nodes->item(0)->nodeValue);
-            return ['success' => true, 'source' => 'similarsites', 'value' => parseTrafficString($val), 'raw' => strtoupper($val)];
-        }
     }
-
     $hypeUrl = "https://hypestat.com/info/" . urlencode($domain);
-    $htmlHype = fetchUrl($hypeUrl);
+    $htmlHype = fetchUrl($hypeUrl, 'other');
     if ($htmlHype) {
         if (preg_match('/([\d,]+)\s+visitors\s+per\s+day/i', $htmlHype, $matches)) {
             $monthly = (int) str_replace(',', '', $matches[1]) * 30;
@@ -268,50 +334,44 @@ function getTraffic($domain)
     return ['success' => false, 'error' => 'Veri bulunamadı.'];
 }
 
-function findEmails($domain)
-{
+function findEmails($domain) {
     $protocol = 'https://';
     $baseUrl = $protocol . $domain;
-    $homeHtml = fetchUrl($baseUrl) ?: fetchUrl('http://' . $domain);
+    $homeHtml = fetchUrl($baseUrl, 'other') ?: fetchUrl('http://' . $domain, 'other');
     $foundEmails = [];
     if ($homeHtml) {
         $foundEmails = array_merge($foundEmails, extractEmailsFromHtml($homeHtml, $domain));
         $contactLinks = findContactLinks($homeHtml, $baseUrl);
-        foreach (array_slice($contactLinks, 0, 3) as $pageUrl) {
-            if ($html = fetchUrl($pageUrl))
+        foreach (array_slice($contactLinks, 0, 2) as $pageUrl) {
+            if ($html = fetchUrl($pageUrl, 'other'))
                 $foundEmails = array_merge($foundEmails, extractEmailsFromHtml($html, $domain));
         }
     }
-    $foundEmails = array_unique($foundEmails);
-    return array_slice($foundEmails, 0, 5);
+    return array_slice(array_unique($foundEmails), 0, 5);
 }
 
-function extractEmailsFromHtml($html, $domain)
-{
+function extractEmailsFromHtml($html, $domain) {
     $emails = [];
     preg_match_all('/[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,10}/', $html, $matches);
     if (!empty($matches[0])) {
         foreach ($matches[0] as $email) {
-            if (isValidEmail($email, $domain))
-                $emails[] = strtolower($email);
+            if (isValidEmail($email, $domain)) $emails[] = strtolower($email);
         }
     }
     return $emails;
 }
 
-function findContactLinks($html, $baseUrl)
-{
+function findContactLinks($html, $baseUrl) {
     $dom = new DOMDocument();
     @$dom->loadHTML($html);
     $links = $dom->getElementsByTagName('a');
     $candidates = [];
-    $keywords = ['contact', 'iletisim', 'about', 'hakkimizda'];
+    $keywords = ['contact', 'iletisim', 'about', 'hakkimizda', 'impressum'];
     foreach ($links as $link) {
         $href = $link->getAttribute('href');
         foreach ($keywords as $kw) {
-            if (strpos($href, $kw) !== false) {
-                if (strpos($href, 'http') === false)
-                    $href = rtrim($baseUrl, '/') . '/' . ltrim($href, '/');
+            if (stripos($href, $kw) !== false) {
+                if (strpos($href, 'http') === false) $href = rtrim($baseUrl, '/') . '/' . ltrim($href, '/');
                 $candidates[] = $href;
             }
         }
@@ -319,33 +379,15 @@ function findContactLinks($html, $baseUrl)
     return array_unique($candidates);
 }
 
-function isValidEmail($email, $domain)
-{
-    $junkTerms = ['example.com', '.png', '.jpg', '.js', '.css', 'sentry.io', 'noreply'];
-    foreach ($junkTerms as $term)
-        if (strpos($email, $term) !== false)
-            return false;
+function isValidEmail($email, $domain) {
+    $junkTerms = ['example.com', '.png', '.jpg', '.js', '.css', 'sentry.io', 'noreply', 'domain.com', 'email.com'];
+    foreach ($junkTerms as $term) if (strpos($email, $term) !== false) return false;
     return true;
 }
 
-function parseTrafficString($str)
-{
-    $str = strtolower($str);
-    $clean = preg_replace('/[^0-9.kmb]/', '', $str);
-    $m = 1;
-    if (strpos($clean, 'm'))
-        $m = 1000000;
-    elseif (strpos($clean, 'k'))
-        $m = 1000;
-    return (float) $clean * $m;
-}
-
-function formatNumber($num)
-{
-    if ($num > 1000000)
-        return number_format($num / 1000000, 1) . 'M';
-    if ($num > 1000)
-        return number_format($num / 1000, 1) . 'K';
+function formatNumber($num) {
+    if ($num > 1000000) return number_format($num / 1000000, 1) . 'M';
+    if ($num > 1000) return number_format($num / 1000, 1) . 'K';
     return (string) $num;
 }
 ?>
