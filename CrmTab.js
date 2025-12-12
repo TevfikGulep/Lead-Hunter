@@ -1,5 +1,5 @@
 // CrmTab.js
-// GÜNCELLEME: Global seçim onayı, temizleme butonu ve Mail Takip İkonu.
+// GÜNCELLEME: Mail Takip İkonu (Mavi/Yeşil/Kırmızı) mantığı eklendi.
 
 window.CrmTab = ({
     crmData, filters, setFilters, selectedIds, setShowBulkModal, activeTab, fixAllTrafficData, onBulkCheck, isCheckingBulk,
@@ -10,11 +10,12 @@ window.CrmTab = ({
     itemsPerPage, setItemsPerPage, selectAllFiltered, clearSelection
 }) => {
     
-    // Global seçim mantığı:
     const isAllPageSelected = paginatedItems.length > 0 && paginatedItems.every(i => selectedIds.has(i.id));
     const isGlobalSelectionActive = selectedIds.size > paginatedItems.length && selectedIds.size >= totalRecords;
-    // Banner gösterme koşulu: Sayfa seçili, toplam kayıt sayfadan fazla ve global seçim henüz aktif DEĞİL.
     const canSelectAllGlobal = isAllPageSelected && totalRecords > paginatedItems.length && !isGlobalSelectionActive;
+
+    // YENİ: Cevap alınan statüler
+    const replyStatuses = ['ASKED_MORE', 'INTERESTED', 'IN_PROCESS', 'DEAL_ON', 'DEAL_OFF', 'DENIED', 'NOT_POSSIBLE'];
 
     return (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in">
@@ -51,7 +52,6 @@ window.CrmTab = ({
             </div>
             
             <div className="overflow-x-auto">
-                {/* --- SELECTION BANNERS --- */}
                 {canSelectAllGlobal && (
                     <div className="bg-indigo-50 border-b border-indigo-100 p-2 text-center text-xs text-indigo-800 animate-in slide-in-from-top-2 flex items-center justify-center gap-1">
                         Bu sayfadaki <strong>{paginatedItems.length}</strong> kayıt seçildi. 
@@ -65,7 +65,6 @@ window.CrmTab = ({
                         <button onClick={clearSelection} className="ml-2 font-bold underline hover:text-green-900 cursor-pointer">Seçimi Temizle</button>
                     </div>
                 )}
-                {/* ------------------------- */}
 
                 <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50 text-slate-500 border-b">
@@ -87,7 +86,21 @@ window.CrmTab = ({
                             const mainEmail = item.email ? item.email.split(',')[0].trim() : '';
                             const relatedSites = emailMap[mainEmail] || [];
                             const siteCount = relatedSites.length;
+
+                            // YENİ: Renk Mantığı
+                            const isReplied = replyStatuses.includes(item.statusKey);
                             const isMailOpened = !!item.mailOpenedAt;
+                            
+                            let dotColor = 'bg-red-200';
+                            let dotTitle = 'Mail henüz okunmadı';
+                            
+                            if (isReplied) {
+                                dotColor = 'bg-blue-500';
+                                dotTitle = 'Cevap Alındı';
+                            } else if (isMailOpened) {
+                                dotColor = 'bg-green-500';
+                                dotTitle = `Mail Okundu: ${new Date(item.mailOpenedAt).toLocaleString('tr-TR')}`;
+                            }
                             
                             return (
                             <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${editingRowId === item.id ? 'bg-indigo-50' : ''}`}>
@@ -97,7 +110,9 @@ window.CrmTab = ({
                                         <input value={editFormData.url} onChange={e => handleEditChange('url', e.target.value)} className="w-full p-1 border rounded" />
                                     ) : (
                                         <div className="flex items-center gap-2">
-                                            {isMailOpened ? <div className="w-3 h-3 rounded-full bg-green-500 shadow-sm animate-pulse" title={`Mail Okundu: ${new Date(item.mailOpenedAt).toLocaleString('tr-TR')}`}></div> : <div className="w-3 h-3 rounded-full bg-red-200" title="Mail henüz okunmadı"></div>}
+                                            {/* YENİ: Mail Tracking Icon */}
+                                            <div className={`w-3 h-3 rounded-full shadow-sm ${dotColor} ${isMailOpened && !isReplied ? 'animate-pulse' : ''}`} title={dotTitle}></div>
+
                                             <span onClick={() => toggleSelection(item.id)} className="cursor-pointer hover:text-indigo-600 transition-colors">{window.cleanDomain(item.url)}</span>
                                             <a href={`http://${window.cleanDomain(item.url)}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-slate-400 hover:text-indigo-500"><window.Icon name="external-link" className="w-4 h-4"/></a>
                                         </div>
