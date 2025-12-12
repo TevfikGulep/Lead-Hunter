@@ -1,5 +1,5 @@
 // LeadHunter_Data.js
-// GÜNCELLEME: Seçim mantığı iyileştirildi (Smart Toggle) ve Sayfalama Limiti State eklendi.
+// GÜNCELLEME: Mail Durum Filtresi (mailStatus) Eklendi.
 
 const { useState, useEffect, useMemo } = React;
 
@@ -13,8 +13,11 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
     const [itemsPerPage, setItemsPerPage] = useState(50);
     
     const [sortConfig, setSortConfig] = useState({ key: 'lastContactDate', direction: 'desc' });
+    
+    // YENİ: 'mailStatus' filtresi eklendi
     const [filters, setFilters] = useState({ 
-        search: '', language: 'ALL', status: [], lastSentStage: 'ALL', quality: 'ALL', startDate: '', endDate: ''
+        search: '', language: 'ALL', status: [], lastSentStage: 'ALL', quality: 'ALL', 
+        mailStatus: 'ALL', startDate: '', endDate: ''
     });
     const [selectedIds, setSelectedIds] = useState(new Set());
 
@@ -64,15 +67,10 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
     
     // AKILLI TOPLU SEÇİM (Smart Toggle)
     const toggleSelectAll = (pageItems) => { 
-        // Sayfadaki HER BİR öğe zaten seçili mi?
         const allPageSelected = pageItems.length > 0 && pageItems.every(item => selectedIds.has(item.id));
-
         if (allPageSelected) {
-            // Eğer hepsi seçiliyse (veya global seçim varsa), işareti kaldırınca TEMİZLE.
-            // Kullanıcı kafası karışmasın diye seçimden çıkmak istiyordur.
             setSelectedIds(new Set()); 
         } else { 
-            // Değilse, mevcut seçimleri koru ve bu sayfadakileri ekle
             const newSet = new Set(selectedIds);
             pageItems.forEach(item => newSet.add(item.id));
             setSelectedIds(newSet);
@@ -80,7 +78,6 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
     };
 
     const selectAllFiltered = () => {
-        // Filtrelenmiş listenin TAMAMINI seç
         const allIds = processedData.map(i => i.id);
         setSelectedIds(new Set(allIds));
     };
@@ -132,6 +129,21 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
         } else if (filters.quality === 'MISSING') {
             data = data.filter(item => (!item.email || item.email.length < 5 || item.email === '-') || (!item.trafficStatus || !item.trafficStatus.viable));
         }
+        
+        // YENİ: MAIL DURUM FİLTRESİ (MAVİ/YEŞİL/KIRMIZI NOKTA FİLTRESİ)
+        if (filters.mailStatus !== 'ALL') {
+            const replyStatuses = ['ASKED_MORE', 'INTERESTED', 'IN_PROCESS', 'DEAL_ON', 'DEAL_OFF', 'DENIED', 'NOT_POSSIBLE'];
+            data = data.filter(item => {
+                const isReplied = replyStatuses.includes(item.statusKey);
+                const isOpened = !!item.mailOpenedAt;
+
+                if (filters.mailStatus === 'REPLIED') return isReplied; // Mavi
+                if (filters.mailStatus === 'OPENED') return isOpened && !isReplied; // Yeşil (Okundu ama cevap yok)
+                if (filters.mailStatus === 'UNOPENED') return !isOpened && !isReplied; // Kırmızı
+                return true;
+            });
+        }
+
         if (filters.startDate) {
             const start = new Date(filters.startDate).getTime();
             data = data.filter(item => item.lastContactDate && new Date(item.lastContactDate).getTime() >= start);
@@ -161,7 +173,6 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
         return data;
     }, [crmData, filters, sortConfig, activeTab]);
 
-    // Dinamik itemsPerPage kullanımı
     const getPaginatedData = () => { 
         const startIndex = (currentPage - 1) * itemsPerPage; 
         return processedData.slice(startIndex, startIndex + itemsPerPage); 
@@ -172,12 +183,12 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
     return {
         crmData, setCrmData, emailMap,
         currentPage, setCurrentPage, 
-        itemsPerPage, setItemsPerPage, // DIŞA AKTARILDI
+        itemsPerPage, setItemsPerPage, 
         sortConfig, setSortConfig, filters, setFilters,
         selectedIds, setSelectedIds, processedData,
         getPaginatedData, totalPages,
         toggleSelection, toggleSelectAll, 
-        selectAllFiltered, // DIŞA AKTARILDI 
+        selectAllFiltered, 
         clearSelection,
         handleSort, processAndSetCrmData
     };
