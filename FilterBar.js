@@ -1,9 +1,20 @@
 // FilterBar.js
-// GÜNCELLEME: Mail Durum Filtresi (Select) eklendi.
+// GÜNCELLEME: Rapor İndirme Butonu Eklendi.
 
 const StatusMultiSelect = window.StatusMultiSelect;
 
-window.FilterBar = ({ filters, setFilters, selectedCount, setShowBulkModal, activeTab, fixAllTrafficData, onBulkCheck, isCheckingBulk, onBulkStatusChange }) => (
+window.FilterBar = ({ 
+    filters, 
+    setFilters, 
+    selectedCount, 
+    setShowBulkModal, 
+    activeTab, 
+    fixAllTrafficData, 
+    onBulkCheck, 
+    isCheckingBulk, 
+    onBulkStatusChange,
+    onExport // YENİ: Export fonksiyonu
+}) => (
     <div className="flex flex-wrap items-center gap-3 mb-4 bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
         <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-lg border flex-1 min-w-[200px]">
             <window.Icon name="search" className="w-4 h-4 text-slate-400" />
@@ -16,7 +27,6 @@ window.FilterBar = ({ filters, setFilters, selectedCount, setShowBulkModal, acti
             />
         </div>
         
-        {/* YENİ: Mail Durum Filtresi */}
         <select 
             value={filters.mailStatus} 
             onChange={(e) => setFilters(prev => ({ ...prev, mailStatus: e.target.value }))} 
@@ -54,34 +64,45 @@ window.FilterBar = ({ filters, setFilters, selectedCount, setShowBulkModal, acti
 
         <button onClick={() => setFilters({ search: '', language: 'ALL', status: [], lastSentStage: 'ALL', quality: 'ALL', mailStatus: 'ALL', startDate: '', endDate: '' })} className="px-3 py-2 text-xs text-red-500 hover:bg-red-50 rounded-lg transition-colors">Temizle</button>
         
-        {selectedCount > 0 && (
-            <div className="ml-auto flex gap-2 animate-in fade-in items-center">
-                <select 
-                    onChange={(e) => { 
-                        if(e.target.value) {
-                            onBulkStatusChange(e.target.value); 
-                            e.target.value = ''; 
-                        }
-                    }} 
-                    className="bg-white text-slate-700 hover:bg-slate-50 px-3 py-2 rounded-lg text-xs font-bold border border-slate-300 shadow-sm transition-colors outline-none cursor-pointer"
-                >
-                    <option value="">Durum Değiştir...</option>
-                    {Object.keys(window.LEAD_STATUSES).map(key => (
-                        <option key={key} value={key}>{window.LEAD_STATUSES[key].label}</option>
-                    ))}
-                </select>
+        <div className="ml-auto flex gap-2 animate-in fade-in items-center">
+            {/* YENİ: Raporu İndir Butonu */}
+            <button 
+                onClick={onExport} 
+                className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 shadow-md transition-colors"
+                title="Mevcut listeyi rapor olarak indir"
+            >
+                <window.Icon name="download" className="w-4 h-4"/> Raporu İndir
+            </button>
 
-                <button 
-                    onClick={onBulkCheck} 
-                    disabled={isCheckingBulk}
-                    className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 shadow-sm transition-colors ${isCheckingBulk ? 'bg-blue-100 text-blue-400 cursor-wait' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
-                >
-                    {isCheckingBulk ? <window.Icon name="loader-2" className="w-4 h-4 animate-spin"/> : <window.Icon name="refresh-cw" className="w-4 h-4"/>} 
-                    {selectedCount} Seçiliyi Tara
-                </button>
-                <button onClick={()=>setShowBulkModal(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 shadow-lg"><window.Icon name="send" className="w-4 h-4"/> Gönder</button>
-            </div>
-        )}
+            {selectedCount > 0 && (
+                <>
+                    <select 
+                        onChange={(e) => { 
+                            if(e.target.value) {
+                                onBulkStatusChange(e.target.value); 
+                                e.target.value = ''; 
+                            }
+                        }} 
+                        className="bg-white text-slate-700 hover:bg-slate-50 px-3 py-2 rounded-lg text-xs font-bold border border-slate-300 shadow-sm transition-colors outline-none cursor-pointer"
+                    >
+                        <option value="">Durum Değiştir...</option>
+                        {Object.keys(window.LEAD_STATUSES).map(key => (
+                            <option key={key} value={key}>{window.LEAD_STATUSES[key].label}</option>
+                        ))}
+                    </select>
+
+                    <button 
+                        onClick={onBulkCheck} 
+                        disabled={isCheckingBulk}
+                        className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 shadow-sm transition-colors ${isCheckingBulk ? 'bg-blue-100 text-blue-400 cursor-wait' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+                    >
+                        {isCheckingBulk ? <window.Icon name="loader-2" className="w-4 h-4 animate-spin"/> : <window.Icon name="refresh-cw" className="w-4 h-4"/>} 
+                        {selectedCount} Seçiliyi Tara
+                    </button>
+                    <button onClick={()=>setShowBulkModal(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 shadow-lg"><window.Icon name="send" className="w-4 h-4"/> Gönder</button>
+                </>
+            )}
+        </div>
         
         {activeTab === 'crm' && (
             <button onClick={fixAllTrafficData} className="p-2 bg-slate-100 text-slate-500 hover:text-indigo-600 rounded-lg ml-2" title="Trafik Verilerini Düzelt"><window.Icon name="wrench" className="w-4 h-4"/></button>
