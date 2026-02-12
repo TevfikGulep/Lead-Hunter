@@ -1,35 +1,19 @@
 // LeadHunter.js
-// GÜNCELLEME: Veri akışı düzeltildi. itemsPerPage ve selectAllFiltered özellikleri tab'lara iletiliyor.
+// GÜNCELLEME: Rapor Export fonksiyonu tab'lara iletiliyor.
 
 const { useState, useEffect } = React;
 
 const LeadHunter = () => {
-    // --- LOCAL STATE (Global olmayan, sadece arayüzü ilgilendirenler) ---
     const [historyModalLead, setHistoryModalLead] = useState(null);
     const [showImportModal, setShowImportModal] = useState(false);
-
-    // Hunter Tab State (Bu veriler genellikle kalıcı değildir, o yüzden burada tuttuk)
-    const [leads, setLeads] = useState([]); // Hunter sonuçları
+    const [leads, setLeads] = useState([]);
     const [hunterSort, setHunterSort] = useState({ key: 'traffic', direction: 'desc' });
     const [hunterFilterType, setHunterFilterType] = useState('ALL');
 
-    // --- 1. AUTH & SETTINGS HOOK ---
     const auth = window.useLeadHunterAuth();
-
-    // --- 2. DATA HOOK ---
     const data = window.useLeadHunterData(auth.dbInstance, auth.settings, auth.activeTab);
+    const actions = window.useLeadHunterActions(auth.dbInstance, auth.isDbConnected, data.crmData, data.setCrmData, auth.settings, setHistoryModalLead);
 
-    // --- 3. ACTIONS HOOK ---
-    const actions = window.useLeadHunterActions(
-        auth.dbInstance,
-        auth.isDbConnected,
-        data.crmData,
-        data.setCrmData,
-        auth.settings,
-        setHistoryModalLead // Modal açıksa içindeki logları güncellemek için
-    );
-
-    // --- 4. SERVICES HOOK ---
     const services = window.useLeadHunterServices(
         auth.dbInstance,
         auth.isDbConnected,
@@ -38,13 +22,12 @@ const LeadHunter = () => {
         data.setCrmData,
         data.selectedIds,
         data.setSelectedIds,
-        leads,     // Hunter leads
-        setLeads,  // Hunter leads setter
+        leads,
+        setLeads,
         actions.getStageInfo,
         auth.searchLocation
     );
 
-    // --- HUNTER DATA PROCESSING (Lokal sıralama/filtreleme) ---
     const processedHunterLeads = leads
         .filter(l => {
             if (hunterFilterType === 'VIABLE') return l.trafficStatus?.viable;
@@ -57,8 +40,6 @@ const LeadHunter = () => {
             if (hunterSort.direction === 'asc') return valA - valB;
             return valB - valA;
         });
-
-    // --- RENDER LOGIC ---
 
     if (!auth.isAuthenticated) {
         return (
@@ -75,27 +56,17 @@ const LeadHunter = () => {
 
     return (
         <div className="flex h-screen bg-slate-50 font-sans text-slate-800 overflow-hidden">
-            {/* SOL MENÜ */}
-            <window.Sidebar
-                activeTab={auth.activeTab}
-                setActiveTab={auth.setActiveTab}
-                isDbConnected={auth.isDbConnected}
-            />
-
-            {/* ANA İÇERİK ALANI */}
+            <window.Sidebar activeTab={auth.activeTab} setActiveTab={auth.setActiveTab} isDbConnected={auth.isDbConnected} />
             <div className="flex-1 overflow-y-auto bg-slate-100 relative">
                 <div className="w-full mx-auto p-6 md:p-8">
-
-                    {/* ÜST BAŞLIK */}
                     <div className="mb-8 flex justify-between items-end border-b border-slate-200 pb-4">
                         <h2 className="text-3xl font-bold text-slate-800 tracking-tight">
                             {auth.activeTab === 'dashboard' ? 'Yönetim Paneli' :
-                                auth.activeTab === 'hunter' ? 'Site Avcısı' :
-                                    auth.activeTab === 'crm' ? 'Müşteri Listesi' : 'Ayarlar'}
+                             auth.activeTab === 'hunter' ? 'Site Avcısı' :
+                             auth.activeTab === 'crm' ? 'Müşteri Listesi' : 'Ayarlar'}
                         </h2>
                     </div>
 
-                    {/* --- TAB: DASHBOARD --- */}
                     {auth.activeTab === 'dashboard' && (
                         <window.DashboardTab
                             crmData={data.crmData}
@@ -115,13 +86,10 @@ const LeadHunter = () => {
                             totalPages={data.totalPages}
                             setCurrentPage={data.setCurrentPage}
                             totalRecords={data.processedData.length}
-
-                            // YENİ EKLENEN PROPS
                             itemsPerPage={data.itemsPerPage}
                             setItemsPerPage={data.setItemsPerPage}
                             selectAllFiltered={data.selectAllFiltered}
                             clearSelection={data.clearSelection}
-
                             setHistoryModalLead={setHistoryModalLead}
                             getStageInfo={actions.getStageInfo}
                             handleSort={data.handleSort}
@@ -129,10 +97,10 @@ const LeadHunter = () => {
                             onStageChange={actions.handleManualStageUpdate}
                             workflow={auth.settings.workflowTR}
                             bulkUpdateStatus={services.bulkUpdateStatus}
+                            onExport={() => services.handleExportData(data.selectedIds.size > 0 ? data.crmData.filter(l => data.selectedIds.has(l.id)) : data.processedData)}
                         />
                     )}
 
-                    {/* --- TAB: HUNTER --- */}
                     {auth.activeTab === 'hunter' && (
                         <window.HunterTab
                             keywords={services.keywords}
@@ -161,7 +129,6 @@ const LeadHunter = () => {
                         />
                     )}
 
-                    {/* --- TAB: CRM (DATABASE) --- */}
                     {auth.activeTab === 'crm' && (
                         <window.CrmTab
                             crmData={data.crmData}
@@ -179,21 +146,16 @@ const LeadHunter = () => {
                             toggleSelection={data.toggleSelection}
                             handleSort={data.handleSort}
                             sortConfig={data.sortConfig}
-
-                            // YENİ EKLENEN PROPS
                             itemsPerPage={data.itemsPerPage}
                             setItemsPerPage={data.setItemsPerPage}
                             selectAllFiltered={data.selectAllFiltered}
                             clearSelection={data.clearSelection}
-
-                            // Edit Props
                             editingRowId={actions.editingRowId}
                             editFormData={actions.editFormData}
                             handleEditChange={actions.handleEditChange}
                             handleEditSave={actions.handleEditSave}
                             handleEditCancel={actions.handleEditCancel}
                             handleEditClick={actions.handleEditClick}
-
                             setHistoryModalLead={setHistoryModalLead}
                             openMailModal={services.openMailModal}
                             currentPage={data.currentPage}
@@ -206,10 +168,10 @@ const LeadHunter = () => {
                             isEnriching={services.isEnriching}
                             setShowImportModal={setShowImportModal}
                             bulkUpdateStatus={services.bulkUpdateStatus}
+                            onExport={() => services.handleExportData(data.selectedIds.size > 0 ? data.crmData.filter(l => data.selectedIds.has(l.id)) : data.processedData)}
                         />
                     )}
 
-                    {/* --- TAB: SETTINGS --- */}
                     {auth.activeTab === 'settings' && (
                         <window.SettingsTab
                             settings={auth.settings}
@@ -229,59 +191,13 @@ const LeadHunter = () => {
                 </div>
             </div>
 
-            {/* --- MODALLER --- */}
-            {services.showEnrichModal && (
-                <window.EnrichModal
-                    isEnriching={services.isEnriching}
-                    enrichProgress={services.enrichProgress}
-                    enrichLogs={services.enrichLogs}
-                    close={() => services.setShowEnrichModal(false)}
-                />
-            )}
-
-            {services.showBulkModal && (
-                <window.BulkModal
-                    isBulkSending={services.isBulkSending}
-                    bulkProgress={services.bulkProgress}
-                    selectedCount={data.selectedIds.size}
-                    bulkConfig={services.bulkConfig}
-                    setBulkConfig={services.setBulkConfig}
-                    activeTab={auth.activeTab}
-                    settings={auth.settings}
-                    executeBulkSend={services.executeBulkSend}
-                    close={() => services.setShowBulkModal(false)}
-                    setShowBulkModal={services.setShowBulkModal}
-                />
-            )}
-
-            <window.MailModal
-                selectedLead={services.selectedLead}
-                setSelectedLead={services.setSelectedLead}
-                handleSendMail={services.handleSendMail}
-                isSending={services.isSending}
-            />
-
-            <window.ImportModal
-                isOpen={showImportModal}
-                onClose={() => setShowImportModal(false)}
-                crmData={data.crmData}
-                dbInstance={auth.dbInstance}
-                isDbConnected={auth.isDbConnected}
-            />
-
-            <window.HistoryModal
-                historyModalLead={historyModalLead}
-                setHistoryModalLead={setHistoryModalLead}
-                checkGmailReply={actions.checkGmailReply}
-                isCheckingReply={actions.isCheckingReply}
-                replyCheckResult={actions.replyCheckResult}
-                onAddNote={actions.handleAddNote}
-                onDeleteNote={actions.handleDeleteNote}
-                onUpdateNote={actions.handleUpdateNote}
-            />
+            {services.showEnrichModal && <window.EnrichModal isEnriching={services.isEnriching} enrichProgress={services.enrichProgress} enrichLogs={services.enrichLogs} close={() => services.setShowEnrichModal(false)} />}
+            {services.showBulkModal && <window.BulkModal isBulkSending={services.isBulkSending} bulkProgress={services.bulkProgress} selectedCount={data.selectedIds.size} bulkConfig={services.bulkConfig} setBulkConfig={services.setBulkConfig} activeTab={auth.activeTab} settings={auth.settings} executeBulkSend={services.executeBulkSend} close={() => services.setShowBulkModal(false)} setShowBulkModal={services.setShowBulkModal} />}
+            <window.MailModal selectedLead={services.selectedLead} setSelectedLead={services.setSelectedLead} handleSendMail={services.handleSendMail} isSending={services.isSending} />
+            <window.ImportModal isOpen={showImportModal} onClose={() => setShowImportModal(false)} crmData={data.crmData} dbInstance={auth.dbInstance} isDbConnected={auth.isDbConnected} />
+            <window.HistoryModal historyModalLead={historyModalLead} setHistoryModalLead={setHistoryModalLead} checkGmailReply={actions.checkGmailReply} isCheckingReply={actions.isCheckingReply} replyCheckResult={actions.replyCheckResult} onAddNote={actions.handleAddNote} onDeleteNote={actions.handleDeleteNote} onUpdateNote={actions.handleUpdateNote} />
         </div>
     );
 };
 
-// Global'e ata ki main.js bulabilsin
 window.LeadHunter = LeadHunter;
