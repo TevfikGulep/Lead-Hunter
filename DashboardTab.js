@@ -1,12 +1,12 @@
 // DashboardTab.js
-// GÜNCELLEME: Mail Takip İkonu (Mavi/Yeşil/Kırmızı) mantığı eklendi.
+// GÜNCELLEME: "İsim" (contactName) sütunu eklendi, Başlıklar Sıralanabilir (Sortable) yapıldı ve Rapor Export propu entegre edildi.
 
 window.DashboardTab = ({ 
     crmData, filters, setFilters, selectedIds, toggleSelection, toggleSelectAll, selectedCount,
     setShowBulkModal, activeTab, fixAllTrafficData, onBulkCheck, isCheckingBulk, paginatedItems, 
     currentPage, totalPages, setCurrentPage, totalRecords, setHistoryModalLead, getStageInfo, 
     handleSort, sortConfig, onStageChange, workflow, bulkUpdateStatus,
-    itemsPerPage, setItemsPerPage, selectAllFiltered, clearSelection
+    itemsPerPage, setItemsPerPage, selectAllFiltered, clearSelection, onExport
 }) => {
     
     // İstatistikler
@@ -23,7 +23,6 @@ window.DashboardTab = ({
     const isGlobalSelectionActive = selectedIds.size > paginatedItems.length && selectedIds.size >= totalRecords;
     const canSelectAllGlobal = isAllPageSelected && totalRecords > paginatedItems.length && !isGlobalSelectionActive;
 
-    // YENİ: Cevap alınan statüler listesi
     const replyStatuses = ['ASKED_MORE', 'INTERESTED', 'IN_PROCESS', 'DEAL_ON', 'DEAL_OFF', 'DENIED', 'NOT_POSSIBLE'];
 
     return (
@@ -40,7 +39,7 @@ window.DashboardTab = ({
                 ))}
             </div>
             
-            <window.FilterBar filters={filters} setFilters={setFilters} selectedCount={selectedCount} setShowBulkModal={setShowBulkModal} activeTab={activeTab} fixAllTrafficData={fixAllTrafficData} onBulkCheck={onBulkCheck} isCheckingBulk={isCheckingBulk} onBulkStatusChange={bulkUpdateStatus} />
+            <window.FilterBar filters={filters} setFilters={setFilters} selectedCount={selectedCount} setShowBulkModal={setShowBulkModal} activeTab={activeTab} fixAllTrafficData={fixAllTrafficData} onBulkCheck={onBulkCheck} isCheckingBulk={isCheckingBulk} onBulkStatusChange={bulkUpdateStatus} onExport={onExport} />
             
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-6 border-b flex justify-between items-center bg-slate-50/50">
@@ -67,12 +66,30 @@ window.DashboardTab = ({
                         <thead className="bg-slate-50 text-slate-500">
                             <tr>
                                 <th className="p-4 w-10"><input type="checkbox" className="custom-checkbox" checked={isAllPageSelected} onChange={() => toggleSelectAll(paginatedItems)}/></th>
-                                <th className="p-4">Site (Mail Takip)</th>
-                                <th className="p-4">Email</th>
-                                <th className="p-4 cursor-pointer hover:text-indigo-600" onClick={() => handleSort('potential')}><div className="flex items-center gap-1">Trafik <window.SortIcon column="potential" sortConfig={sortConfig}/></div></th>
-                                <th className="p-4 cursor-pointer hover:text-indigo-600" onClick={() => handleSort('stage')}><div className="flex items-center gap-1">Son Gönderilen <window.SortIcon column="stage" sortConfig={sortConfig}/></div></th>
-                                <th className="p-4 cursor-pointer hover:text-indigo-600" onClick={() => handleSort('lastContactDate')}><div className="flex items-center gap-1">Son Temas <window.SortIcon column="lastContactDate" sortConfig={sortConfig}/></div></th> 
-                                <th className="p-4 cursor-pointer hover:text-indigo-600" onClick={() => handleSort('statusKey')}><div className="flex items-center gap-1">Durum <window.SortIcon column="statusKey" sortConfig={sortConfig}/></div></th>
+                                
+                                {/* SIRALANABİLİR BAŞLIKLAR */}
+                                <th className="p-4 cursor-pointer hover:text-indigo-600 transition-colors select-none" onClick={() => handleSort('url')}>
+                                    <div className="flex items-center gap-1">Site <window.SortIcon column="url" sortConfig={sortConfig}/></div>
+                                </th>
+                                <th className="p-4 cursor-pointer hover:text-indigo-600 transition-colors select-none" onClick={() => handleSort('contactName')}>
+                                    <div className="flex items-center gap-1">İsim <window.SortIcon column="contactName" sortConfig={sortConfig}/></div>
+                                </th>
+                                <th className="p-4 cursor-pointer hover:text-indigo-600 transition-colors select-none" onClick={() => handleSort('email')}>
+                                    <div className="flex items-center gap-1">Email <window.SortIcon column="email" sortConfig={sortConfig}/></div>
+                                </th>
+                                <th className="p-4 cursor-pointer hover:text-indigo-600 transition-colors select-none" onClick={() => handleSort('potential')}>
+                                    <div className="flex items-center gap-1">Trafik <window.SortIcon column="potential" sortConfig={sortConfig}/></div>
+                                </th>
+                                <th className="p-4 cursor-pointer hover:text-indigo-600 transition-colors select-none" onClick={() => handleSort('stage')}>
+                                    <div className="flex items-center gap-1">Son Gönderilen <window.SortIcon column="stage" sortConfig={sortConfig}/></div>
+                                </th>
+                                <th className="p-4 cursor-pointer hover:text-indigo-600 transition-colors select-none" onClick={() => handleSort('lastContactDate')}>
+                                    <div className="flex items-center gap-1">Son Temas <window.SortIcon column="lastContactDate" sortConfig={sortConfig}/></div>
+                                </th> 
+                                <th className="p-4 cursor-pointer hover:text-indigo-600 transition-colors select-none" onClick={() => handleSort('statusKey')}>
+                                    <div className="flex items-center gap-1">Durum <window.SortIcon column="statusKey" sortConfig={sortConfig}/></div>
+                                </th>
+                                
                                 <th className="p-4">Aksiyon</th>
                                 <th className="p-4 text-right">Geçmiş</th>
                             </tr>
@@ -81,7 +98,6 @@ window.DashboardTab = ({
                             {displayItems.map(lead => {
                                 const nextStageInfo = getStageInfo(lead.stage, lead.language);
                                 
-                                // YENİ: Renk Mantığı
                                 const isReplied = replyStatuses.includes(lead.statusKey);
                                 const isMailOpened = !!lead.mailOpenedAt;
                                 
@@ -101,7 +117,6 @@ window.DashboardTab = ({
                                         <td className="p-4"><input type="checkbox" className="custom-checkbox" checked={selectedIds.has(lead.id)} onChange={() => toggleSelection(lead.id)}/></td>
                                         <td className="p-4 font-medium">
                                             <div className="flex items-center gap-2">
-                                                {/* YENİ: Mail Tracking Icon */}
                                                 <div className={`w-3 h-3 rounded-full shadow-sm ${dotColor} ${isMailOpened && !isReplied ? 'animate-pulse' : ''}`} title={dotTitle}></div>
 
                                                 <span onClick={() => toggleSelection(lead.id)} className="cursor-pointer hover:text-indigo-600 transition-colors">
@@ -112,6 +127,10 @@ window.DashboardTab = ({
                                                 </a>
                                             </div>
                                         </td>
+                                        
+                                        {/* İSİM SÜTUNU */}
+                                        <td className="p-4 text-sm text-slate-600 truncate max-w-[120px]" title={lead.contactName}>{lead.contactName || '-'}</td>
+                                        
                                         <td className="p-4 text-sm text-slate-600">{lead.email || '-'}</td>
                                         <td className="p-4 text-slate-600 font-mono text-xs">
                                             {lead.trafficStatus && lead.trafficStatus.label ? (
