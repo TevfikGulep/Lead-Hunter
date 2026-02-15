@@ -13,7 +13,7 @@ window.FilterBar = ({
     onBulkCheck, 
     isCheckingBulk, 
     onBulkStatusChange,
-    onExport // YENİ: Export fonksiyonu
+    onExport // YENİ: Export fonksiyonu prop olarak eklendi
 }) => (
     <div className="flex flex-wrap items-center gap-3 mb-4 bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
         <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-lg border flex-1 min-w-[200px]">
@@ -65,7 +65,7 @@ window.FilterBar = ({
         <button onClick={() => setFilters({ search: '', language: 'ALL', status: [], lastSentStage: 'ALL', quality: 'ALL', mailStatus: 'ALL', startDate: '', endDate: '' })} className="px-3 py-2 text-xs text-red-500 hover:bg-red-50 rounded-lg transition-colors">Temizle</button>
         
         <div className="ml-auto flex gap-2 animate-in fade-in items-center">
-            {/* YENİ: Raporu İndir Butonu */}
+            {/* YENİ EKLENEN BUTON: RAPORU İNDİR */}
             <button 
                 onClick={onExport} 
                 className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 shadow-md transition-colors"
