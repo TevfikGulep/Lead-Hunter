@@ -62,8 +62,8 @@ const LeadHunter = () => {
                     <div className="mb-8 flex justify-between items-end border-b border-slate-200 pb-4">
                         <h2 className="text-3xl font-bold text-slate-800 tracking-tight">
                             {auth.activeTab === 'dashboard' ? 'Yönetim Paneli' :
-                             auth.activeTab === 'hunter' ? 'Site Avcısı' :
-                             auth.activeTab === 'crm' ? 'Müşteri Listesi' : 'Ayarlar'}
+                                auth.activeTab === 'hunter' ? 'Site Avcısı' :
+                                    auth.activeTab === 'crm' ? 'Müşteri Listesi' : 'Ayarlar'}
                         </h2>
                     </div>
 

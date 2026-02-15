@@ -1,67 +1,90 @@
 // LeadHunter_Services.js
-// GÜNCELLEME: Türkçe Karakter Haritalama (Mapping) ve Gelişmiş Kara Liste Filtresi
 
 const { useState, useRef, useEffect } = React;
+
 
 // --- YARDIMCI FONKSİYON: KARAKTER DÜZELTME (TURKISH FIX) ---
 window.fixEncoding = (str) => {
     if (!str) return '';
-    
     let text = str;
 
-    // 1. MIME Encoded Word Çözümü (=?UTF-8?B?...)
+    // 1. MIME Encoded Word Çözümü
     if (text.includes('=?') && text.includes('?=')) {
         text = text.replace(/=\?([^?]+)\?([QBqb])\?([^?]*)\?=/g, (match, charset, encoding, content) => {
             try {
                 if (encoding.toUpperCase() === 'B') {
-                    return decodeURIComponent(escape(atob(content)));
+                    const binary = atob(content);
+                    const bytes = new Uint8Array(binary.length);
+                    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                    return new TextDecoder(charset.toLowerCase() || 'utf-8').decode(bytes);
                 } else if (encoding.toUpperCase() === 'Q') {
-                    return decodeURIComponent(content.replace(/_/g, ' ').replace(/=/g, '%'));
+                    return content.replace(/_/g, ' ').replace(/=([0-9A-F]{2})/gi, (m, hex) => String.fromCharCode(parseInt(hex, 16)));
                 }
             } catch (e) { return match; }
             return match;
         });
     }
 
-    // 2. Yaygın Bozuk Türkçe Karakter Haritası (Windows-1252 / ISO-8859-9 artifacts)
+    // 2. "SMART FIX" (UTF-8 in Latin1/Win1252)
+    try {
+        if (/[ÃÄÅ]/.test(text)) {
+            const bytes = new Uint8Array(text.length);
+            let possible = true;
+            for (let i = 0; i < text.length; i++) {
+                const code = text.charCodeAt(i);
+                if (code > 255) { possible = false; break; }
+                bytes[i] = code;
+            }
+            if (possible) {
+                const decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+                if (decoded && decoded !== text) text = decoded;
+            }
+        }
+    } catch (e) { }
+
+    // 3. GENİŞLETİLMİŞ MANUEL HARİTA (Manual Fallback)
     const replacements = {
-        'Ã–': 'Ö', 'Ã¶': 'ö',
-        'Ãœ': 'Ü', 'Ã¼': 'ü',
-        'Ä°': 'İ', 'Ä±': 'ı',
-        'Åž': 'Ş', 'ÅŸ': 'ş',
-        'Ã‡': 'Ç', 'Ã§': 'ç',
-        'ÄŸ': 'ğ', 'Äž': 'Ğ',
-        'Ã¢': 'â', 'Ã‚': 'Â',
-        'Ã®': 'î', 'Ãhh': 'İ',
-        '&#304;': 'İ', '&#305;': 'ı',
-        '&#214;': 'Ö', '&#246;': 'ö',
-        '&#220;': 'Ü', '&#252;': 'ü',
-        '&#199;': 'Ç', '&#231;': 'ç',
-        '&#286;': 'Ğ', '&#287;': 'ğ',
-        '&#350;': 'Ş', '&#351;': 'ş'
+        'Ä°': 'İ', 'Ä±': 'ı', 'Ã–': 'Ö', 'Ã¶': 'ö', 'Ãœ': 'Ü', 'Ã¼': 'ü',
+        'Åž': 'Ş', 'ÅŸ': 'ş', 'Ã‡': 'Ç', 'Ã§': 'ç', 'ÄŸ': 'ğ', 'Äž': 'Ğ',
+        'Ã¢': 'â', 'Ã‚': 'Â', 'Ã®': 'î', 'Ã®': 'î',
+        'Ä\u00A0': 'Ğ', 'Ä\u009F': 'ğ', 'Ã\u0096': 'Ö', 'Ã\u00B6': 'ö',
+        'Ã\u009C': 'Ü', 'Ã\u00BC': 'ü', 'Ã\u0087': 'Ç', 'Ã\u00A7': 'ç',
+        'Å\u009E': 'Ş', 'Å\u009F': 'ş', 'â\u20AC\u201C': '-', 'Â': '',
+        '&#304;': 'İ', '&#305;': 'ı', '&#214;': 'Ö', '&#246;': 'ö',
+        '&#220;': 'Ü', '&#252;': 'ü', '&#199;': 'Ç', '&#231;': 'ç',
+        '&#286;': 'Ğ', '&#287;': 'ğ', '&#350;': 'Ş', '&#351;': 'ş',
+        '&amp;': '&', '&quot;': '"', '&apos;': "'", '&gt;': '>', '&lt;': '<'
     };
 
-    // Harita üzerinden düzeltme
-    Object.keys(replacements).forEach(key => {
-        while (text.includes(key)) {
-            text = text.replace(key, replacements[key]);
+    // Önce en uzun anahtarları düzelt (Örn: Ã– yerine Ä° gibi spesifikleri öncele)
+    const sortedKeys = Object.keys(replacements).sort((a, b) => b.length - a.length);
+    sortedKeys.forEach(key => {
+        if (text.includes(key)) {
+            const regex = new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+            text = text.replace(regex, replacements[key]);
         }
     });
+
+    // Son çare: Tekli Ã bozulması
+    if (text.includes('Ã') && !/[a-zA-Z0-9]/.test(text.charAt(text.indexOf('Ã') + 1))) {
+        text = text.replace(/Ã/g, 'İ');
+    }
 
     return text.trim();
 };
 
+
 // --- YARDIMCI FONKSİYON: Email'den İsim Çıkarma ---
 window.extractNameFromEmail = (fromStr) => {
     if (!fromStr) return '';
-    
+
     // Önce karakterleri düzelt
     const cleanStr = window.fixEncoding(fromStr);
-    
+
     // Format: "John Doe" <john@doe.com> veya John Doe <john@doe.com>
     const match = cleanStr.match(/^"?([^"<]+)"?\s*</);
     let name = '';
-    
+
     if (match && match[1]) {
         name = match[1].trim();
     } else {
@@ -72,7 +95,7 @@ window.extractNameFromEmail = (fromStr) => {
 
     // --- KARA LİSTE KONTROLÜ (İsim çekilirken anlık kontrol) ---
     const blackList = ['tevfik gülep', 'tevfik gulep', 'lead hunter', 'admin', 'info', 'iletisim', 'contact', 'support', 'destek', 'muhasebe', 'ik', 'hr', 'satis', 'sales'];
-    
+
     if (name && blackList.some(b => name.toLowerCase().includes(b))) {
         return ''; // Yasaklı isimse boş döndür
     }
@@ -116,6 +139,8 @@ window.useLeadHunterServices = (
     const crmDataRef = useRef(crmData);
     useEffect(() => { crmDataRef.current = crmData; }, [crmData]);
 
+
+
     // --- 1. TRACKING SYNC ---
     useEffect(() => {
         if (!isDbConnected) return;
@@ -137,10 +162,10 @@ window.useLeadHunterServices = (
                             const ref = dbInstance.collection("leads").doc(lead.id);
                             const updates = { mailOpenedAt: openedAt };
                             if (!lead.mailOpenedAt) {
-                                updates.activityLog = firebase.firestore.FieldValue.arrayUnion({ 
-                                    date: openedAt, 
-                                    type: 'INFO', 
-                                    content: 'Mail ilk kez okundu (Tracking Pixel)' 
+                                updates.activityLog = firebase.firestore.FieldValue.arrayUnion({
+                                    date: openedAt,
+                                    type: 'INFO',
+                                    content: 'Mail ilk kez okundu (Tracking Pixel)'
                                 });
                             }
                             batch.update(ref, updates);
@@ -161,29 +186,29 @@ window.useLeadHunterServices = (
         if (!isDbConnected || !settings.googleScriptUrl) return;
         const autoCheckReplies = async () => {
             const currentData = crmDataRef.current;
-            const candidates = currentData.filter(l => 
-                l.threadId && 
+            const candidates = currentData.filter(l =>
+                l.threadId &&
                 !['MAIL_ERROR', 'NOT_VIABLE', 'DEAL_ON', 'DEAL_OFF', 'DENIED', 'INTERESTED', 'IN_PROCESS', 'ASKED_MORE'].includes(l.statusKey)
             );
             if (candidates.length === 0) return;
             const sortedCandidates = [...candidates].sort((a, b) => new Date(b.lastContactDate || 0) - new Date(a.lastContactDate || 0)).slice(0, 50);
             try {
-                const response = await fetch(settings.googleScriptUrl, { 
-                    method: 'POST', 
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
-                    body: JSON.stringify({ action: 'check_replies_bulk', threadIds: sortedCandidates.map(c => c.threadId) }) 
+                const response = await fetch(settings.googleScriptUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'check_replies_bulk', threadIds: sortedCandidates.map(c => c.threadId) })
                 });
                 const data = await response.json();
                 if (data.status === 'success' && data.results) {
                     const batch = dbInstance.batch();
                     let updatesCount = 0;
-                    
+
                     sortedCandidates.forEach(lead => {
                         const result = data.results[lead.threadId];
                         if (result && result.hasReply) {
                             const ref = dbInstance.collection("leads").doc(lead.id);
                             const updates = {};
-                            
+
                             if (result.isBounce) {
                                 if (lead.statusKey !== 'MAIL_ERROR') {
                                     updates.statusKey = 'MAIL_ERROR';
@@ -230,8 +255,8 @@ window.useLeadHunterServices = (
         }
         try {
             const headers = [
-                "Website", "Email", "Contact Name", "Potential (k)", "Status", "Last Contact", 
-                "Stage", "Lang", "Initial Date", "Repeat 1", "Repeat 2", 
+                "Website", "Email", "Contact Name", "Potential (k)", "Status", "Last Contact",
+                "Stage", "Lang", "Initial Date", "Repeat 1", "Repeat 2",
                 "Repeat 3", "Repeat 4", "Denied Date", "Notes"
             ];
             const formatDate = (dateStr) => {
@@ -272,48 +297,64 @@ window.useLeadHunterServices = (
         if (!isDbConnected) return alert("Veritabanı bağlı değil.");
         if (!confirm("Bozuk karakterli (Ã–, Ã¼ vb.) ve hatalı (Tevfik Gülep) isimler taranıp düzeltilecek. Bu işlem veritabanında kalıcı değişiklik yapar. Onaylıyor musunuz?")) return;
 
-        const batch = dbInstance.batch();
         let count = 0;
         let deletedCount = 0;
+        let processedCount = 0;
         const currentLeads = crmDataRef.current;
-        
         const blackList = ['tevfik gülep', 'tevfik gulep', 'lead hunter', 'admin', 'info', 'iletisim', 'sales', 'support'];
 
-        currentLeads.forEach(lead => {
-            if (lead.contactName) {
-                // 1. Düzeltme
-                let cleanName = window.fixEncoding(lead.contactName);
-                let shouldUpdate = false;
+        // Firestore batch limiti 500'dür. Bu yüzden veriyi parçalara ayırıyoruz.
+        const chunk = (arr, size) => Array.from({ length: Math.ceil(arr.length / size) }, (v, i) => arr.slice(i * size, i * size + size));
+        const leadChunks = chunk(currentLeads, 400); // Güvenli olması için 400'erli gruplar
 
-                // 2. Kara Liste Kontrolü
-                if (blackList.some(b => cleanName.toLowerCase().includes(b))) {
-                    cleanName = ''; // İsmi sil
-                    shouldUpdate = true;
-                } else if (cleanName !== lead.contactName) {
-                    shouldUpdate = true;
-                }
+        try {
+            for (const leads of leadChunks) {
+                const batch = dbInstance.batch();
+                let batchOpCount = 0;
 
-                // 3. Güncelleme
-                if (shouldUpdate) {
-                    const ref = dbInstance.collection("leads").doc(lead.id);
-                    if (cleanName === '') {
-                        batch.update(ref, { contactName: firebase.firestore.FieldValue.delete() });
-                        deletedCount++;
-                    } else {
-                        batch.update(ref, { contactName: cleanName });
-                        count++;
+                leads.forEach(lead => {
+                    processedCount++;
+                    if (lead.contactName) {
+                        let cleanName = window.fixEncoding(lead.contactName);
+                        let shouldUpdate = false;
+
+                        if (blackList.some(b => cleanName.toLowerCase().includes(b))) {
+                            cleanName = '';
+                            shouldUpdate = true;
+                        } else if (cleanName !== lead.contactName) {
+                            shouldUpdate = true;
+                        }
+
+                        if (shouldUpdate) {
+                            const ref = dbInstance.collection("leads").doc(lead.id);
+                            if (cleanName === '') {
+                                batch.update(ref, { contactName: firebase.firestore.FieldValue.delete() });
+                                deletedCount++;
+                            } else {
+                                batch.update(ref, { contactName: cleanName });
+                                count++;
+                            }
+                            batchOpCount++;
+                        }
                     }
+                });
+
+                if (batchOpCount > 0) {
+                    await batch.commit();
                 }
             }
-        });
 
-        if (count > 0 || deletedCount > 0) {
-            await batch.commit();
-            alert(`İşlem Tamamlandı!\n\n✅ ${count} isim karakterleri düzeltildi.\n🗑️ ${deletedCount} yasaklı isim silindi.`);
-        } else {
-            alert("Düzeltilecek veya silinecek kayıt bulunamadı.");
+            if (count > 0 || deletedCount > 0) {
+                alert(`İşlem Tamamlandı!\n\n${processedCount} kayıt tarandı.\n✅ ${count} isim karakterleri düzeltildi.\n🗑️ ${deletedCount} yasaklı isim silindi.`);
+            } else {
+                alert(`${processedCount} kayıt tarandı. Düzeltilecek veya silinecek kayıt bulunamadı.`);
+            }
+        } catch (error) {
+            console.error("Fix Names Error:", error);
+            alert("İşlem sırasında bir hata oluştu: " + error.message);
         }
     };
+
 
     const openMailModal = (lead) => {
         const info = getStageInfo(lead.stage || 0, lead.language);
@@ -532,11 +573,11 @@ window.useLeadHunterServices = (
                             try {
                                 const tCheck = await window.checkTraffic(lead.url);
                                 setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, trafficStatus: tCheck } : l));
-                            } catch (e) {}
+                            } catch (e) { }
                             try {
                                 const eCheck = await window.findEmailsOnSite(lead.url);
                                 setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, email: eCheck || null } : l));
-                            } catch (e) {}
+                            } catch (e) { }
                         });
                     }
                 }
@@ -551,7 +592,11 @@ window.useLeadHunterServices = (
 
     const stopScan = () => { scanIntervalRef.current = false; setIsScanning(false); };
 
-    return {
+    // --- FINAL CHECK ---
+    const servicesObj = {
         selectedLead, setSelectedLead, isSending, openMailModal, handleSendMail, showBulkModal, setShowBulkModal, isBulkSending, bulkProgress, bulkConfig, setBulkConfig, executeBulkSend, isCheckingBulk, handleBulkReplyCheck, bulkUpdateStatus, bulkAddNotViable, isEnriching, showEnrichModal, setShowEnrichModal, enrichLogs, enrichProgress, enrichDatabase, isScanning, keywords, setKeywords, searchDepth, setSearchDepth, hunterLogs, hunterProgress, hunterLogsEndRef, startScan, stopScan, fixAllTrafficData, handleExportData, fixEncodedNames
     };
+
+    return servicesObj;
 };
+
