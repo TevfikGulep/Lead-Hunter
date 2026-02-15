@@ -1,7 +1,84 @@
 // LeadHunter_Services.js
-// GÜNCELLEME: Rapor Çıktısı (Export) fonksiyonu eklendi.
+// GÜNCELLEME: Türkçe Karakter Haritalama (Mapping) ve Gelişmiş Kara Liste Filtresi
 
 const { useState, useRef, useEffect } = React;
+
+// --- YARDIMCI FONKSİYON: KARAKTER DÜZELTME (TURKISH FIX) ---
+window.fixEncoding = (str) => {
+    if (!str) return '';
+    
+    let text = str;
+
+    // 1. MIME Encoded Word Çözümü (=?UTF-8?B?...)
+    if (text.includes('=?') && text.includes('?=')) {
+        text = text.replace(/=\?([^?]+)\?([QBqb])\?([^?]*)\?=/g, (match, charset, encoding, content) => {
+            try {
+                if (encoding.toUpperCase() === 'B') {
+                    return decodeURIComponent(escape(atob(content)));
+                } else if (encoding.toUpperCase() === 'Q') {
+                    return decodeURIComponent(content.replace(/_/g, ' ').replace(/=/g, '%'));
+                }
+            } catch (e) { return match; }
+            return match;
+        });
+    }
+
+    // 2. Yaygın Bozuk Türkçe Karakter Haritası (Windows-1252 / ISO-8859-9 artifacts)
+    const replacements = {
+        'Ã–': 'Ö', 'Ã¶': 'ö',
+        'Ãœ': 'Ü', 'Ã¼': 'ü',
+        'Ä°': 'İ', 'Ä±': 'ı',
+        'Åž': 'Ş', 'ÅŸ': 'ş',
+        'Ã‡': 'Ç', 'Ã§': 'ç',
+        'ÄŸ': 'ğ', 'Äž': 'Ğ',
+        'Ã¢': 'â', 'Ã‚': 'Â',
+        'Ã®': 'î', 'Ãhh': 'İ',
+        '&#304;': 'İ', '&#305;': 'ı',
+        '&#214;': 'Ö', '&#246;': 'ö',
+        '&#220;': 'Ü', '&#252;': 'ü',
+        '&#199;': 'Ç', '&#231;': 'ç',
+        '&#286;': 'Ğ', '&#287;': 'ğ',
+        '&#350;': 'Ş', '&#351;': 'ş'
+    };
+
+    // Harita üzerinden düzeltme
+    Object.keys(replacements).forEach(key => {
+        while (text.includes(key)) {
+            text = text.replace(key, replacements[key]);
+        }
+    });
+
+    return text.trim();
+};
+
+// --- YARDIMCI FONKSİYON: Email'den İsim Çıkarma ---
+window.extractNameFromEmail = (fromStr) => {
+    if (!fromStr) return '';
+    
+    // Önce karakterleri düzelt
+    const cleanStr = window.fixEncoding(fromStr);
+    
+    // Format: "John Doe" <john@doe.com> veya John Doe <john@doe.com>
+    const match = cleanStr.match(/^"?([^"<]+)"?\s*</);
+    let name = '';
+    
+    if (match && match[1]) {
+        name = match[1].trim();
+    } else {
+        // İsim formatı yoksa ve sadece mail varsa (örn: "info@site.com")
+        const temp = cleanStr.replace(/<[^>]+>/g, '').trim();
+        name = temp.includes('@') ? '' : temp.replace(/^"|"$/g, '');
+    }
+
+    // --- KARA LİSTE KONTROLÜ (İsim çekilirken anlık kontrol) ---
+    const blackList = ['tevfik gülep', 'tevfik gulep', 'lead hunter', 'admin', 'info', 'iletisim', 'contact', 'support', 'destek', 'muhasebe', 'ik', 'hr', 'satis', 'sales'];
+    
+    if (name && blackList.some(b => name.toLowerCase().includes(b))) {
+        return ''; // Yasaklı isimse boş döndür
+    }
+
+    return name;
+};
 
 window.useLeadHunterServices = (
     dbInstance,
@@ -100,22 +177,39 @@ window.useLeadHunterServices = (
                 if (data.status === 'success' && data.results) {
                     const batch = dbInstance.batch();
                     let updatesCount = 0;
+                    
                     sortedCandidates.forEach(lead => {
                         const result = data.results[lead.threadId];
                         if (result && result.hasReply) {
                             const ref = dbInstance.collection("leads").doc(lead.id);
+                            const updates = {};
+                            
                             if (result.isBounce) {
                                 if (lead.statusKey !== 'MAIL_ERROR') {
-                                    const newLog = { date: new Date().toISOString(), type: 'BOUNCE', content: `Sistem: Mail İletilemedi (Otomatik Tespit)` };
-                                    batch.update(ref, { statusKey: 'MAIL_ERROR', statusLabel: 'Error in mail (Bounced)', email: '', lastContactDate: new Date().toISOString(), activityLog: firebase.firestore.FieldValue.arrayUnion(newLog) });
-                                    updatesCount++;
+                                    updates.statusKey = 'MAIL_ERROR';
+                                    updates.statusLabel = 'Error in mail (Bounced)';
+                                    updates.email = '';
+                                    updates.lastContactDate = new Date().toISOString();
+                                    updates.activityLog = firebase.firestore.FieldValue.arrayUnion({ date: new Date().toISOString(), type: 'BOUNCE', content: `Sistem: Mail İletilemedi (Otomatik Tespit)` });
                                 }
                             } else {
-                                if (!['INTERESTED', 'ASKED_MORE', 'IN_PROCESS', 'DEAL_ON'].includes(lead.statusKey)) {
-                                    const newLog = { date: new Date().toISOString(), type: 'REPLY', content: `Sistem: Yeni Cevap Alındı (${result.snippet?.substring(0, 30)}...)` };
-                                    batch.update(ref, { statusKey: 'INTERESTED', statusLabel: 'Showed interest (Auto Check)', lastContactDate: new Date().toISOString(), activityLog: firebase.firestore.FieldValue.arrayUnion(newLog) });
-                                    updatesCount++;
+                                // İSİM ÇEKME
+                                if (result.from && !lead.contactName) {
+                                    const extractedName = window.extractNameFromEmail(result.from);
+                                    if (extractedName) updates.contactName = extractedName;
                                 }
+
+                                if (!['INTERESTED', 'ASKED_MORE', 'IN_PROCESS', 'DEAL_ON'].includes(lead.statusKey)) {
+                                    updates.statusKey = 'INTERESTED';
+                                    updates.statusLabel = 'Showed interest (Auto Check)';
+                                    updates.lastContactDate = new Date().toISOString();
+                                    updates.activityLog = firebase.firestore.FieldValue.arrayUnion({ date: new Date().toISOString(), type: 'REPLY', content: `Sistem: Yeni Cevap Alındı (${result.snippet?.substring(0, 30)}...)` });
+                                }
+                            }
+
+                            if (Object.keys(updates).length > 0) {
+                                batch.update(ref, updates);
+                                updatesCount++;
                             }
                         }
                     });
@@ -128,38 +222,97 @@ window.useLeadHunterServices = (
         return () => { clearInterval(intervalId); clearTimeout(timeoutId); };
     }, [isDbConnected, settings.googleScriptUrl]);
 
-    // --- EXPORT FUNCTION (NEW) ---
+    // --- 3. EXPORT FUNCTION ---
     const handleExportData = (dataToExport) => {
-        if (!dataToExport || dataToExport.length === 0) return alert("Dışa aktarılacak veri bulunamadı.");
-        
-        // CSV Header (Google Sheets Contact Report Formatına Uygun)
-        const headers = ["Website", "Email", "Traffic", "Status", "Last Contact", "Stage", "Language", "Notes"];
-        
-        const rows = dataToExport.map(lead => [
-            window.cleanDomain(lead.url),
-            lead.email || '-',
-            lead.trafficStatus?.label || '-',
-            window.LEAD_STATUSES[lead.statusKey]?.label || lead.statusLabel || 'New',
-            lead.lastContactDate ? new Date(lead.lastContactDate).toLocaleDateString('tr-TR') : '-',
-            getStageInfo((lead.stage || 0) - 1, lead.language).label,
-            lead.language || 'TR',
-            (lead.notes || '').replace(/,/g, ';').replace(/\n/g, ' ') // CSV uyumluluğu için virgül ve satır başı temizliği
-        ]);
+        if (!dataToExport || dataToExport.length === 0) {
+            alert("Dışa aktarılacak veri bulunamadı.");
+            return;
+        }
+        try {
+            const headers = [
+                "Website", "Email", "Contact Name", "Potential (k)", "Status", "Last Contact", 
+                "Stage", "Lang", "Initial Date", "Repeat 1", "Repeat 2", 
+                "Repeat 3", "Repeat 4", "Denied Date", "Notes"
+            ];
+            const formatDate = (dateStr) => {
+                if (!dateStr) return "-";
+                try { return new Date(dateStr).toLocaleDateString('tr-TR'); } catch (e) { return "-"; }
+            };
+            const rows = dataToExport.map(lead => [
+                window.cleanDomain(lead.url),
+                lead.email || '-',
+                lead.contactName || '-',
+                lead.trafficStatus?.label || '-',
+                window.LEAD_STATUSES[lead.statusKey]?.label || lead.statusLabel || 'New',
+                formatDate(lead.lastContactDate),
+                getStageInfo((lead.stage || 0) - 1, lead.language).label,
+                lead.language || 'TR',
+                formatDate(lead.history?.initial),
+                formatDate(lead.history?.repeat1),
+                formatDate(lead.history?.repeat2),
+                formatDate(lead.history?.repeat3),
+                formatDate(lead.history?.repeat4),
+                formatDate(lead.history?.denied),
+                (lead.notes || '').replace(/,/g, ';').replace(/\n/g, ' ').replace(/"/g, '""')
+            ]);
+            const csvContent = [headers.join(","), ...rows.map(row => row.map(cell => `"${cell}"`).join(","))].join("\n");
+            const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = window.URL.createObjectURL(blob);
+            link.href = url;
+            link.download = `LeadHunter_Report_${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            setTimeout(() => { document.body.removeChild(link); window.URL.revokeObjectURL(url); }, 100);
+        } catch (error) { alert("Rapor hatası: " + error.message); }
+    };
 
-        const csvContent = [
-            headers.join(","),
-            ...rows.map(row => row.map(cell => `"${cell}"`).join(","))
-        ].join("\n");
+    // --- 4. BAKIM ARACI: BOZUK İSİMLERİ VE KARA LİSTEYİ DÜZELTME ---
+    const fixEncodedNames = async () => {
+        if (!isDbConnected) return alert("Veritabanı bağlı değil.");
+        if (!confirm("Bozuk karakterli (Ã–, Ã¼ vb.) ve hatalı (Tevfik Gülep) isimler taranıp düzeltilecek. Bu işlem veritabanında kalıcı değişiklik yapar. Onaylıyor musunuz?")) return;
 
-        const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement("a");
-        const url = URL.createObjectURL(blob);
-        link.setAttribute("href", url);
-        link.setAttribute("download", `Lead_Hunter_Report_${new Date().toISOString().split('T')[0]}.csv`);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        const batch = dbInstance.batch();
+        let count = 0;
+        let deletedCount = 0;
+        const currentLeads = crmDataRef.current;
+        
+        const blackList = ['tevfik gülep', 'tevfik gulep', 'lead hunter', 'admin', 'info', 'iletisim', 'sales', 'support'];
+
+        currentLeads.forEach(lead => {
+            if (lead.contactName) {
+                // 1. Düzeltme
+                let cleanName = window.fixEncoding(lead.contactName);
+                let shouldUpdate = false;
+
+                // 2. Kara Liste Kontrolü
+                if (blackList.some(b => cleanName.toLowerCase().includes(b))) {
+                    cleanName = ''; // İsmi sil
+                    shouldUpdate = true;
+                } else if (cleanName !== lead.contactName) {
+                    shouldUpdate = true;
+                }
+
+                // 3. Güncelleme
+                if (shouldUpdate) {
+                    const ref = dbInstance.collection("leads").doc(lead.id);
+                    if (cleanName === '') {
+                        batch.update(ref, { contactName: firebase.firestore.FieldValue.delete() });
+                        deletedCount++;
+                    } else {
+                        batch.update(ref, { contactName: cleanName });
+                        count++;
+                    }
+                }
+            }
+        });
+
+        if (count > 0 || deletedCount > 0) {
+            await batch.commit();
+            alert(`İşlem Tamamlandı!\n\n✅ ${count} isim karakterleri düzeltildi.\n🗑️ ${deletedCount} yasaklı isim silindi.`);
+        } else {
+            alert("Düzeltilecek veya silinecek kayıt bulunamadı.");
+        }
     };
 
     const openMailModal = (lead) => {
@@ -179,11 +332,7 @@ window.useLeadHunterServices = (
             const trackingPixel = serverUrl ? `<img src="${serverUrl}?type=track&id=${selectedLead.id}" width="1" height="1" style="display:none;" alt="" />` : '';
             const htmlContent = `<div style="font-family: Arial; font-size: 14px;">${messageHtml}</div><br><br><div>${signatureHtml}</div>${trackingPixel}`;
             const plainBody = selectedLead.draft.body + (settings.signature ? `\n\n--\n${settings.signature.replace(/<[^>]+>/g, '')}` : '');
-            const response = await fetch(settings.googleScriptUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ action: 'send_mail', to: selectedLead.draft.to, subject: selectedLead.draft.subject, body: plainBody, htmlBody: htmlContent, threadId: selectedLead.threadId || null })
-            });
+            const response = await fetch(settings.googleScriptUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'send_mail', to: selectedLead.draft.to, subject: selectedLead.draft.subject, body: plainBody, htmlBody: htmlContent, threadId: selectedLead.threadId || null }) });
             const result = await response.json();
             if (result.status === 'error') throw new Error(result.message);
             if (isDbConnected) {
@@ -266,17 +415,21 @@ window.useLeadHunterServices = (
                     const result = results[lead.threadId];
                     if (result && result.hasReply) {
                         const ref = dbInstance.collection("leads").doc(lead.id);
+                        const updates = {};
                         if (result.isBounce) {
                             if (lead.statusKey !== 'MAIL_ERROR') {
-                                const newLog = { date: new Date().toISOString(), type: 'BOUNCE', content: `Otomatik Tarama: Mail İletilemedi (Bounce)` };
-                                batch.update(ref, { statusKey: 'MAIL_ERROR', statusLabel: 'Error in mail (Bounced)', email: '', lastContactDate: new Date().toISOString(), activityLog: firebase.firestore.FieldValue.arrayUnion(newLog) });
-                                bounceCount++; hasUpdates = true;
+                                updates.statusKey = 'MAIL_ERROR'; updates.statusLabel = 'Error in mail (Bounced)'; updates.email = ''; updates.lastContactDate = new Date().toISOString(); updates.activityLog = firebase.firestore.FieldValue.arrayUnion({ date: new Date().toISOString(), type: 'BOUNCE', content: `Otomatik Tarama: Mail İletilemedi (Bounce)` }); bounceCount++;
                             }
-                        } else if (!['INTERESTED', 'DEAL_ON', 'NOT_POSSIBLE', 'DENIED', 'MAIL_ERROR', 'IN_PROCESS', 'ASKED_MORE'].includes(lead.statusKey)) {
-                            const newLog = { date: new Date().toISOString(), type: 'REPLY', content: `Yeni Cevap Alındı: ${result.snippet?.substring(0, 50)}...` };
-                            batch.update(ref, { statusKey: 'INTERESTED', statusLabel: 'Showed interest (Reply Found)', lastContactDate: new Date().toISOString(), activityLog: firebase.firestore.FieldValue.arrayUnion(newLog) });
-                            updatedCount++; hasUpdates = true;
+                        } else {
+                            if (result.from && !lead.contactName) {
+                                const extractedName = window.extractNameFromEmail(result.from);
+                                if (extractedName) updates.contactName = extractedName;
+                            }
+                            if (!['INTERESTED', 'DEAL_ON', 'NOT_POSSIBLE', 'DENIED', 'MAIL_ERROR', 'IN_PROCESS', 'ASKED_MORE'].includes(lead.statusKey)) {
+                                updates.statusKey = 'INTERESTED'; updates.statusLabel = 'Showed interest (Reply Found)'; updates.lastContactDate = new Date().toISOString(); updates.activityLog = firebase.firestore.FieldValue.arrayUnion({ date: new Date().toISOString(), type: 'REPLY', content: `Yeni Cevap Alındı: ${result.snippet?.substring(0, 50)}...` }); updatedCount++;
+                            }
                         }
+                        if (Object.keys(updates).length > 0) { batch.update(ref, updates); hasUpdates = true; }
                     }
                 });
                 if (hasUpdates) { await batch.commit(); alert(`Tarama Tamamlandı!\n✅ ${updatedCount} yeni cevap\n❌ ${bounceCount} bounce`); } else { alert("Değişiklik yok."); }
@@ -334,28 +487,35 @@ window.useLeadHunterServices = (
     const startScan = async () => {
         const keywordList = keywords.split(/[\n,]+/).map(k => k.trim()).filter(k => k.length > 0);
         if (keywordList.length === 0) return alert("Kelime giriniz.");
+
         scanIntervalRef.current = true;
         setIsScanning(true);
         setLeads([]);
         setHunterLogs([]);
         setHunterProgress(0);
+
         const addLog = (msg, type = 'info') => setHunterLogs(p => [...p, { time: new Date().toLocaleTimeString(), message: msg, type }]);
         const existingDomains = new Set(crmData.map(c => window.cleanDomain(c.url)));
         addLog(`Veritabanında ${existingDomains.size} kayıt var, bunlar filtrelenecek.`, 'warning');
+
         for (let i = 0; i < keywordList.length; i++) {
             if (!scanIntervalRef.current) break;
             const kw = keywordList[i];
             addLog(`Aranıyor: ${kw}`);
+
             try {
                 const serverUrl = (window.APP_CONFIG && window.APP_CONFIG.SERVER_API_URL) || '';
                 if (!serverUrl) { addLog("HATA: Server API URL tanımlı değil.", 'error'); continue; }
+
                 const country = searchLocation || 'TR';
                 const apiKey = settings.googleApiKey || '';
                 const cx = settings.searchEngineId || '';
                 const url = `${serverUrl}?type=search&q=${encodeURIComponent(kw)}&depth=${searchDepth}&gl=${country}&apiKey=${encodeURIComponent(apiKey)}&cx=${encodeURIComponent(cx)}`;
+
                 const response = await fetch(url);
                 const text = await response.text();
                 let json = JSON.parse(text);
+
                 if (json.success && Array.isArray(json.results)) {
                     const filteredResults = json.results.filter(r => !existingDomains.has(window.cleanDomain(r.url)));
                     if (filteredResults.length > 0) {
@@ -392,6 +552,6 @@ window.useLeadHunterServices = (
     const stopScan = () => { scanIntervalRef.current = false; setIsScanning(false); };
 
     return {
-        selectedLead, setSelectedLead, isSending, openMailModal, handleSendMail, showBulkModal, setShowBulkModal, isBulkSending, bulkProgress, bulkConfig, setBulkConfig, executeBulkSend, isCheckingBulk, handleBulkReplyCheck, bulkUpdateStatus, bulkAddNotViable, isEnriching, showEnrichModal, setShowEnrichModal, enrichLogs, enrichProgress, enrichDatabase, isScanning, keywords, setKeywords, searchDepth, setSearchDepth, hunterLogs, hunterProgress, hunterLogsEndRef, startScan, stopScan, fixAllTrafficData, handleExportData
+        selectedLead, setSelectedLead, isSending, openMailModal, handleSendMail, showBulkModal, setShowBulkModal, isBulkSending, bulkProgress, bulkConfig, setBulkConfig, executeBulkSend, isCheckingBulk, handleBulkReplyCheck, bulkUpdateStatus, bulkAddNotViable, isEnriching, showEnrichModal, setShowEnrichModal, enrichLogs, enrichProgress, enrichDatabase, isScanning, keywords, setKeywords, searchDepth, setSearchDepth, hunterLogs, hunterProgress, hunterLogsEndRef, startScan, stopScan, fixAllTrafficData, handleExportData, fixEncodedNames
     };
 };
