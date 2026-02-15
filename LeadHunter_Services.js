@@ -679,8 +679,9 @@ window.useLeadHunterServices = (
 
     const stopScan = () => { scanIntervalRef.current = false; setIsScanning(false); };
 
-    // --- 4. AUTO FOLLOWUP SYSTEM ---
+    // --- AUTO FOLLOWUP SYSTEM ---
     // Her 5 dakikada bir takip maillerini kontrol eder ve gönderir
+    // Mevcut workflow şablonlarını (İlk Temas → Takip 1 → Takip 2 → ...) sırayla kullanır
     useEffect(() => {
         if (!isDbConnected || !settings.googleScriptUrl) return;
 
@@ -700,12 +701,26 @@ window.useLeadHunterServices = (
             for (const lead of candidates) {
                 try {
                     const domain = window.cleanDomain(lead.url);
-                    const template = lead.language === 'EN'
-                        ? settings.followupTemplateEN
-                        : settings.followupTemplateTR;
+                    const lang = lead.language || 'TR';
+                    
+                    // Mevcut workflow şablonlarını al
+                    const workflow = lang === 'EN' ? settings.workflowEN : settings.workflowTR;
+                    
+                    // Lead'in mevcut stage'ine göre bir sonraki şablonu kullan
+                    // stage 0 = İlk Temas, stage 1 = Takip 1, vb.
+                    const currentStage = lead.stage || 0;
+                    const nextStage = currentStage + 1;
+                    
+                    // Maksimum 6 aşama (İlk Temas + 5 Takip)
+                    if (nextStage >= workflow.length) {
+                        console.log(`[AutoFollowup] Tüm aşamalar tamamlandı: ${lead.id}`);
+                        continue;
+                    }
+
+                    const template = workflow[nextStage];
 
                     if (!template || !template.subject || !template.body) {
-                        console.warn(`[AutoFollowup] Şablon bulunamadı: ${lead.id}`);
+                        console.warn(`[AutoFollowup] Şablon bulunamadı: ${lead.id}, stage: ${nextStage}`);
                         continue;
                     }
 
@@ -747,18 +762,23 @@ window.useLeadHunterServices = (
                         const newLog = {
                             date: new Date().toISOString(),
                             type: 'MAIL',
-                            content: `Otomatik Takip #${newFollowupCount} gönderildi`
+                            content: `Otomatik Takip: ${template.label} gönderildi`
                         };
 
+                        // Stage'i bir artır
                         batch.update(ref, {
+                            stage: nextStage,
+                            statusKey: 'NO_REPLY',
+                            statusLabel: window.LEAD_STATUSES['NO_REPLY']?.label || 'No Reply',
                             nextFollowupDate: nextFollowupDate.toISOString(),
                             followupCount: newFollowupCount,
                             lastContactDate: new Date().toISOString(),
+                            [`history.${nextStage === 0 ? 'initial' : `repeat${nextStage}`}`]: new Date().toISOString(),
                             activityLog: firebase.firestore.FieldValue.arrayUnion(newLog)
                         });
 
                         await batch.commit();
-                        console.log(`[AutoFollowup] Takip #${newFollowupCount} gönderildi: ${domain}`);
+                        console.log(`[AutoFollowup] ${template.label} gönderildi: ${domain}`);
                     }
                 } catch (e) {
                     console.error(`[AutoFollowup] Hata: ${lead.id}`, e);
@@ -773,7 +793,7 @@ window.useLeadHunterServices = (
         const timeoutId = setTimeout(executeFollowups, 10000); // 10 saniye sonra ilk kontrol
 
         return () => { clearInterval(intervalId); clearTimeout(timeoutId); };
-    }, [isDbConnected, settings.googleScriptUrl, settings.followupTemplateTR, settings.followupTemplateEN, settings.signature]);
+    }, [isDbConnected, settings.googleScriptUrl, settings.workflowTR, settings.workflowEN, settings.signature]);
 
     // --- START AUTO FOLLOWUP ---
     const startAutoFollowup = async (leadIds) => {
@@ -887,9 +907,192 @@ window.useLeadHunterServices = (
         alert(`${leadsToUpdate.length} kaydın otomatik takibi durduruldu.`);
     };
 
+    // --- AUTO HUNTER SCAN SYSTEM ---
+    // Her Pazartesi saat 7:00'de otomatik tarama yapar
+
+    const autoHunterRef = useRef({
+        isRunning: false,
+        currentIlceIndex: 0,
+        foundCount: 0,
+        addedCount: 0
+    });
+
+    // Haftalık otomatik tarama kontrolü
+    useEffect(() => {
+        if (!settings.autoHunterEnabled || !settings.ilceListesi) return;
+
+        const checkAndRunAutoHunter = () => {
+            const now = new Date();
+            const dayOfWeek = now.getDay(); // 0 = Pazar, 1 = Pazartesi
+            const hours = now.getHours();
+            
+            // Her Pazartesi saat 7:00'de kontrol et
+            if (dayOfWeek === 1 && hours >= 7 && hours < 8) {
+                const lastRun = settings.lastHunterRunDate ? new Date(settings.lastHunterRunDate) : null;
+                const daysSinceLastRun = lastRun ? Math.floor((now - lastRun) / (1000 * 60 * 60 * 24)) : 999;
+                
+                // Son çalışmadan en az 6 gün geçmişse (bir hafta)
+                if (!lastRun || daysSinceLastRun >= 6) {
+                    console.log("[AutoHunter] Haftalık tarama başlıyor...");
+                    runAutoHunterScan();
+                }
+            }
+        };
+
+        // Her saat başı kontrol et
+        const intervalId = setInterval(checkAndRunAutoHunter, 60 * 60 * 1000);
+        
+        // İlk yüklemede de kontrol et
+        const timeoutId = setTimeout(checkAndRunAutoHunter, 10000);
+
+        return () => { clearInterval(intervalId); clearTimeout(timeoutId); };
+    }, [settings.autoHunterEnabled, settings.ilceListesi, settings.lastHunterRunDate]);
+
+    // Manuel olarak otomatik taramayı başlat
+    const runAutoHunterScan = async () => {
+        if (!isDbConnected) {
+            console.warn("[AutoHunter] Veritabanı bağlı değil");
+            return;
+        }
+
+        if (!settings.ilceListesi || settings.ilceListesi.trim().length === 0) {
+            console.warn("[AutoHunter] İlçe listesi boş");
+            return;
+        }
+
+        if (autoHunterRef.current.isRunning) {
+            console.warn("[AutoHunter] Zaten çalışıyor");
+            return;
+        }
+
+        autoHunterRef.current.isRunning = true;
+        const ilceList = settings.ilceListesi.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        const targetCount = settings.hunterTargetCount || 100;
+        const keywords = ['haberleri', 'son dakika', 'güncel', 'haber', 'gazete'];
+        
+        const existingDomains = new Set(crmDataRef.current.map(c => window.cleanDomain(c.url)));
+        const serverUrl = (window.APP_CONFIG && window.APP_CONFIG.SERVER_API_URL) || '';
+        
+        console.log(`[AutoHunter] Hedef: ${targetCount} site, İlçe sayısı: ${ilceList.length}`);
+
+        let currentIlceIndex = settings.lastHunterIlceIndex || 0;
+        let foundViableCount = 0;
+        let totalSearches = 0;
+        let maxSearches = ilceList.length * keywords.length; // Maximum searches per week
+
+        for (let i = 0; i < ilceList.length; i++) {
+            if (foundViableCount >= targetCount) break;
+            if (autoHunterRef.current.isRunning === false) break;
+
+            const ilce = ilceList[currentIlceIndex % ilceList.length];
+            
+            for (const kw of keywords) {
+                if (foundViableCount >= targetCount) break;
+                if (totalSearches >= maxSearches) break;
+
+                const query = `${ilce} ${kw}`;
+                totalSearches++;
+
+                try {
+                    console.log(`[AutoHunter] Aranıyor: ${query}`);
+
+                    const apiKey = settings.googleApiKey || '';
+                    const cx = settings.searchEngineId || '';
+                    const url = `${serverUrl}?type=search&q=${encodeURIComponent(query)}&depth=30&gl=TR&apiKey=${encodeURIComponent(apiKey)}&cx=${encodeURIComponent(cx)}`;
+
+                    const response = await fetch(url);
+                    const text = await response.text();
+                    let json = JSON.parse(text);
+
+                    if (json.success && Array.isArray(json.results)) {
+                        // Sonuçları filtrele ve trafiği kontrol et
+                        const newResults = json.results.filter(r => {
+                            const domain = window.cleanDomain(r.url);
+                            return !existingDomains.has(domain);
+                        });
+
+                        for (const r of newResults) {
+                            if (foundViableCount >= targetCount) break;
+
+                            const domain = window.cleanDomain(r.url);
+                            
+                            try {
+                                // Trafik kontrolü yap
+                                const trafficCheck = await window.checkTraffic(r.url);
+                                
+                                if (trafficCheck && trafficCheck.viable && trafficCheck.value > 0) {
+                                    // Site uygun, CRM'e ekle
+                                    const newLead = {
+                                        url: r.url,
+                                        email: '', // Email sonra aranacak
+                                        statusKey: 'New',
+                                        statusLabel: 'New',
+                                        stage: 0,
+                                        language: 'TR',
+                                        trafficStatus: trafficCheck,
+                                        addedDate: new Date().toISOString(),
+                                        source: 'AutoHunter',
+                                        sourceQuery: query,
+                                        activityLog: [{
+                                            date: new Date().toISOString(),
+                                            type: 'INFO',
+                                            content: `Otomatik Tarama ile eklendi (${query})`
+                                        }]
+                                    };
+
+                                    if (isDbConnected) {
+                                        await dbInstance.collection("leads").add(newLead);
+                                    }
+
+                                    existingDomains.add(domain);
+                                    foundViableCount++;
+                                    console.log(`[AutoHunter] Eklendi: ${domain} (Trafik: ${trafficCheck.label})`);
+                                }
+                            } catch (e) {
+                                console.warn(`[AutoHunter] Trafik kontrol hatası: ${domain}`, e);
+                            }
+
+                            // API rate limit aşımı için bekle
+                            await new Promise(r => setTimeout(r, 500));
+                        }
+                    }
+                } catch (e) {
+                    console.error(`[AutoHunter] Arama hatası: ${query}`, e);
+                }
+
+                // Her arama arasında kısa bekle
+                await new Promise(r => setTimeout(r, 1000));
+            }
+
+            // İlçe indeksini güncelle
+            currentIlceIndex++;
+        }
+
+        // Durumu kaydet
+        if (isDbConnected) {
+            try {
+                await dbInstance.collection('system').doc('config').set({
+                    lastHunterIlceIndex: currentIlceIndex % ilceList.length,
+                    lastHunterRunDate: new Date().toISOString()
+                }, { merge: true });
+            } catch (e) {
+                console.error("[AutoHunter] Durum kaydetme hatası:", e);
+            }
+        }
+
+        autoHunterRef.current.isRunning = false;
+        console.log(`[AutoHunter] Tamamlandı. Bulunan uygun site: ${foundViableCount}`);
+    };
+
+    // Otomatik taramayı durdur
+    const stopAutoHunterScan = () => {
+        autoHunterRef.current.isRunning = false;
+        console.log("[AutoHunter] Durduruldu");
+    };
+
     // --- FINAL CHECK ---
     const servicesObj = {
-        selectedLead, setSelectedLead, isSending, openMailModal, openPromotionModal, handleSendMail, showBulkModal, setShowBulkModal, isBulkSending, bulkProgress, bulkConfig, setBulkConfig, executeBulkSend, executeBulkPromotion, isCheckingBulk, handleBulkReplyCheck, bulkUpdateStatus, bulkAddNotViable, isEnriching, showEnrichModal, setShowEnrichModal, enrichLogs, enrichProgress, enrichDatabase, isScanning, keywords, setKeywords, searchDepth, setSearchDepth, hunterLogs, hunterProgress, hunterLogsEndRef, startScan, stopScan, fixAllTrafficData, handleExportData, fixEncodedNames, startAutoFollowup, stopAutoFollowup
+        selectedLead, setSelectedLead, isSending, openMailModal, openPromotionModal, handleSendMail, showBulkModal, setShowBulkModal, isBulkSending, bulkProgress, bulkConfig, setBulkConfig, executeBulkSend, executeBulkPromotion, isCheckingBulk, handleBulkReplyCheck, bulkUpdateStatus, bulkAddNotViable, isEnriching, showEnrichModal, setShowEnrichModal, enrichLogs, enrichProgress, enrichDatabase, isScanning, keywords, setKeywords, searchDepth, setSearchDepth, hunterLogs, hunterProgress, hunterLogsEndRef, startScan, stopScan, fixAllTrafficData, handleExportData, fixEncodedNames, startAutoFollowup, stopAutoFollowup, runAutoHunterScan, stopAutoHunterScan
     };
 
     return servicesObj;

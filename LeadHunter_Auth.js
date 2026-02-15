@@ -25,7 +25,14 @@ window.useLeadHunterAuth = () => {
         workflowTR: window.DEFAULT_WORKFLOW_TR,
         workflowEN: window.DEFAULT_WORKFLOW_EN,
         promotionTemplateTR: window.DEFAULT_PROMOTION_TEMPLATE_TR,
-        promotionTemplateEN: window.DEFAULT_PROMOTION_TEMPLATE_EN
+        promotionTemplateEN: window.DEFAULT_PROMOTION_TEMPLATE_EN,
+        // Site Avcısı Otomasyon Ayarları
+        duckDuckGoApiKey: '',
+        ilceListesi: '',
+        autoHunterEnabled: false,
+        hunterTargetCount: 100,
+        lastHunterIlceIndex: 0,
+        lastHunterRunDate: null
     });
 
     const [dbInstance, setDbInstance] = useState(null);
@@ -103,14 +110,21 @@ window.useLeadHunterAuth = () => {
                 try {
                     const doc = await dbInstance.collection('system').doc('config').get();
                     if (doc.exists) {
-                        const cloudData = doc.data();
+                    const cloudData = doc.data();
                         setSettings(prev => ({
                             ...prev,
                             googleApiKey: cloudData.googleApiKey || prev.googleApiKey,
                             searchEngineId: cloudData.searchEngineId || prev.searchEngineId,
                             googleScriptUrl: cloudData.googleScriptUrl || prev.googleScriptUrl,
                             geminiApiKey: cloudData.geminiApiKey || prev.geminiApiKey,
-                            signature: cloudData.signature || prev.signature
+                            signature: cloudData.signature || prev.signature,
+                            // Site Avcısı Otomasyon
+                            duckDuckGoApiKey: cloudData.duckDuckGoApiKey || prev.duckDuckGoApiKey,
+                            ilceListesi: cloudData.ilceListesi || prev.ilceListesi,
+                            autoHunterEnabled: cloudData.autoHunterEnabled || prev.autoHunterEnabled,
+                            hunterTargetCount: cloudData.hunterTargetCount || prev.hunterTargetCount,
+                            lastHunterIlceIndex: cloudData.lastHunterIlceIndex || prev.lastHunterIlceIndex,
+                            lastHunterRunDate: cloudData.lastHunterRunDate || prev.lastHunterRunDate
                         }));
                     }
                 } catch (error) { console.error("Bulut ayarları hatası:", error); }
@@ -152,7 +166,14 @@ window.useLeadHunterAuth = () => {
                 searchEngineId: settings.searchEngineId,
                 googleScriptUrl: settings.googleScriptUrl,
                 geminiApiKey: settings.geminiApiKey,
-                signature: settings.signature
+                signature: settings.signature,
+                // Site Avcısı Otomasyon
+                duckDuckGoApiKey: settings.duckDuckGoApiKey,
+                ilceListesi: settings.ilceListesi,
+                autoHunterEnabled: settings.autoHunterEnabled,
+                hunterTargetCount: settings.hunterTargetCount,
+                lastHunterIlceIndex: settings.lastHunterIlceIndex,
+                lastHunterRunDate: settings.lastHunterRunDate
             }, { merge: true });
             alert("Ayarlar buluta kaydedildi!");
         } catch (e) { alert("Hata: " + e.message); }

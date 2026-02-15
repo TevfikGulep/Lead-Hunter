@@ -196,52 +196,110 @@ window.SettingsTab = ({
                 </div>
             </div>
 
-            {/* Otomatik Takip Şablonu Editor */}
+            {/* Otomatik Takip Sistemi (Mevcut Workflow Kullanır) */}
             <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
-                <h3 className="font-bold mb-6 flex items-center gap-2"><window.Icon name="clock" className="w-5 h-5 text-orange-500" /> Otomatik Takip Şablonu</h3>
+                <h3 className="font-bold mb-6 flex items-center gap-2"><window.Icon name="clock" className="w-5 h-5 text-orange-500" /> Otomatik Takip Sistemi</h3>
 
                 <p className="text-xs text-slate-500 mb-4 bg-orange-50 p-3 rounded-lg border border-orange-100">
                     <strong>Otomatik Takip Sistemi:</strong> Seçtiğiniz lead'lere 7 gün aralıklarla otomatik takip maili gönderilir.
-                    Cevap geldiğinde (INTERESTED, IN_PROCESS vb.) sistem otomatik olarak durur.
+                    <br/>Sistem mevcut <strong>workflow şablonlarını</strong> (İlk Temas → Takip 1 → Takip 2 → ...) sırayla kullanır.
+                    <br/>Cevap geldiğinde (INTERESTED, IN_PROCESS vb.) sistem otomatik olarak durur.
                 </p>
 
                 <div className="space-y-3">
+                    <div className="p-3 bg-slate-50 rounded-lg">
+                        <div className="text-xs font-bold text-slate-600 mb-2">Kullanılacak Şablonlar:</div>
+                        <div className="flex flex-wrap gap-2">
+                            {(activeTemplateLang === 'EN' ? settings.workflowEN : settings.workflowTR).slice(0, 6).map((step, idx) => (
+                                <span key={idx} className="px-2 py-1 bg-white border border-slate-200 rounded text-xs font-medium text-slate-600">
+                                    {idx + 1}. {step.label}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                    <p className="text-[10px] text-slate-400">
+                        Not: Otomatik takip, mevcut workflow şablonlarını sırayla kullanır (İlk Temas → Takip 1 → Takip 2 → Takip 3 → Takip 4 → Takip 5).
+                        Her 7 günde bir bir sonraki şablona geçer.
+                    </p>
+                </div>
+            </div>
+
+            {/* Site Avcısı Otomasyon Ayarları */}
+            <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2">
+                <h3 className="font-bold mb-6 flex items-center gap-2"><window.Icon name="radar" className="w-5 h-5 text-indigo-600" /> Site Avcısı Otomasyonu</h3>
+
+                <p className="text-xs text-slate-500 mb-4 bg-indigo-50 p-3 rounded-lg border border-indigo-100">
+                    <strong>Otomatik Tarama Sistemi:</strong> Her pazartesi saat 07:00'de Türkiye ilçelerinden haber siteleri arar.
+                    Her hafta en az {settings.hunterTargetCount || 100} uygun site buluncaya kadar tarar ve otomatik CRM'e ekler.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 mb-1">Aşama Adı</label>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">DuckDuckGo API Key (İsteğe Bağlı)</label>
                         <input
                             type="text"
-                            value={(activeTemplateLang === 'EN' ? settings.followupTemplateEN : settings.followupTemplateTR)?.label || ''}
-                            onChange={e => handleSettingChange(activeTemplateLang === 'EN' ? 'followupTemplateEN' : 'followupTemplateTR', {
-                                ...(activeTemplateLang === 'EN' ? settings.followupTemplateEN : settings.followupTemplateTR),
-                                label: e.target.value
-                            })}
-                            className="w-full p-2 border rounded text-sm font-medium"
+                            value={settings.duckDuckGoApiKey || ''}
+                            onChange={e => handleSettingChange('duckDuckGoApiKey', e.target.value)}
+                            className="w-full p-2 border rounded text-sm"
+                            placeholder="İleride kullanılacak (şimdilik boş bırakın)"
                         />
+                        <p className="text-[10px] text-slate-400 mt-1">DuckDuckGo'nun ücretsiz API'si yoktur. Şimdilik HTML scraping kullanılıyor.</p>
                     </div>
+
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 mb-1">Konu</label>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Haftalık Hedef (Site Sayısı)</label>
                         <input
-                            type="text"
-                            value={(activeTemplateLang === 'EN' ? settings.followupTemplateEN : settings.followupTemplateTR)?.subject || ''}
-                            onChange={e => handleSettingChange(activeTemplateLang === 'EN' ? 'followupTemplateEN' : 'followupTemplateTR', {
-                                ...(activeTemplateLang === 'EN' ? settings.followupTemplateEN : settings.followupTemplateTR),
-                                subject: e.target.value
-                            })}
-                            className="w-full p-2 border rounded text-sm font-bold"
+                            type="number"
+                            min="10"
+                            max="500"
+                            value={settings.hunterTargetCount || 100}
+                            onChange={e => handleSettingChange('hunterTargetCount', parseInt(e.target.value) || 100)}
+                            className="w-full p-2 border rounded text-sm"
                         />
+                        <p className="text-[10px] text-slate-400 mt-1">Her hafta en az kaç uygun site bulunsun?</p>
                     </div>
-                    <div>
-                        <label className="block text-xs font-bold text-slate-500 mb-1">İçerik</label>
+
+                    <div className="md:col-span-2">
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Türkiye İlçe Listesi</label>
                         <textarea
-                            value={(activeTemplateLang === 'EN' ? settings.followupTemplateEN : settings.followupTemplateTR)?.body || ''}
-                            onChange={e => handleSettingChange(activeTemplateLang === 'EN' ? 'followupTemplateEN' : 'followupTemplateTR', {
-                                ...(activeTemplateLang === 'EN' ? settings.followupTemplateEN : settings.followupTemplateTR),
-                                body: e.target.value
-                            })}
-                            className="w-full h-48 p-3 border rounded text-sm resize-none leading-relaxed focus:ring-2 focus:ring-orange-500 outline-none"
+                            value={settings.ilceListesi || ''}
+                            onChange={e => handleSettingChange('ilceListesi', e.target.value)}
+                            className="w-full h-40 p-3 border rounded text-sm resize-none"
+                            placeholder={`Kadıköy, İstanbul\nBeşiktaş, İstanbul\nNilüfer, Bursa\nKonyaaltı, Antalya\n...`}
                         />
+                        <p className="text-[10px] text-slate-400 mt-1">Her satıra bir ilçe yazın. Format: "İlçe, İl" (örn: Kadıköy, İstanbul)</p>
                     </div>
-                    <p className="text-[10px] text-slate-400 bg-slate-50 p-2 rounded">İpucu: <code>{`{{Website}}`}</code> etiketi gönderim sırasında otomatik olarak site adıyla değiştirilir.</p>
+
+                    <div className="flex items-center gap-4">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={settings.autoHunterEnabled || false}
+                                onChange={e => handleSettingChange('autoHunterEnabled', e.target.checked)}
+                                className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <span className="text-sm font-bold text-slate-700">Otomatik Taramayı Aktif Et</span>
+                        </label>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Son Tarama</label>
+                        <div className="p-2 bg-slate-50 rounded text-sm text-slate-600">
+                            {settings.lastHunterRunDate 
+                                ? new Date(settings.lastHunterRunDate).toLocaleString('tr-TR')
+                                : 'Henüz çalıştırılmadı'}
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-1">Son çalışılan ilçe: #{settings.lastHunterIlceIndex || 0}</p>
+                    </div>
+                </div>
+
+                <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                    <p className="text-xs text-amber-800">
+                        <strong>Nasıl Çalışır:</strong> Her pazartesi 07:00'de otomatik başlar. 
+                        İlçe listesinden sırayla "haberleri", "son dakika", "güncel", "haber", "gazete" kelimeleriyle arama yapar.
+                        Her arama sonucu trafiği kontrol edilir ve uygun siteler (trafik > 0) CRM'e "New" olarak eklenir.
+                        {settings.hunterTargetCount || 100} site bulunduktan sonra o hafta durur, bir sonraki hafta kaldığı yerden devam eder.
+                    </p>
                 </div>
             </div>
         </div >
