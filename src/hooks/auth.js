@@ -9,7 +9,7 @@ window.useLeadHunterAuth = () => {
     const [authEmail, setAuthEmail] = useState('');
     const [passwordInput, setPasswordInput] = useState('');
     const [loginError, setLoginError] = useState('');
-
+ 
     const [activeTab, setActiveTab] = useState('dashboard');
     const [searchLocation, setSearchLocation] = useState('tr');
 

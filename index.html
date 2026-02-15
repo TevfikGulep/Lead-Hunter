@@ -23,39 +23,43 @@
 <body>
     <div id="root"></div>
 	
-	<script type="text/javascript" src="config.js"></script>
+    <!-- Temel Konfigürasyon -->
+    <script type="text/javascript" src="config.js"></script>
     <script type="text/javascript" src="constants.js"></script>
     <script type="text/javascript" src="helpers.js"></script>
     <script type="text/javascript" src="utils.js"></script>
     
-    <script type="text/babel" src="Icon.js"></script>
-    <script type="text/babel" src="TableComponents.js"></script>
-    <script type="text/babel" src="PaginationControls.js"></script>
-    <script type="text/babel" src="StatusMultiSelect.js"></script>
+    <!-- Shared Components -->
+    <script type="text/babel" src="src/components/shared/Icon.js"></script>
+    <script type="text/babel" src="src/components/shared/TableComponents.js"></script>
+    <script type="text/babel" src="src/components/shared/PaginationControls.js"></script>
+    <script type="text/babel" src="src/components/shared/StatusMultiSelect.js"></script>
+    <script type="text/babel" src="src/components/shared/FilterBar.js"></script>
+    <script type="text/babel" src="src/components/shared/SignatureEditor.js"></script>
     
-    <script type="text/babel" src="FilterBar.js"></script>
-    <script type="text/babel" src="SignatureEditor.js"></script>
-    <script type="text/babel" src="EnrichModal.js"></script>
-    <script type="text/babel" src="BulkModal.js"></script>
-    <script type="text/babel" src="MailModal.js"></script>
-    <script type="text/babel" src="HistoryModal.js"></script>
+    <!-- Modals -->
+    <script type="text/babel" src="src/components/modals/EnrichModal.js"></script>
+    <script type="text/babel" src="src/components/modals/BulkModal.js"></script>
+    <script type="text/babel" src="src/components/modals/MailModal.js"></script>
+    <script type="text/babel" src="src/components/modals/HistoryModal.js"></script>
+    <script type="text/babel" src="src/components/modals/ImportModal.js"></script>
     
-    <script type="text/babel" src="ImportModal.js"></script>
-    
-    <script type="text/babel" src="LoginScreen.js"></script>
-    <script type="text/babel" src="Sidebar.js"></script>
+    <!-- Tabs -->
+    <script type="text/babel" src="src/components/tabs/LoginScreen.js"></script>
+    <script type="text/babel" src="src/components/tabs/Sidebar.js"></script>
+    <script type="text/babel" src="src/components/tabs/DashboardTab.js"></script>
+    <script type="text/babel" src="src/components/tabs/HunterTab.js"></script>
+    <script type="text/babel" src="src/components/tabs/CrmTab.js"></script>
+    <script type="text/babel" src="src/components/tabs/SettingsTab.js"></script>
 
-    <script type="text/babel" src="DashboardTab.js"></script>
-    <script type="text/babel" src="HunterTab.js"></script>
-    <script type="text/babel" src="CrmTab.js"></script>
-    <script type="text/babel" src="SettingsTab.js"></script>
-
-    <!-- ... diğer scriptler ... -->
-    <script type="text/babel" src="LeadHunter_Auth.js"></script>
-    <script type="text/babel" src="LeadHunter_Data.js"></script>
-    <script type="text/babel" src="LeadHunter_Actions.js"></script>
-    <script type="text/babel" src="LeadHunter_Services.js"></script>
-    <script type="text/babel" src="LeadHunter.js"></script>
+    <!-- Hooks -->
+    <script type="text/babel" src="src/hooks/auth.js"></script>
+    <script type="text/babel" src="src/hooks/data.js"></script>
+    <script type="text/babel" src="src/hooks/actions.js"></script>
+    
+    <!-- Core -->
+    <script type="text/babel" src="src/core/services.js"></script>
+    <script type="text/babel" src="src/core/app.js"></script>
     <script type="text/babel" src="main.js"></script>
 
 </body>
