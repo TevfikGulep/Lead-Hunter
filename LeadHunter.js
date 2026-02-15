@@ -170,6 +170,8 @@ const LeadHunter = () => {
                             setShowImportModal={setShowImportModal}
                             bulkUpdateStatus={services.bulkUpdateStatus}
                             onExport={() => services.handleExportData(data.selectedIds.size > 0 ? data.crmData.filter(l => data.selectedIds.has(l.id)) : data.processedData)}
+                            startAutoFollowup={services.startAutoFollowup}
+                            stopAutoFollowup={services.stopAutoFollowup}
                         />
                     )}
 

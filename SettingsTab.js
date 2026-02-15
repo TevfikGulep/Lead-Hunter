@@ -195,6 +195,55 @@ window.SettingsTab = ({
                     <p className="text-[10px] text-slate-400 bg-slate-50 p-2 rounded">İpucu: <code>{`{{Website}}`}</code> etiketi gönderim sırasında otomatik olarak site adıyla değiştirilir.</p>
                 </div>
             </div>
+
+            {/* Otomatik Takip Şablonu Editor */}
+            <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
+                <h3 className="font-bold mb-6 flex items-center gap-2"><window.Icon name="clock" className="w-5 h-5 text-orange-500" /> Otomatik Takip Şablonu</h3>
+
+                <p className="text-xs text-slate-500 mb-4 bg-orange-50 p-3 rounded-lg border border-orange-100">
+                    <strong>Otomatik Takip Sistemi:</strong> Seçtiğiniz lead'lere 7 gün aralıklarla otomatik takip maili gönderilir.
+                    Cevap geldiğinde (INTERESTED, IN_PROCESS vb.) sistem otomatik olarak durur.
+                </p>
+
+                <div className="space-y-3">
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Aşama Adı</label>
+                        <input
+                            type="text"
+                            value={(activeTemplateLang === 'EN' ? settings.followupTemplateEN : settings.followupTemplateTR)?.label || ''}
+                            onChange={e => handleSettingChange(activeTemplateLang === 'EN' ? 'followupTemplateEN' : 'followupTemplateTR', {
+                                ...(activeTemplateLang === 'EN' ? settings.followupTemplateEN : settings.followupTemplateTR),
+                                label: e.target.value
+                            })}
+                            className="w-full p-2 border rounded text-sm font-medium"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Konu</label>
+                        <input
+                            type="text"
+                            value={(activeTemplateLang === 'EN' ? settings.followupTemplateEN : settings.followupTemplateTR)?.subject || ''}
+                            onChange={e => handleSettingChange(activeTemplateLang === 'EN' ? 'followupTemplateEN' : 'followupTemplateTR', {
+                                ...(activeTemplateLang === 'EN' ? settings.followupTemplateEN : settings.followupTemplateTR),
+                                subject: e.target.value
+                            })}
+                            className="w-full p-2 border rounded text-sm font-bold"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">İçerik</label>
+                        <textarea
+                            value={(activeTemplateLang === 'EN' ? settings.followupTemplateEN : settings.followupTemplateTR)?.body || ''}
+                            onChange={e => handleSettingChange(activeTemplateLang === 'EN' ? 'followupTemplateEN' : 'followupTemplateTR', {
+                                ...(activeTemplateLang === 'EN' ? settings.followupTemplateEN : settings.followupTemplateTR),
+                                body: e.target.value
+                            })}
+                            className="w-full h-48 p-3 border rounded text-sm resize-none leading-relaxed focus:ring-2 focus:ring-orange-500 outline-none"
+                        />
+                    </div>
+                    <p className="text-[10px] text-slate-400 bg-slate-50 p-2 rounded">İpucu: <code>{`{{Website}}`}</code> etiketi gönderim sırasında otomatik olarak site adıyla değiştirilir.</p>
+                </div>
+            </div>
         </div >
     );
 };

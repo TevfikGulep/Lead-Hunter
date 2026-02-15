@@ -679,9 +679,217 @@ window.useLeadHunterServices = (
 
     const stopScan = () => { scanIntervalRef.current = false; setIsScanning(false); };
 
+    // --- 4. AUTO FOLLOWUP SYSTEM ---
+    // Her 5 dakikada bir takip maillerini kontrol eder ve gönderir
+    useEffect(() => {
+        if (!isDbConnected || !settings.googleScriptUrl) return;
+
+        const executeFollowups = async () => {
+            const now = new Date();
+            const candidates = crmDataRef.current.filter(l =>
+                l.autoFollowupEnabled &&
+                l.nextFollowupDate &&
+                new Date(l.nextFollowupDate) <= now &&
+                !['INTERESTED', 'ASKED_MORE', 'IN_PROCESS', 'DEAL_ON', 'DEAL_OFF', 'DENIED', 'NOT_VIABLE', 'MAIL_ERROR'].includes(l.statusKey)
+            );
+
+            if (candidates.length === 0) return;
+
+            console.log(`[AutoFollowup] ${candidates.length} takip maili gönderilecek`);
+
+            for (const lead of candidates) {
+                try {
+                    const domain = window.cleanDomain(lead.url);
+                    const template = lead.language === 'EN'
+                        ? settings.followupTemplateEN
+                        : settings.followupTemplateTR;
+
+                    if (!template || !template.subject || !template.body) {
+                        console.warn(`[AutoFollowup] Şablon bulunamadı: ${lead.id}`);
+                        continue;
+                    }
+
+                    const subject = template.subject.replace(/{{Website}}/g, domain);
+                    const body = template.body.replace(/{{Website}}/g, domain);
+                    const messageHtml = body.replace(/\n/g, '<br>');
+
+                    let signatureHtml = settings.signature
+                        ? window.decodeHtmlEntities(settings.signature).replace(/class="MsoNormal"/g, 'style="margin:0;"')
+                        : '';
+                    const serverUrl = (window.APP_CONFIG && window.APP_CONFIG.SERVER_API_URL) || '';
+                    const trackingPixel = serverUrl
+                        ? `<img src="${serverUrl}?type=track&id=${lead.id}" width="1" height="1" style="display:none;" alt="" />`
+                        : '';
+                    const htmlContent = `<div style="font-family: Arial; font-size: 14px;">${messageHtml}</div><br><br><div>${signatureHtml}</div>${trackingPixel}`;
+                    const plainBody = body + (settings.signature ? `\n\n--\n${settings.signature.replace(/<[^>]+>/g, '')}` : '');
+
+                    const response = await fetch(settings.googleScriptUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({
+                            action: 'send_mail',
+                            to: lead.email ? lead.email.split(',')[0].trim() : '',
+                            subject: subject,
+                            body: plainBody,
+                            htmlBody: htmlContent,
+                            threadId: lead.threadId || null
+                        })
+                    });
+                    const result = await response.json();
+
+                    if (result.status === 'success') {
+                        const nextFollowupDate = new Date();
+                        nextFollowupDate.setDate(nextFollowupDate.getDate() + 7);
+
+                        const batch = dbInstance.batch();
+                        const ref = dbInstance.collection("leads").doc(lead.id);
+                        const newFollowupCount = (lead.followupCount || 0) + 1;
+                        const newLog = {
+                            date: new Date().toISOString(),
+                            type: 'MAIL',
+                            content: `Otomatik Takip #${newFollowupCount} gönderildi`
+                        };
+
+                        batch.update(ref, {
+                            nextFollowupDate: nextFollowupDate.toISOString(),
+                            followupCount: newFollowupCount,
+                            lastContactDate: new Date().toISOString(),
+                            activityLog: firebase.firestore.FieldValue.arrayUnion(newLog)
+                        });
+
+                        await batch.commit();
+                        console.log(`[AutoFollowup] Takip #${newFollowupCount} gönderildi: ${domain}`);
+                    }
+                } catch (e) {
+                    console.error(`[AutoFollowup] Hata: ${lead.id}`, e);
+                }
+
+                // Her mail arasında 2 saniye bekle
+                await new Promise(r => setTimeout(r, 2000));
+            }
+        };
+
+        const intervalId = setInterval(executeFollowups, 5 * 60 * 1000); // 5 dakika
+        const timeoutId = setTimeout(executeFollowups, 10000); // 10 saniye sonra ilk kontrol
+
+        return () => { clearInterval(intervalId); clearTimeout(timeoutId); };
+    }, [isDbConnected, settings.googleScriptUrl, settings.followupTemplateTR, settings.followupTemplateEN, settings.signature]);
+
+    // --- START AUTO FOLLOWUP ---
+    const startAutoFollowup = async (leadIds) => {
+        if (!isDbConnected) return alert("Veritabanı bağlı değil.");
+        if (!leadIds || leadIds.size === 0) return alert("Kayıt seçin.");
+
+        const leadsToUpdate = crmDataRef.current.filter(l => leadIds.has(l.id));
+        const validLeads = leadsToUpdate.filter(l => l.email && l.email.length > 5);
+
+        if (validLeads.length === 0) return alert("Geçerli emaili olan kayıt bulunamadı.");
+
+        if (!confirm(`${validLeads.length} kayıt için otomatik takip başlatılacak. İlk takip maili hemen gönderilecek. Devam edilsin mi?`)) return;
+
+        const batch = dbInstance.batch();
+        const now = new Date();
+        const nextFollowupDate = new Date();
+        nextFollowupDate.setDate(nextFollowupDate.getDate() + 7);
+
+        for (const lead of validLeads) {
+            const domain = window.cleanDomain(lead.url);
+            const template = lead.language === 'EN'
+                ? settings.followupTemplateEN
+                : settings.followupTemplateTR;
+
+            // İlk takip mailini hemen gönder
+            if (template && template.subject && template.body) {
+                try {
+                    const subject = template.subject.replace(/{{Website}}/g, domain);
+                    const body = template.body.replace(/{{Website}}/g, domain);
+                    const messageHtml = body.replace(/\n/g, '<br>');
+
+                    let signatureHtml = settings.signature
+                        ? window.decodeHtmlEntities(settings.signature).replace(/class="MsoNormal"/g, 'style="margin:0;"')
+                        : '';
+                    const serverUrl = (window.APP_CONFIG && window.APP_CONFIG.SERVER_API_URL) || '';
+                    const trackingPixel = serverUrl
+                        ? `<img src="${serverUrl}?type=track&id=${lead.id}" width="1" height="1" style="display:none;" alt="" />`
+                        : '';
+                    const htmlContent = `<div style="font-family: Arial; font-size: 14px;">${messageHtml}</div><br><br><div>${signatureHtml}</div>${trackingPixel}`;
+                    const plainBody = body + (settings.signature ? `\n\n--\n${settings.signature.replace(/<[^>]+>/g, '')}` : '');
+
+                    await fetch(settings.googleScriptUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({
+                            action: 'send_mail',
+                            to: lead.email.split(',')[0].trim(),
+                            subject: subject,
+                            body: plainBody,
+                            htmlBody: htmlContent,
+                            threadId: lead.threadId || null
+                        })
+                    });
+                } catch (e) {
+                    console.error(`[AutoFollowup] İlk mail gönderim hatası: ${lead.id}`, e);
+                }
+            }
+
+            const ref = dbInstance.collection("leads").doc(lead.id);
+            const newLog = {
+                date: now.toISOString(),
+                type: 'MAIL',
+                content: `Otomatik Takip başlatıldı (7 gün ara ile)`
+            };
+
+            batch.update(ref, {
+                autoFollowupEnabled: true,
+                autoFollowupStartedAt: now.toISOString(),
+                nextFollowupDate: nextFollowupDate.toISOString(),
+                followupCount: 1,
+                lastContactDate: now.toISOString(),
+                activityLog: firebase.firestore.FieldValue.arrayUnion(newLog)
+            });
+
+            // Her işlem arasında bekle
+            await new Promise(r => setTimeout(r, 2000));
+        }
+
+        await batch.commit();
+        alert(`${validLeads.length} kayıt için otomatik takip başlatıldı!`);
+    };
+
+    // --- STOP AUTO FOLLOWUP ---
+    const stopAutoFollowup = async (leadIds) => {
+        if (!isDbConnected) return alert("Veritabanı bağlı değil.");
+        if (!leadIds || leadIds.size === 0) return alert("Kayıt seçin.");
+
+        const leadsToUpdate = crmDataRef.current.filter(l => leadIds.has(l.id) && l.autoFollowupEnabled);
+
+        if (leadsToUpdate.length === 0) return alert("Otomatik takibi aktif olan kayıt bulunamadı.");
+
+        if (!confirm(`${leadsToUpdate.length} kaydın otomatik takibi durdurulacak. Devam edilsin mi?`)) return;
+
+        const batch = dbInstance.batch();
+
+        for (const lead of leadsToUpdate) {
+            const ref = dbInstance.collection("leads").doc(lead.id);
+            const newLog = {
+                date: new Date().toISOString(),
+                type: 'SYSTEM',
+                content: `Otomatik Takip durduruldu (${lead.followupCount || 0} takip yapıldı)`
+            };
+
+            batch.update(ref, {
+                autoFollowupEnabled: false,
+                activityLog: firebase.firestore.FieldValue.arrayUnion(newLog)
+            });
+        }
+
+        await batch.commit();
+        alert(`${leadsToUpdate.length} kaydın otomatik takibi durduruldu.`);
+    };
+
     // --- FINAL CHECK ---
     const servicesObj = {
-        selectedLead, setSelectedLead, isSending, openMailModal, openPromotionModal, handleSendMail, showBulkModal, setShowBulkModal, isBulkSending, bulkProgress, bulkConfig, setBulkConfig, executeBulkSend, executeBulkPromotion, isCheckingBulk, handleBulkReplyCheck, bulkUpdateStatus, bulkAddNotViable, isEnriching, showEnrichModal, setShowEnrichModal, enrichLogs, enrichProgress, enrichDatabase, isScanning, keywords, setKeywords, searchDepth, setSearchDepth, hunterLogs, hunterProgress, hunterLogsEndRef, startScan, stopScan, fixAllTrafficData, handleExportData, fixEncodedNames
+        selectedLead, setSelectedLead, isSending, openMailModal, openPromotionModal, handleSendMail, showBulkModal, setShowBulkModal, isBulkSending, bulkProgress, bulkConfig, setBulkConfig, executeBulkSend, executeBulkPromotion, isCheckingBulk, handleBulkReplyCheck, bulkUpdateStatus, bulkAddNotViable, isEnriching, showEnrichModal, setShowEnrichModal, enrichLogs, enrichProgress, enrichDatabase, isScanning, keywords, setKeywords, searchDepth, setSearchDepth, hunterLogs, hunterProgress, hunterLogsEndRef, startScan, stopScan, fixAllTrafficData, handleExportData, fixEncodedNames, startAutoFollowup, stopAutoFollowup
     };
 
     return servicesObj;
