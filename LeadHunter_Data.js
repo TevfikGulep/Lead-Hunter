@@ -1,5 +1,6 @@
 // LeadHunter_Data.js
 // GÜNCELLEME: Mail Durum Filtresi (mailStatus) Eklendi.
+// GÜNCELLEME 2: Sıralama mantığı (Generic Sort) iyileştirildi.
 
 const { useState, useEffect, useMemo } = React;
 
@@ -164,7 +165,11 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
             } else if (sortConfig.key === 'statusKey') {
                 valA = window.LEAD_STATUSES[a.statusKey]?.label || a.statusLabel || 'New';
                 valB = window.LEAD_STATUSES[b.statusKey]?.label || b.statusLabel || 'New';
-            } else if (typeof valA === 'string') { valA = valA.toLowerCase(); valB = valB ? valB.toLowerCase() : ''; }
+            } else { 
+                // İsim, Email gibi genel metin alanlarının güvenli sıralanması (BOŞ VERİLERİ DE KAPSIYOR)
+                valA = valA ? String(valA).toLowerCase() : ''; 
+                valB = valB ? String(valB).toLowerCase() : ''; 
+            }
 
             if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
             if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
