@@ -1,7 +1,7 @@
 // constants.js
 
 // Sayfalama Ayarı
-window.ITEMS_PER_PAGE = 50; 
+window.ITEMS_PER_PAGE = 50;
 
 // Arama Lokasyonları
 window.SEARCH_COUNTRIES = [
@@ -20,8 +20,8 @@ window.SEARCH_COUNTRIES = [
 ];
 
 // Config dosyasından verileri al, yoksa varsayılanı kullan
-	const FIRMA = (window.APP_CONFIG && window.APP_CONFIG.FIRMA_ADI) || "[FIRMA]";
-	const ISIM = (window.APP_CONFIG && window.APP_CONFIG.KULLANICI_ISMI) || "[ISIM]";
+const FIRMA = (window.APP_CONFIG && window.APP_CONFIG.FIRMA_ADI) || "[FIRMA]";
+const ISIM = (window.APP_CONFIG && window.APP_CONFIG.KULLANICI_ISMI) || "[ISIM]";
 
 // Lead Durumları
 window.LEAD_STATUSES = {
@@ -48,11 +48,24 @@ window.DEFAULT_WORKFLOW_TR = [
     { id: 5, label: 'Takip 5 (Veda & Anket)', subject: '{{Website}} Reklam Partnerlik Hk.', body: `Merhaba,\n\nSizden bir geri dönüş alamayınca, bu konunun şu an için önceliğiniz olmadığını anlıyorum.\n\nYoğunluğunuza ve mevcut planlarınıza tamamen saygı duyuyorum. Bu nedenle, bu konuyla ilgili size daha fazla ileti göndermeyeceğim. Eğer ileride şartlar değişir ve bu konu tekrar gündeminize gelirse, bir e-posta uzağınızda olduğumu bilmenizi isterim.\n\nSadece kendi yaklaşımımı geliştirebilmem adına bir yardım istiyorum. Durumunuzu en iyi anlatan harfi yanıt olarak göndermeniz benim için harika bir geri bildirim olur.\n\nA - Konuyla ilgileniyorum ama şu an çok yoğunum. Gelecek hafta tekrar iletişime geçin.\nB - İş birliği hakkında daha fazla detay almak isterim. \nC - Şu anda yeni bir iş birliğine açık değiliz. Gelecek ay tekrar ulaşabilirsiniz. \nD - Halihazırda benzer firmalarla çalışıyoruz. \nE - E-postalarınız spam (gereksiz) klasörüne düşmüş. Lütfen teklifinizi tekrar gönderir misiniz?\n\nŞimdiden teşekkür ederim.\nSize ve {{Website}} ekibine çalışmalarınızda başarılar dilerim.` }
 ];
 
+// Promosyon Şablonu
+window.DEFAULT_PROMOTION_TEMPLATE_TR = {
+    label: 'Promosyon',
+    subject: '{{Website}} - Özel Fırsat!',
+    body: `Merhabalar,\n\nSizin için özel bir fırsatımız var!\n\nDetayları öğrenmek için benimle iletişime geçebilirsiniz.\n\nİyi çalışmalar dilerim.`
+};
+
+window.DEFAULT_PROMOTION_TEMPLATE_EN = {
+    label: 'Promotion',
+    subject: '{{Website}} - Special Offer!',
+    body: `Hello,\n\nWe have a special offer for you!\n\nFeel free to contact me for more details.\n\nBest regards.`
+};
+
 // Varsayılan İş Akışları (EN)
 window.DEFAULT_WORKFLOW_EN = [
     { id: 0, label: 'First Contact', subject: 'Partnership Opportunity for {{Website}}', body: `Hello,\nI am ${ISIM} from the ${FIRMA} team.\n\nFollowing the start of our Poland-based company's activities in the region, yours is one of the first publishers we wanted to contact. During our review, we noticed a significant revenue opportunity on {{Website}} that might be overlooked.\n\nAs a Google Certified Publisher Partner, we help valuable publishers like you build an additional revenue layer without touching your existing ad layout. Our goal is not to replace your current partners, but to work alongside them to increase your total revenue.\n\nCould we have a short 15-minute online call next week to discuss this opportunity and what we can do specifically for your site?\n\nBest regards.` },
     { id: 1, label: 'Follow-up 1 (Reminder)', subject: 'Partnership Opportunity for {{Website}}', body: `Hello,\n\nI am following up on my email from last week, I hope everything is going well. I thought it might have been overlooked due to your busy schedule.\n\nTo briefly summarize, I mentioned an opportunity to build an additional revenue layer for {{Website}} without touching your existing ads.\n\nWe could schedule a meeting for Tuesday at 11 AM. Please let me know if that works for you.\n\nBest regards.` },
-    { id: 2, label: 'Follow-up 2', subject: 'Partnership Opportunity for {{Website}}', body: `Hello, check 2...` }, 
+    { id: 2, label: 'Follow-up 2', subject: 'Partnership Opportunity for {{Website}}', body: `Hello, check 2...` },
     { id: 3, label: 'Follow-up 3', subject: 'Partnership Opportunity for {{Website}}', body: `Hello, check 3...` },
     { id: 4, label: 'Follow-up 4', subject: 'Partnership Opportunity for {{Website}}', body: `Hello, check 4...` },
     { id: 5, label: 'Follow-up 5', subject: 'Partnership Opportunity for {{Website}}', body: `Hello, check 5...` }

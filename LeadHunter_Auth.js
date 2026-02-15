@@ -14,22 +14,24 @@ window.useLeadHunterAuth = () => {
     const [searchLocation, setSearchLocation] = useState('tr');
 
     // Varsayılan Config
-    const defaultFirebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.FIREBASE_CONFIG) 
-        ? JSON.stringify(window.APP_CONFIG.FIREBASE_CONFIG) 
+    const defaultFirebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.FIREBASE_CONFIG)
+        ? JSON.stringify(window.APP_CONFIG.FIREBASE_CONFIG)
         : '';
 
     const [settings, setSettings] = useState({
-        googleApiKey: '', searchEngineId: '', geminiApiKey: '', 
+        googleApiKey: '', searchEngineId: '', geminiApiKey: '',
         googleScriptUrl: '', signature: '', followUpDays: 7,
-        firebaseConfig: defaultFirebaseConfig, 
+        firebaseConfig: defaultFirebaseConfig,
         workflowTR: window.DEFAULT_WORKFLOW_TR,
-        workflowEN: window.DEFAULT_WORKFLOW_EN
+        workflowEN: window.DEFAULT_WORKFLOW_EN,
+        promotionTemplateTR: window.DEFAULT_PROMOTION_TEMPLATE_TR,
+        promotionTemplateEN: window.DEFAULT_PROMOTION_TEMPLATE_EN
     });
 
     const [dbInstance, setDbInstance] = useState(null);
     const [isDbConnected, setIsDbConnected] = useState(false);
     const [showSignatureHtml, setShowSignatureHtml] = useState(false);
-    
+
     // --- STATE: TEMPLATES & WORKFLOW ---
     const [activeTemplateIndex, setActiveTemplateIndex] = useState(0);
     const [activeTemplateLang, setActiveTemplateLang] = useState('TR');
@@ -40,7 +42,7 @@ window.useLeadHunterAuth = () => {
     useEffect(() => {
         const sessionAuth = sessionStorage.getItem('leadHunterAuth');
         if (sessionAuth === 'true') setIsAuthenticated(true);
-        
+
         try {
             const saved = localStorage.getItem('leadhunter_settings_v18');
             if (saved) {
@@ -50,13 +52,13 @@ window.useLeadHunterAuth = () => {
                     setShowSignatureHtml(true);
                 }
             }
-        } catch(e) {}
+        } catch (e) { }
     }, []);
 
     // 2. İmza Değişikliği İzleme
     useEffect(() => {
         if (settings.signature) {
-            const hasComplexHtml = settings.signature.includes('<table') || settings.signature.includes('<div') || settings.signature.includes('style=') || settings.signature.includes('&lt;table'); 
+            const hasComplexHtml = settings.signature.includes('<table') || settings.signature.includes('<div') || settings.signature.includes('style=') || settings.signature.includes('&lt;table');
             if (hasComplexHtml && !showSignatureHtml) setShowSignatureHtml(true);
         }
     }, [settings.signature]);
@@ -70,7 +72,9 @@ window.useLeadHunterAuth = () => {
             setSettings(prev => ({
                 ...prev, ...parsed,
                 workflowTR: parsed.workflowTR || window.DEFAULT_WORKFLOW_TR,
-                workflowEN: parsed.workflowEN || window.DEFAULT_WORKFLOW_EN
+                workflowEN: parsed.workflowEN || window.DEFAULT_WORKFLOW_EN,
+                promotionTemplateTR: parsed.promotionTemplateTR || window.DEFAULT_PROMOTION_TEMPLATE_TR,
+                promotionTemplateEN: parsed.promotionTemplateEN || window.DEFAULT_PROMOTION_TEMPLATE_EN
             }));
         }
     }, [isAuthenticated]);
@@ -116,10 +120,10 @@ window.useLeadHunterAuth = () => {
     }, [isDbConnected, dbInstance]);
 
     // 6. Ayarları LocalStorage'a Kaydet
-    useEffect(() => { 
-        if(isAuthenticated) {
-            const safeSettings = { ...settings }; 
-            localStorage.setItem('leadhunter_settings_v18', JSON.stringify(safeSettings)); 
+    useEffect(() => {
+        if (isAuthenticated) {
+            const safeSettings = { ...settings };
+            localStorage.setItem('leadhunter_settings_v18', JSON.stringify(safeSettings));
         }
     }, [settings, isAuthenticated]);
 
@@ -155,16 +159,21 @@ window.useLeadHunterAuth = () => {
     };
 
     const handleSettingChange = (key, value) => setSettings(prev => ({ ...prev, [key]: value }));
-    
-    const updateWorkflowStep = (index, field, value) => { 
-        const k = activeTemplateLang === 'EN' ? 'workflowEN' : 'workflowTR'; 
-        const nw = [...settings[k]]; 
-        nw[index][field] = value; 
-        setSettings(p => ({ ...p, [k]: nw })); 
+
+    const updateWorkflowStep = (index, field, value) => {
+        const k = activeTemplateLang === 'EN' ? 'workflowEN' : 'workflowTR';
+        const nw = [...settings[k]];
+        nw[index][field] = value;
+        setSettings(p => ({ ...p, [k]: nw }));
     };
 
-    const fixHtmlCode = () => { 
-        if(settings.signature) handleSettingChange('signature', window.decodeHtmlEntities(settings.signature)); 
+    const fixHtmlCode = () => {
+        if (settings.signature) handleSettingChange('signature', window.decodeHtmlEntities(settings.signature));
+    };
+
+    const updatePromotionTemplate = (field, value) => {
+        const k = activeTemplateLang === 'EN' ? 'promotionTemplateEN' : 'promotionTemplateTR';
+        setSettings(p => ({ ...p, [k]: { ...p[k], [field]: value } }));
     };
 
     return {
@@ -181,6 +190,7 @@ window.useLeadHunterAuth = () => {
         showSignatureHtml, setShowSignatureHtml, fixHtmlCode,
         activeTemplateIndex, setActiveTemplateIndex,
         activeTemplateLang, setActiveTemplateLang,
-        updateWorkflowStep
+        updateWorkflowStep,
+        updatePromotionTemplate
     };
 };

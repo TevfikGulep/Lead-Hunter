@@ -12,7 +12,9 @@ window.SettingsTab = ({
     setActiveTemplateLang,
     activeTemplateIndex,
     setActiveTemplateIndex,
-    updateWorkflowStep
+    updateWorkflowStep,
+    updatePromotionTemplate,
+    openPromotionModal
 }) => {
     return (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pb-10">
@@ -149,6 +151,45 @@ window.SettingsTab = ({
                             value={(activeTemplateLang === 'EN' ? settings.workflowEN : settings.workflowTR)[activeTemplateIndex]?.body || ''}
                             onChange={e => updateWorkflowStep(activeTemplateIndex, 'body', e.target.value)}
                             className="w-full h-64 p-3 border rounded text-sm resize-none leading-relaxed focus:ring-2 focus:ring-purple-500 outline-none"
+                        />
+                    </div>
+                    <p className="text-[10px] text-slate-400 bg-slate-50 p-2 rounded">İpucu: <code>{`{{Website}}`}</code> etiketi gönderim sırasında otomatik olarak site adıyla değiştirilir.</p>
+                </div>
+            </div>
+
+            {/* Promosyon Şablonu Editor */}
+            <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
+                <h3 className="font-bold mb-6 flex items-center gap-2"><window.Icon name="gift" className="w-5 h-5 text-pink-500" /> Promosyon Şablonu</h3>
+
+                <p className="text-xs text-slate-500 mb-4 bg-pink-50 p-3 rounded-lg border border-pink-100">
+                    Özel promosyonlarınız için bu şablonu kullanabilirsiniz. CRM tablosunda her satırda pembe "hediye" butonuna tıklayarak bu şablonu gönderebilirsiniz.
+                </p>
+
+                <div className="space-y-3">
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Aşama Adı</label>
+                        <input
+                            type="text"
+                            value={(activeTemplateLang === 'EN' ? settings.promotionTemplateEN : settings.promotionTemplateTR)?.label || ''}
+                            onChange={e => updatePromotionTemplate('label', e.target.value)}
+                            className="w-full p-2 border rounded text-sm font-medium"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Konu</label>
+                        <input
+                            type="text"
+                            value={(activeTemplateLang === 'EN' ? settings.promotionTemplateEN : settings.promotionTemplateTR)?.subject || ''}
+                            onChange={e => updatePromotionTemplate('subject', e.target.value)}
+                            className="w-full p-2 border rounded text-sm font-bold"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">İçerik</label>
+                        <textarea
+                            value={(activeTemplateLang === 'EN' ? settings.promotionTemplateEN : settings.promotionTemplateTR)?.body || ''}
+                            onChange={e => updatePromotionTemplate('body', e.target.value)}
+                            className="w-full h-48 p-3 border rounded text-sm resize-none leading-relaxed focus:ring-2 focus:ring-pink-500 outline-none"
                         />
                     </div>
                     <p className="text-[10px] text-slate-400 bg-slate-50 p-2 rounded">İpucu: <code>{`{{Website}}`}</code> etiketi gönderim sırasında otomatik olarak site adıyla değiştirilir.</p>

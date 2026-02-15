@@ -363,6 +363,27 @@ window.useLeadHunterServices = (
         setSelectedLead({ ...lead, currentLabel: info.label, draft: { to: lead.email ? lead.email.split(',')[0].trim() : '', subject: info.template.subject.replace(/{{Website}}/g, domain), body: info.template.body.replace(/{{Website}}/g, domain) }, allEmails: lead.email });
     };
 
+    const openPromotionModal = (lead) => {
+        const domain = window.cleanDomain(lead.url);
+        const promoTemplate = lead.language === 'EN'
+            ? settings.promotionTemplateEN
+            : settings.promotionTemplateTR;
+
+        if (!promoTemplate) return alert("Promosyon şablonu bulunamadı.");
+
+        setSelectedLead({
+            ...lead,
+            currentLabel: promoTemplate.label || 'Promosyon',
+            isPromotion: true,
+            draft: {
+                to: lead.email ? lead.email.split(',')[0].trim() : '',
+                subject: (promoTemplate.subject || '').replace(/{{Website}}/g, domain),
+                body: (promoTemplate.body || '').replace(/{{Website}}/g, domain)
+            },
+            allEmails: lead.email
+        });
+    };
+
     const handleSendMail = async () => {
         if (!selectedLead) return;
         setIsSending(true);
@@ -439,6 +460,72 @@ window.useLeadHunterServices = (
             if (index < totalGroups) await new Promise(r => setTimeout(r, 2000));
         }
         setIsBulkSending(false); setSelectedIds(new Set()); alert("Tamamlandı."); setShowBulkModal(false);
+    };
+
+    const executeBulkPromotion = async () => {
+        if (!bulkConfig.promotionSubject || !bulkConfig.promotionBody) {
+            return alert("Lütfen promosyon konusunu ve içeriğini doldurun!");
+        }
+        if (!confirm(`${selectedIds.size} site için promosyon maili gönderilecek. Onaylıyor musunuz?`)) return;
+
+        setIsBulkSending(true);
+        const selectedLeads = crmData.filter(l => selectedIds.has(l.id));
+        const grouped = {};
+        selectedLeads.forEach(lead => { if (lead.email && lead.email.length > 5) { const m = lead.email.split(',')[0].trim(); if (!grouped[m]) grouped[m] = []; grouped[m].push(lead); } });
+        const totalGroups = Object.keys(grouped).length;
+        setBulkProgress({ current: 0, total: totalGroups, logs: [] });
+        const addBulkLog = (msg, success) => setBulkProgress(prev => ({ ...prev, logs: [...prev.logs, { msg, success }] }));
+        let index = 0;
+        const serverUrl = (window.APP_CONFIG && window.APP_CONFIG.SERVER_API_URL) || '';
+
+        for (const email in grouped) {
+            index++;
+            setBulkProgress(prev => ({ ...prev, current: index }));
+            const group = grouped[email];
+            const mainLead = group[0];
+            const uniqueDomains = [...new Set(group.map(l => window.cleanDomain(l.url)))];
+
+            try {
+                // Promosyon maili için subject ve body
+                const subject = (bulkConfig.promotionSubject || '').replace(/{{Website}}/g, uniqueDomains.join(', '));
+                const body = (bulkConfig.promotionBody || '').replace(/{{Website}}/g, uniqueDomains.join(', '));
+
+                const messageHtml = body.replace(/\n/g, '<br>');
+                let signatureHtml = settings.signature ? window.decodeHtmlEntities(settings.signature).replace(/class="MsoNormal"/g, 'style="margin:0;"') : '';
+                const trackingPixel = serverUrl ? `<img src="${serverUrl}?type=track&id=${mainLead.id}" width="1" height="1" style="display:none;" alt="" />` : '';
+                const htmlContent = `<div style="font-family: Arial; font-size: 14px;">${messageHtml}</div><br><br><div>${signatureHtml}</div>${trackingPixel}`;
+                const plainBody = body + (settings.signature ? `\n\n--\n${settings.signature.replace(/<[^>]+>/g, '')}` : '');
+
+                const response = await fetch(settings.googleScriptUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'send_mail', to: email, subject: subject, body: plainBody, htmlBody: htmlContent, threadId: null })
+                });
+                const result = await response.json();
+                if (result.status === 'error') throw new Error(result.message);
+
+                addBulkLog(`${email}: Promosyon gönderildi`, true);
+
+                if (isDbConnected) {
+                    const batch = dbInstance.batch();
+                    group.forEach(l => {
+                        const newLog = { date: new Date().toISOString(), type: 'MAIL', content: `Promosyon Mail Gönderildi` };
+                        const ref = dbInstance.collection("leads").doc(l.id);
+                        const updateData = {
+                            statusKey: 'NO_REPLY',
+                            statusLabel: window.LEAD_STATUSES['NO_REPLY'].label,
+                            lastContactDate: new Date().toISOString(),
+                            activityLog: firebase.firestore.FieldValue.arrayUnion(newLog)
+                        };
+                        if (result.threadId) updateData.threadId = result.threadId;
+                        batch.update(ref, updateData);
+                    });
+                    await batch.commit();
+                }
+            } catch (e) { addBulkLog(`${email}: Hata - ${e.message}`, false); }
+            if (index < totalGroups) await new Promise(r => setTimeout(r, 2000));
+        }
+        setIsBulkSending(false); setSelectedIds(new Set()); alert("Promosyon gönderimi tamamlandı!"); setShowBulkModal(false);
     };
 
     const handleBulkReplyCheck = async () => {
@@ -594,7 +681,7 @@ window.useLeadHunterServices = (
 
     // --- FINAL CHECK ---
     const servicesObj = {
-        selectedLead, setSelectedLead, isSending, openMailModal, handleSendMail, showBulkModal, setShowBulkModal, isBulkSending, bulkProgress, bulkConfig, setBulkConfig, executeBulkSend, isCheckingBulk, handleBulkReplyCheck, bulkUpdateStatus, bulkAddNotViable, isEnriching, showEnrichModal, setShowEnrichModal, enrichLogs, enrichProgress, enrichDatabase, isScanning, keywords, setKeywords, searchDepth, setSearchDepth, hunterLogs, hunterProgress, hunterLogsEndRef, startScan, stopScan, fixAllTrafficData, handleExportData, fixEncodedNames
+        selectedLead, setSelectedLead, isSending, openMailModal, openPromotionModal, handleSendMail, showBulkModal, setShowBulkModal, isBulkSending, bulkProgress, bulkConfig, setBulkConfig, executeBulkSend, executeBulkPromotion, isCheckingBulk, handleBulkReplyCheck, bulkUpdateStatus, bulkAddNotViable, isEnriching, showEnrichModal, setShowEnrichModal, enrichLogs, enrichProgress, enrichDatabase, isScanning, keywords, setKeywords, searchDepth, setSearchDepth, hunterLogs, hunterProgress, hunterLogsEndRef, startScan, stopScan, fixAllTrafficData, handleExportData, fixEncodedNames
     };
 
     return servicesObj;

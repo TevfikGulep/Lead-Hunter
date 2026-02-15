@@ -158,6 +158,7 @@ const LeadHunter = () => {
                             handleEditClick={actions.handleEditClick}
                             setHistoryModalLead={setHistoryModalLead}
                             openMailModal={services.openMailModal}
+                            openPromotionModal={services.openPromotionModal}
                             currentPage={data.currentPage}
                             totalPages={data.totalPages}
                             setCurrentPage={data.setCurrentPage}
@@ -186,6 +187,8 @@ const LeadHunter = () => {
                             activeTemplateIndex={auth.activeTemplateIndex}
                             setActiveTemplateIndex={auth.setActiveTemplateIndex}
                             updateWorkflowStep={auth.updateWorkflowStep}
+                            updatePromotionTemplate={auth.updatePromotionTemplate}
+                            openPromotionModal={services.openPromotionModal}
                         />
                     )}
                 </div>
