@@ -1,5 +1,5 @@
 // CrmTab.js
-// GÜNCELLEME: Mail Takip İkonu (Mavi/Yeşil/Kırmızı) mantığı eklendi.
+// GÜNCELLEME: "İsim" (contactName) sütunu, Sıralama özellikleri ve Rapor Export entegre edildi.
 
 window.CrmTab = ({
     crmData, filters, setFilters, selectedIds, setShowBulkModal, activeTab, fixAllTrafficData, onBulkCheck, isCheckingBulk,
@@ -7,14 +7,13 @@ window.CrmTab = ({
     editingRowId, editFormData, handleEditChange, handleEditSave, handleEditCancel, handleEditClick,
     setHistoryModalLead, openMailModal, currentPage, totalPages, setCurrentPage, totalRecords, emailMap, getStageInfo,
     enrichDatabase, isEnriching, setShowImportModal, bulkUpdateStatus,
-    itemsPerPage, setItemsPerPage, selectAllFiltered, clearSelection
+    itemsPerPage, setItemsPerPage, selectAllFiltered, clearSelection, onExport
 }) => {
     
     const isAllPageSelected = paginatedItems.length > 0 && paginatedItems.every(i => selectedIds.has(i.id));
     const isGlobalSelectionActive = selectedIds.size > paginatedItems.length && selectedIds.size >= totalRecords;
     const canSelectAllGlobal = isAllPageSelected && totalRecords > paginatedItems.length && !isGlobalSelectionActive;
 
-    // YENİ: Cevap alınan statüler
     const replyStatuses = ['ASKED_MORE', 'INTERESTED', 'IN_PROCESS', 'DEAL_ON', 'DEAL_OFF', 'DENIED', 'NOT_POSSIBLE'];
 
     return (
@@ -48,7 +47,7 @@ window.CrmTab = ({
                         </div>
                     </div>
                 </div>
-                <window.FilterBar filters={filters} setFilters={setFilters} selectedCount={selectedCount} setShowBulkModal={setShowBulkModal} activeTab={activeTab} fixAllTrafficData={fixAllTrafficData} onBulkCheck={onBulkCheck} isCheckingBulk={isCheckingBulk} onBulkStatusChange={bulkUpdateStatus} />
+                <window.FilterBar filters={filters} setFilters={setFilters} selectedCount={selectedCount} setShowBulkModal={setShowBulkModal} activeTab={activeTab} fixAllTrafficData={fixAllTrafficData} onBulkCheck={onBulkCheck} isCheckingBulk={isCheckingBulk} onBulkStatusChange={bulkUpdateStatus} onExport={onExport} />
             </div>
             
             <div className="overflow-x-auto">
@@ -70,14 +69,31 @@ window.CrmTab = ({
                     <thead className="bg-slate-50 text-slate-500 border-b">
                         <tr>
                             <th className="p-4 w-10"><input type="checkbox" className="custom-checkbox" checked={isAllPageSelected} onChange={() => toggleSelectAll(paginatedItems)}/></th>
-                            <th className="p-4 cursor-pointer" onClick={() => handleSort('url')}>Site (Mail Takip)</th>
-                            <th className="p-4">Email</th>
-                            <th className="p-4">Son Gönderilen</th>
-                            <th className="p-4" onClick={() => handleSort('lastContactDate')}><div className="flex items-center gap-1 cursor-pointer hover:text-indigo-600">Son Temas <window.SortIcon column="lastContactDate" sortConfig={sortConfig}/></div></th>
-                            <th className="p-4" onClick={() => handleSort('potential')}><div className="flex items-center gap-1 cursor-pointer hover:text-indigo-600">Potansiyel <window.SortIcon column="potential" sortConfig={sortConfig}/></div></th>
+                            
+                            <th className="p-4 cursor-pointer hover:text-indigo-600 transition-colors select-none" onClick={() => handleSort('url')}>
+                                <div className="flex items-center gap-1">Site (Mail Takip) <window.SortIcon column="url" sortConfig={sortConfig}/></div>
+                            </th>
+                            <th className="p-4 cursor-pointer hover:text-indigo-600 transition-colors select-none" onClick={() => handleSort('contactName')}>
+                                <div className="flex items-center gap-1">İsim <window.SortIcon column="contactName" sortConfig={sortConfig}/></div>
+                            </th>
+                            <th className="p-4 cursor-pointer hover:text-indigo-600 transition-colors select-none" onClick={() => handleSort('email')}>
+                                <div className="flex items-center gap-1">Email <window.SortIcon column="email" sortConfig={sortConfig}/></div>
+                            </th>
+                            <th className="p-4 cursor-pointer hover:text-indigo-600 transition-colors select-none" onClick={() => handleSort('stage')}>
+                                <div className="flex items-center gap-1">Son Gönderilen <window.SortIcon column="stage" sortConfig={sortConfig}/></div>
+                            </th>
+                            <th className="p-4 cursor-pointer hover:text-indigo-600 transition-colors select-none" onClick={() => handleSort('lastContactDate')}>
+                                <div className="flex items-center gap-1">Son Temas <window.SortIcon column="lastContactDate" sortConfig={sortConfig}/></div>
+                            </th>
+                            <th className="p-4 cursor-pointer hover:text-indigo-600 transition-colors select-none" onClick={() => handleSort('potential')}>
+                                <div className="flex items-center gap-1">Potansiyel <window.SortIcon column="potential" sortConfig={sortConfig}/></div>
+                            </th>
                             <th className="p-4">Notlar</th>
                             <th className="p-4">Dil</th>
-                            <th className="p-4 cursor-pointer" onClick={() => handleSort('statusKey')}><div className="flex items-center gap-1 hover:text-indigo-600">Durum <window.SortIcon column="statusKey" sortConfig={sortConfig}/></div></th>
+                            <th className="p-4 cursor-pointer hover:text-indigo-600 transition-colors select-none" onClick={() => handleSort('statusKey')}>
+                                <div className="flex items-center gap-1">Durum <window.SortIcon column="statusKey" sortConfig={sortConfig}/></div>
+                            </th>
+                            
                             <th className="p-4 text-right">İşlem</th>
                         </tr>
                     </thead>
@@ -87,7 +103,6 @@ window.CrmTab = ({
                             const relatedSites = emailMap[mainEmail] || [];
                             const siteCount = relatedSites.length;
 
-                            // YENİ: Renk Mantığı
                             const isReplied = replyStatuses.includes(item.statusKey);
                             const isMailOpened = !!item.mailOpenedAt;
                             
@@ -110,7 +125,6 @@ window.CrmTab = ({
                                         <input value={editFormData.url} onChange={e => handleEditChange('url', e.target.value)} className="w-full p-1 border rounded" />
                                     ) : (
                                         <div className="flex items-center gap-2">
-                                            {/* YENİ: Mail Tracking Icon */}
                                             <div className={`w-3 h-3 rounded-full shadow-sm ${dotColor} ${isMailOpened && !isReplied ? 'animate-pulse' : ''}`} title={dotTitle}></div>
 
                                             <span onClick={() => toggleSelection(item.id)} className="cursor-pointer hover:text-indigo-600 transition-colors">{window.cleanDomain(item.url)}</span>
@@ -118,6 +132,16 @@ window.CrmTab = ({
                                         </div>
                                     )}
                                 </td>
+                                
+                                {/* YENİ EKLENEN İSİM SÜTUNU (Satır içi düzenlemeli) */}
+                                <td className="p-4 text-sm text-slate-600 max-w-[120px] truncate" title={item.contactName}>
+                                    {editingRowId === item.id ? (
+                                        <input value={editFormData.contactName || ''} onChange={e => handleEditChange('contactName', e.target.value)} className="w-full p-1 border rounded" placeholder="İsim..." />
+                                    ) : (
+                                        item.contactName || '-'
+                                    )}
+                                </td>
+
                                 <td className="p-4 text-sm text-slate-600 max-w-[200px]">
                                     {editingRowId === item.id ? <input value={editFormData.email} onChange={e => handleEditChange('email', e.target.value)} className="w-full p-1 border rounded" /> : (
                                         <div className="flex flex-col">
