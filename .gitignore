@@ -1,2 +1,7 @@
 config.js
-.vscode/sftp.json
+.vscode/
+data/
+logs/
+*.log
+lead-hunter-1500-firebase-admin-service-account.json
+.firebaserc
