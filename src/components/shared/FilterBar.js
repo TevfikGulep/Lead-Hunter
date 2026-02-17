@@ -7,6 +7,7 @@ window.FilterBar = ({
     filters,
     setFilters,
     selectedCount,
+    selectedIds,
     setShowBulkModal,
     activeTab,
     fixAllTrafficData,

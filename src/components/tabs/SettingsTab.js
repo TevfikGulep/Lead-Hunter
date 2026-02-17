@@ -14,7 +14,10 @@ window.SettingsTab = ({
     setActiveTemplateIndex,
     updateWorkflowStep,
     updatePromotionTemplate,
-    openPromotionModal
+    openPromotionModal,
+    runAutoHunterScan,
+    stopAutoHunterScan,
+    isHunterRunning
 }) => {
     return (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pb-10">
@@ -290,6 +293,60 @@ window.SettingsTab = ({
                                 : 'Henüz çalıştırılmadı'}
                         </div>
                         <p className="text-[10px] text-slate-400 mt-1">Son çalışılan ilçe: #{settings.lastHunterIlceIndex || 0}</p>
+                        <button 
+                            onClick={() => {
+                                if (confirm('İlçe indeksi sıfırlanacak! Tarama en baştan başlayacak. Onaylıyor musunuz?')) {
+                                    handleSettingChange('lastHunterIlceIndex', 0);
+                                    handleSettingChange('lastHunterRunDate', null);
+                                    saveSettingsToCloud();
+                                }
+                            }}
+                            className="mt-2 px-3 py-1 bg-red-100 hover:bg-red-200 text-red-700 rounded text-xs font-bold"
+                        >
+                            🔄 İlçe İndeksini Sıfırla
+                        </button>
+                    </div>
+
+                    {/* Manuel Başlat Butonu */}
+                    <div className="md:col-span-2 mt-4">
+                        <label className="block text-xs font-bold text-slate-500 mb-2">Manuel Çalıştırma</label>
+                        <div className="flex gap-3">
+                            {!isHunterRunning ? (
+                                <button 
+                                    onClick={() => {
+                                        if (confirm('Otomatik tarama başlatılacak. Devam edilsin mi?')) {
+                                            runAutoHunterScan();
+                                        }
+                                    }}
+                                    disabled={!settings.ilceListesi || settings.ilceListesi.trim().length === 0}
+                                    className={`flex-1 py-3 px-4 rounded-lg font-bold text-white flex items-center justify-center gap-2 transition-colors ${
+                                        settings.ilceListesi && settings.ilceListesi.trim().length > 0
+                                        ? 'bg-indigo-600 hover:bg-indigo-700' 
+                                        : 'bg-gray-400 cursor-not-allowed'
+                                    }`}
+                                >
+                                    <window.Icon name="play" className="w-5 h-5" />
+                                    Tararmayı Manuel Başlat
+                                </button>
+                            ) : (
+                                <button 
+                                    onClick={() => {
+                                        if (confirm('Tarama durdurulacak. Devam edilsin mi?')) {
+                                            stopAutoHunterScan();
+                                        }
+                                    }}
+                                    className="flex-1 py-3 px-4 rounded-lg font-bold text-white bg-red-600 hover:bg-red-700 flex items-center justify-center gap-2 transition-colors"
+                                >
+                                    <window.Icon name="square" className="w-5 h-5" />
+                                    Tararmayı Durdur
+                                </button>
+                            )}
+                        </div>
+                        {isHunterRunning && (
+                            <p className="text-xs text-amber-600 mt-2 text-center animate-pulse">
+                                ⏳ Tarama çalışıyor... Tarayıcıyı kapatmayın.
+                            </p>
+                        )}
                     </div>
                 </div>
 

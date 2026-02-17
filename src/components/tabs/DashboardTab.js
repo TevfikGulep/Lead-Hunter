@@ -39,7 +39,7 @@ window.DashboardTab = ({
                 ))}
             </div>
             
-            <window.FilterBar filters={filters} setFilters={setFilters} selectedCount={selectedCount} setShowBulkModal={setShowBulkModal} activeTab={activeTab} fixAllTrafficData={fixAllTrafficData} onBulkCheck={onBulkCheck} isCheckingBulk={isCheckingBulk} onBulkStatusChange={bulkUpdateStatus} onExport={onExport} />
+            <window.FilterBar filters={filters} setFilters={setFilters} selectedCount={selectedCount} selectedIds={selectedIds} setShowBulkModal={setShowBulkModal} activeTab={activeTab} fixAllTrafficData={fixAllTrafficData} onBulkCheck={onBulkCheck} isCheckingBulk={isCheckingBulk} onBulkStatusChange={bulkUpdateStatus} onExport={onExport} />
             
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-6 border-b flex justify-between items-center bg-slate-50/50">

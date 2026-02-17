@@ -133,6 +133,7 @@ window.useLeadHunterServices = (
     const [searchDepth, setSearchDepth] = useState(30);
     const [hunterLogs, setHunterLogs] = useState([]);
     const [hunterProgress, setHunterProgress] = useState(0);
+    const [isHunterRunning, setIsHunterRunning] = useState(false);
 
     const scanIntervalRef = useRef(false);
     const hunterLogsEndRef = useRef(null);
@@ -952,11 +953,13 @@ window.useLeadHunterServices = (
     const runAutoHunterScan = async () => {
         if (!isDbConnected) {
             console.warn("[AutoHunter] Veritabanı bağlı değil");
+            alert("Veritabanı bağlı değil!");
             return;
         }
 
         if (!settings.ilceListesi || settings.ilceListesi.trim().length === 0) {
             console.warn("[AutoHunter] İlçe listesi boş");
+            alert("Lütfen önce ilçe listesini doldurun!");
             return;
         }
 
@@ -966,6 +969,8 @@ window.useLeadHunterServices = (
         }
 
         autoHunterRef.current.isRunning = true;
+        setIsHunterRunning(true);
+        alert("Tarama başladı! Tarayıcıyı kapatmayın.");
         const ilceList = settings.ilceListesi.split('\n').map(l => l.trim()).filter(l => l.length > 0);
         const targetCount = settings.hunterTargetCount || 100;
         const keywords = ['haberleri', 'son dakika', 'güncel', 'haber', 'gazete'];
@@ -978,7 +983,50 @@ window.useLeadHunterServices = (
         let currentIlceIndex = settings.lastHunterIlceIndex || 0;
         let foundViableCount = 0;
         let totalSearches = 0;
-        let maxSearches = ilceList.length * keywords.length; // Maximum searches per week
+        let maxSearches = ilceList.length * keywords.length;
+        
+        // Fallback search engine system
+        let activeSearchEngine = 'google'; // google, bing, duckduckgo
+        let googleFailed = false;
+        let bingFailed = false;
+        let duckduckgoFailed = false;
+        
+        // Helper function to try different search engines
+        const trySearch = async (query, searchEngine) => {
+            const apiKey = settings.googleApiKey || '';
+            const cx = settings.searchEngineId || '';
+            
+            let url = '';
+            
+            if (searchEngine === 'google') {
+                url = `${serverUrl}?type=search&q=${encodeURIComponent(query)}&depth=30&gl=TR&apiKey=${encodeURIComponent(apiKey)}&cx=${encodeURIComponent(cx)}`;
+            } else if (searchEngine === 'bing') {
+                // Bing fallback - use a different endpoint
+                url = `${serverUrl}?type=search_bing&q=${encodeURIComponent(query)}&depth=30&gl=TR`;
+            } else if (searchEngine === 'duckduckgo') {
+                // DuckDuckGo fallback
+                url = `${serverUrl}?type=search_duckduckgo&q=${encodeURIComponent(query)}&depth=30&gl=TR`;
+            }
+            
+            console.log(`[AutoHunter] ${searchEngine.toUpperCase()} deneniyor: ${query}`);
+            
+            try {
+                const response = await fetch(url);
+                const text = await response.text();
+                let json = JSON.parse(text);
+                
+                if (json.success && Array.isArray(json.results) && json.results.length > 0) {
+                    console.log(`[AutoHunter] ✅ ${searchEngine.toUpperCase()} başarılı! ${json.results.length} sonuç`);
+                    return { success: true, results: json.results, engine: searchEngine };
+                } else {
+                    console.log(`[AutoHunter] ⚠️ ${searchEngine.toUpperCase()} sonuç yok: ${json.debug?.[0] || 'bilinmiyor'}`);
+                    return { success: false, error: json.debug?.[0] || 'Sonuç yok', engine: searchEngine };
+                }
+            } catch (e) {
+                console.log(`[AutoHunter] ❌ ${searchEngine.toUpperCase()} hata: ${e.message}`);
+                return { success: false, error: e.message, engine: searchEngine };
+            }
+        };
 
         for (let i = 0; i < ilceList.length; i++) {
             if (foundViableCount >= targetCount) break;
@@ -993,78 +1041,245 @@ window.useLeadHunterServices = (
                 const query = `${ilce} ${kw}`;
                 totalSearches++;
 
-                try {
-                    console.log(`[AutoHunter] Aranıyor: ${query}`);
-
+                // FARKLI ARAMA MOTORLARINI DENE - FALLBACK SİSTEMİ
+                let searchResult = null;
+                
+                // Google (sadece daha önce başarısız olmamışsa)
+                if (!googleFailed) {
+                    console.log(`[AutoHunter] Google deneniyor: ${query}`);
                     const apiKey = settings.googleApiKey || '';
                     const cx = settings.searchEngineId || '';
                     const url = `${serverUrl}?type=search&q=${encodeURIComponent(query)}&depth=30&gl=TR&apiKey=${encodeURIComponent(apiKey)}&cx=${encodeURIComponent(cx)}`;
+                    
+                    try {
+                        const response = await fetch(url);
+                        const text = await response.text();
+                        console.log(`[AutoHunter] 🔍 Google HTTP ${response.status}, length: ${text.length}`);
+                        
+                        let json;
+                        try {
+                            json = JSON.parse(text);
+                        } catch(e) {
+                            console.log(`[AutoHunter] ❌ Google JSON parse hatası: ${e.message}`);
+                            console.log(`[AutoHunter] 📄 Gelen veri: ${text.substring(0, 500)}`);
+                            googleFailed = true;
+                            continue;
+                        }
+                        
+                        // Detaylı debug
+                        console.log(`[AutoHunter] 📊 Google response: success=${json.success}, results=${json.results?.length || 0}, debug=`, json.debug);
+                        
+                        if (json.success && Array.isArray(json.results) && json.results.length > 0) {
+                            console.log(`[AutoHunter] ✅ Google başarılı! ${json.results.length} sonuç`);
+                            searchResult = { results: json.results, engine: 'google' };
+                        } else {
+                            console.log(`[AutoHunter] ⚠️ Google başarısız: success=${json.success}, results=${json.results?.length}, error=${json.error}`);
+                            googleFailed = true; // Artık Google'yi deneme
+                        }
+                    } catch (e) {
+                        console.log(`[AutoHunter] ❌ Google hata: ${e.message}`);
+                        googleFailed = true;
+                    }
+                }
+                
+                // Bing (sadece Google başarısız olmuşsa ve daha önce başarısız olmamışsa)
+                if (!searchResult && !bingFailed) {
+                    console.log(`[AutoHunter] Bing deneniyor: ${query}`);
+                    const url = `${serverUrl}?type=search_bing&q=${encodeURIComponent(query)}&depth=30&gl=TR`;
+                    
+                    try {
+                        const response = await fetch(url);
+                        const text = await response.text();
+                        console.log(`[AutoHunter] 🔍 Bing HTTP ${response.status}, length: ${text.length}`);
+                        
+                        let json;
+                        try {
+                            json = JSON.parse(text);
+                        } catch(e) {
+                            console.log(`[AutoHunter] ❌ Bing JSON parse hatası: ${e.message}`);
+                            console.log(`[AutoHunter] 📄 Bing ham veri: ${text.substring(0, 500)}`);
+                            bingFailed = true;
+                            continue;
+                        }
+                        
+                        console.log(`[AutoHunter] 📊 Bing response: success=${json.success}, results=${json.results?.length || 0}, debug=`, json.debug);
+                        
+                        if (json.success && Array.isArray(json.results) && json.results.length > 0) {
+                            console.log(`[AutoHunter] ✅ Bing başarılı! ${json.results.length} sonuç`);
+                            searchResult = { results: json.results, engine: 'bing' };
+                        } else {
+                            console.log(`[AutoHunter] ⚠️ Bing başarısız: success=${json.success}, results=${json.results?.length}, debug=${JSON.stringify(json.debug)}`);
+                            bingFailed = true;
+                        }
+                    } catch (e) {
+                        console.log(`[AutoHunter] ❌ Bing hata: ${e.message}`);
+                        bingFailed = true;
+                    }
+                }
+                
+                // DuckDuckGo (sadece Google ve Bing başarısız olmuşsa ve daha önce başarısız olmamışsa)
+                if (!searchResult && !duckduckgoFailed) {
+                    console.log(`[AutoHunter] DuckDuckGo deneniyor: ${query}`);
+                    const url = `${serverUrl}?type=search_duckduckgo&q=${encodeURIComponent(query)}&depth=30&gl=TR`;
+                    
+                    try {
+                        const response = await fetch(url);
+                        const text = await response.text();
+                        console.log(`[AutoHunter] 🔍 DDG HTTP ${response.status}, length: ${text.length}`);
+                        
+                        let json;
+                        try {
+                            json = JSON.parse(text);
+                        } catch(e) {
+                            console.log(`[AutoHunter] ❌ DDG JSON parse hatası: ${e.message}`);
+                            console.log(`[AutoHunter] 📄 DDG ham veri: ${text.substring(0, 500)}`);
+                            duckduckgoFailed = true;
+                            continue;
+                        }
+                        
+                        console.log(`[AutoHunter] 📊 DDG response: success=${json.success}, results=${json.results?.length || 0}, debug=`, json.debug);
+                        
+                        if (json.success && Array.isArray(json.results) && json.results.length > 0) {
+                            console.log(`[AutoHunter] ✅ DuckDuckGo başarılı! ${json.results.length} sonuç`);
+                            searchResult = { results: json.results, engine: 'duckduckgo' };
+                        } else {
+                            console.log(`[AutoHunter] ⚠️ DDG başarısız: success=${json.success}, results=${json.results?.length}, debug=${JSON.stringify(json.debug)}`);
+                            duckduckgoFailed = true;
+                        }
+                    } catch (e) {
+                        console.log(`[AutoHunter] ❌ DuckDuckGo hata: ${e.message}`);
+                        duckduckgoFailed = true;
+                    }
+                }
+                
+                // Eğer hiçbir arama motoru çalışmıyorsa taramayı durdur
+                if (!searchResult && googleFailed && bingFailed && duckduckgoFailed) {
+                    console.log(`[AutoHunter] 🚫 TÜM ARAMA MOTORLARI BAŞARISIZ! Tarama durduruluyor.`);
+                    alert("Hiçbir arama motoru çalışmıyor! Google API'nizi kontrol edin.\n\nTarama durduruldu.");
+                    autoHunterRef.current.isRunning = false;
+                    setIsHunterRunning(false);
+                    return;
+                }
+                
+                // Sonuçları işle
+                if (searchResult && searchResult.results.length > 0) {
+                    console.log(`[AutoHunter] Toplam ${searchResult.results.length} sonuç (${searchResult.engine})`);
+                    
+                    const newResults = searchResult.results.filter(r => {
+                        const domain = window.cleanDomain(r.url);
+                        return !existingDomains.has(domain);
+                    });
+                    
+                    console.log(`[AutoHunter] Yeni (tekrarlanmayan) sonuç: ${newResults.length}`);
 
-                    const response = await fetch(url);
-                    const text = await response.text();
-                    let json = JSON.parse(text);
+                    for (const r of newResults) {
+                        if (foundViableCount >= targetCount) break;
 
-                    if (json.success && Array.isArray(json.results)) {
-                        // Sonuçları filtrele ve trafiği kontrol et
-                        const newResults = json.results.filter(r => {
-                            const domain = window.cleanDomain(r.url);
-                            return !existingDomains.has(domain);
-                        });
-
-                        for (const r of newResults) {
-                            if (foundViableCount >= targetCount) break;
-
-                            const domain = window.cleanDomain(r.url);
+                        // SUBDOMAIN KONTROLÜ - Ana domain değilse atla
+                        const domain = window.cleanDomain(r.url);
+                        const rootDomain = window.getRootDomain(r.url);
+                        
+                        // Eğer domain root domain değilse (subdomain ise) atla
+                        if (domain !== rootDomain) {
+                            console.log(`[AutoHunter] ⏭️ Subdomain atlandı: ${domain} (root: ${rootDomain})`);
+                            continue;
+                        }
+                        
+                        console.log(`[AutoHunter] Kontrol ediliyor: ${domain}`);
+                        
+                        // ANINDA EKLEME - Önce siteyi hemen ekle, sonra trafik/email kontrol et
+                        // Trafik kontrolü başlat (beklemeden)
+                        const trafficCheckPromise = window.checkTraffic(r.url);
+                        // Email kontrolü başlat (beklemeden)  
+                        const emailCheckPromise = window.findEmailsOnSite(r.url);
+                        
+                        try {
+                            // Her ikisini de bekle
+                            const trafficCheck = await trafficCheckPromise;
+                            const emailFound = await emailCheckPromise;
                             
-                            try {
-                                // Trafik kontrolü yap
-                                const trafficCheck = await window.checkTraffic(r.url);
-                                
-                                if (trafficCheck && trafficCheck.viable && trafficCheck.value > 0) {
-                                    // Site uygun, CRM'e ekle
-                                    const newLead = {
-                                        url: r.url,
-                                        email: '', // Email sonra aranacak
-                                        statusKey: 'New',
-                                        statusLabel: 'New',
-                                        stage: 0,
-                                        language: 'TR',
-                                        trafficStatus: trafficCheck,
-                                        addedDate: new Date().toISOString(),
-                                        source: 'AutoHunter',
-                                        sourceQuery: query,
-                                        activityLog: [{
-                                            date: new Date().toISOString(),
-                                            type: 'INFO',
-                                            content: `Otomatik Tarama ile eklendi (${query})`
-                                        }]
-                                    };
+                            console.log(`[AutoHunter] Trafik sonucu: ${JSON.stringify(trafficCheck)}`);
+                            console.log(`[AutoHunter] Email sonucu: ${emailFound || 'bulunamadı'}`);
+                            
+                            // YENİ MANTIK:
+                            // - Trafik uygunsa (viable=true) → status: NEW
+                            // - Trafik düşük/yoksa (viable=false) → status: NOT_POSSIBLE
+                            const isViable = trafficCheck && trafficCheck.viable && trafficCheck.value > 0;
+                            const statusKey = isViable ? 'New' : 'NOT_POSSIBLE';
+                            const statusLabel = isViable ? 'New' : 'Not Possible';
+                            
+                            console.log(`[AutoHunter] ✅ Site eklendi! ${domain} - Trafik: ${trafficCheck?.label || 'Yok'}, Email: ${emailFound || 'Yok'}, Status: ${statusKey}`);
+                            
+                            const newLead = {
+                                url: r.url,
+                                email: emailFound || '',
+                                statusKey: statusKey,
+                                statusLabel: statusLabel,
+                                stage: 0,
+                                language: 'TR',
+                                trafficStatus: trafficCheck || { viable: false, label: 'Veri Yok', value: 0 },
+                                addedDate: new Date().toISOString(),
+                                source: 'AutoHunter',
+                                sourceQuery: query,
+                                activityLog: [{
+                                    date: new Date().toISOString(),
+                                    type: 'INFO',
+                                    content: `Otomatik Tarama ile eklendi (${query}). Trafik: ${trafficCheck?.label || 'Yok'}. Email: ${emailFound || 'Yok'}.`
+                                }]
+                            };
 
-                                    if (isDbConnected) {
-                                        await dbInstance.collection("leads").add(newLead);
-                                    }
-
-                                    existingDomains.add(domain);
-                                    foundViableCount++;
-                                    console.log(`[AutoHunter] Eklendi: ${domain} (Trafik: ${trafficCheck.label})`);
-                                }
-                            } catch (e) {
-                                console.warn(`[AutoHunter] Trafik kontrol hatası: ${domain}`, e);
+                            if (isDbConnected) {
+                                await dbInstance.collection("leads").add(newLead);
+                                console.log(`[AutoHunter] ✅ CRM'e eklendi: ${domain}`);
                             }
 
-                            // API rate limit aşımı için bekle
-                            await new Promise(r => setTimeout(r, 500));
+                            existingDomains.add(domain);
+                            foundViableCount++;
+                            console.log(`[AutoHunter] Eklendi: ${domain} (Trafik: ${trafficCheck?.label || 'Yok'}, Status: ${statusKey})`);
+                        } catch (e) {
+                            console.error(`[AutoHunter] Kontrol hatası: ${domain}`, e);
+                            
+                            // Hata olsa bile siteyi ekle (NOT_POSSIBLE olarak)
+                            try {
+                                const newLead = {
+                                    url: r.url,
+                                    email: '',
+                                    statusKey: 'NOT_POSSIBLE',
+                                    statusLabel: 'Not Possible',
+                                    stage: 0,
+                                    language: 'TR',
+                                    trafficStatus: { viable: false, label: 'Hata', value: 0 },
+                                    addedDate: new Date().toISOString(),
+                                    source: 'AutoHunter',
+                                    sourceQuery: query,
+                                    activityLog: [{
+                                        date: new Date().toISOString(),
+                                        type: 'INFO',
+                                        content: `Otomatik Tarama ile eklendi (Hata nedeniyle): ${e.message}`
+                                    }]
+                                };
+                                
+                                if (isDbConnected) {
+                                    await dbInstance.collection("leads").add(newLead);
+                                }
+                                existingDomains.add(domain);
+                                foundViableCount++;
+                            } catch (addError) {
+                                console.error(`[AutoHunter] Ekleme hatası: ${domain}`, addError);
+                            }
                         }
+
+                        await new Promise(r => setTimeout(r, 500));
                     }
-                } catch (e) {
-                    console.error(`[AutoHunter] Arama hatası: ${query}`, e);
                 }
 
-                // Her arama arasında kısa bekle
-                await new Promise(r => setTimeout(r, 1000));
+                // Her arama arasında BEKLEME (Rate Limiting önleme)
+                // DuckDuckGo hızlı aramalarda bloke olur, bu yüzden uzun bekleme şart
+                await new Promise(r => setTimeout(r, 3000));
             }
 
-            // İlçe indeksini güncelle
+            // Her ilçe arasında ekstra bekleme
+            await new Promise(r => setTimeout(r, 2000));
             currentIlceIndex++;
         }
 
@@ -1087,12 +1302,20 @@ window.useLeadHunterServices = (
     // Otomatik taramayı durdur
     const stopAutoHunterScan = () => {
         autoHunterRef.current.isRunning = false;
+        setIsHunterRunning(false);
         console.log("[AutoHunter] Durduruldu");
     };
+    
+    // Bittiğinde state'i güncelle
+    useEffect(() => {
+        if (!autoHunterRef.current.isRunning && isHunterRunning) {
+            setIsHunterRunning(false);
+        }
+    }, [isHunterRunning]);
 
     // --- FINAL CHECK ---
     const servicesObj = {
-        selectedLead, setSelectedLead, isSending, openMailModal, openPromotionModal, handleSendMail, showBulkModal, setShowBulkModal, isBulkSending, bulkProgress, bulkConfig, setBulkConfig, executeBulkSend, executeBulkPromotion, isCheckingBulk, handleBulkReplyCheck, bulkUpdateStatus, bulkAddNotViable, isEnriching, showEnrichModal, setShowEnrichModal, enrichLogs, enrichProgress, enrichDatabase, isScanning, keywords, setKeywords, searchDepth, setSearchDepth, hunterLogs, hunterProgress, hunterLogsEndRef, startScan, stopScan, fixAllTrafficData, handleExportData, fixEncodedNames, startAutoFollowup, stopAutoFollowup, runAutoHunterScan, stopAutoHunterScan
+        selectedLead, setSelectedLead, isSending, openMailModal, openPromotionModal, handleSendMail, showBulkModal, setShowBulkModal, isBulkSending, bulkProgress, bulkConfig, setBulkConfig, executeBulkSend, executeBulkPromotion, isCheckingBulk, handleBulkReplyCheck, bulkUpdateStatus, bulkAddNotViable, isEnriching, showEnrichModal, setShowEnrichModal, enrichLogs, enrichProgress, enrichDatabase, isScanning, keywords, setKeywords, searchDepth, setSearchDepth, hunterLogs, hunterProgress, hunterLogsEndRef, startScan, stopScan, fixAllTrafficData, handleExportData, fixEncodedNames, startAutoFollowup, stopAutoFollowup, runAutoHunterScan, stopAutoHunterScan, isHunterRunning
     };
 
     return servicesObj;

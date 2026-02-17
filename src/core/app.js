@@ -191,6 +191,9 @@ const LeadHunter = () => {
                             updateWorkflowStep={auth.updateWorkflowStep}
                             updatePromotionTemplate={auth.updatePromotionTemplate}
                             openPromotionModal={services.openPromotionModal}
+                            runAutoHunterScan={services.runAutoHunterScan}
+                            stopAutoHunterScan={services.stopAutoHunterScan}
+                            isHunterRunning={services.isHunterRunning}
                         />
                     )}
                 </div>
