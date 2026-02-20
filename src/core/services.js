@@ -479,6 +479,14 @@ window.useLeadHunterServices = (
         let index = 0;
         const serverUrl = (window.APP_CONFIG && window.APP_CONFIG.SERVER_API_URL) || '';
 
+        // Google Script URL kontrolü
+        if (!settings.googleScriptUrl) {
+            addBulkLog("Google Script URL ayarlanmamış!", false);
+            setIsBulkSending(false);
+            alert("Google Script URL ayarlanmamış! Lütfen ayarlardan Google Script URL'nizi girin.");
+            return;
+        }
+
         for (const email in grouped) {
             index++;
             setBulkProgress(prev => ({ ...prev, current: index }));
@@ -497,13 +505,20 @@ window.useLeadHunterServices = (
                 const htmlContent = `<div style="font-family: Arial; font-size: 14px;">${messageHtml}</div><br><br><div>${signatureHtml}</div>${trackingPixel}`;
                 const plainBody = body + (settings.signature ? `\n\n--\n${settings.signature.replace(/<[^>]+>/g, '')}` : '');
 
+                console.log("Promosyon maili gönderiliyor:", { to: email, subject: subject });
+
                 const response = await fetch(settings.googleScriptUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify({ action: 'send_mail', to: email, subject: subject, body: plainBody, htmlBody: htmlContent, threadId: null })
                 });
+
+                console.log("Google Script yanıtı:", response);
+
                 const result = await response.json();
-                if (result.status === 'error') throw new Error(result.message);
+                console.log("JSON yanıtı:", result);
+                
+                if (result.status === 'error') throw new Error(result.message || 'Bilinmeyen hata');
 
                 addBulkLog(`${email}: Promosyon gönderildi`, true);
 
@@ -523,7 +538,10 @@ window.useLeadHunterServices = (
                     });
                     await batch.commit();
                 }
-            } catch (e) { addBulkLog(`${email}: Hata - ${e.message}`, false); }
+            } catch (e) {
+                console.error("Promosyon gönderim hatası:", e);
+                addBulkLog(`${email}: Hata - ${e.message}`, false);
+            }
             if (index < totalGroups) await new Promise(r => setTimeout(r, 2000));
         }
         setIsBulkSending(false); setSelectedIds(new Set()); alert("Promosyon gönderimi tamamlandı!"); setShowBulkModal(false);

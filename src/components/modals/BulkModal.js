@@ -3,7 +3,7 @@
 // Bağımlılık: Icon bileşeni (Icon.js) gereklidir.
 
 // --- BULK MODAL ---
-window.BulkModal = ({ isBulkSending, bulkProgress, selectedCount, bulkConfig, setBulkConfig, activeTab, settings, executeBulkSend, executeBulkPromotion, close, setShowBulkModal }) => {
+window.BulkModal = ({ isBulkSending, bulkProgress, selectedCount, bulkConfig, setBulkConfig, activeTab, settings, executeBulkSend, executeBulkPromotion, setShowBulkModal }) => {
     const promoTemplate = activeTab === 'hunter'
         ? (bulkConfig.language === 'EN' ? settings.promotionTemplateEN : settings.promotionTemplateTR)
         : settings.promotionTemplateTR;
@@ -67,6 +67,13 @@ window.BulkModal = ({ isBulkSending, bulkProgress, selectedCount, bulkConfig, se
                                         />
                                     </div>
                                     <p className="text-[10px] text-pink-600">İpucu: <code>{`{{Website}}`}</code> etiketi otomatik olarak site adıyla değiştirilir.</p>
+                                    <div className="bg-pink-100 p-2 rounded-lg border border-pink-200">
+                                        <div className="flex items-center gap-1 text-pink-700 text-xs font-bold mb-1">
+                                            <window.Icon name="info" className="w-3 h-3" />
+                                            Mail imzası eklenecek mi?
+                                        </div>
+                                        <div className="text-[9px] text-pink-600">Bu promosyon mailine ayarlardan tanımladığınız mail imzanız otomatik olarak eklenecektir.</div>
+                                    </div>
                                 </div>
                             )}
 
