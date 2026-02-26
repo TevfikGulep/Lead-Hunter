@@ -1,5 +1,5 @@
 // DashboardTab.js
-// GÜNCELLEME: "İsim" (contactName) sütunu eklendi, Başlıklar Sıralanabilir (Sortable) yapıldı ve Rapor Export propu entegre edildi.
+// GÜNCELLEME: Otomatik Takip İkonu eklendi.
 
 window.DashboardTab = ({ 
     crmData, filters, setFilters, selectedIds, toggleSelection, toggleSelectAll, selectedCount,
@@ -90,6 +90,11 @@ window.DashboardTab = ({
                                     <div className="flex items-center gap-1">Durum <window.SortIcon column="statusKey" sortConfig={sortConfig}/></div>
                                 </th>
                                 
+                                {/* YENİ: OTOMATİK TAKİP SÜTUNU */}
+                                <th className="p-4 text-center" title="Otomatik Takip">
+                                    <div className="flex items-center justify-center gap-1"><window.Icon name="clock" className="w-4 h-4" /> Takip</div>
+                                </th>
+                                
                                 <th className="p-4">Aksiyon</th>
                                 <th className="p-4 text-right">Geçmiş</th>
                             </tr>
@@ -100,6 +105,10 @@ window.DashboardTab = ({
                                 
                                 const isReplied = replyStatuses.includes(lead.statusKey);
                                 const isMailOpened = !!lead.mailOpenedAt;
+                                
+                                // YENİ: Otomatik takip durumu
+                                const isAutoFollowupActive = lead.autoFollowupEnabled === true;
+                                const followupCount = lead.followupCount || 0;
                                 
                                 let dotColor = 'bg-red-200';
                                 let dotTitle = 'Mail henüz okunmadı';
@@ -128,7 +137,7 @@ window.DashboardTab = ({
                                             </div>
                                         </td>
                                         
-                                        {/* İSİM SÜTUNU */}
+                                        {/*İSİM SÜTUNU */}
                                         <td className="p-4 text-sm text-slate-600 truncate max-w-[120px]" title={lead.contactName}>{lead.contactName || '-'}</td>
                                         
                                         <td className="p-4 text-sm text-slate-600">{lead.email || '-'}</td>
@@ -164,6 +173,20 @@ window.DashboardTab = ({
                                             <span className={`px-2 py-1 rounded text-xs font-bold border ${window.LEAD_STATUSES[lead.statusKey]?.color || 'bg-gray-100'}`}>
                                                 {window.LEAD_STATUSES[lead.statusKey]?.label || lead.statusLabel || 'New'}
                                             </span>
+                                        </td>
+
+                                        {/* YENİ: OTOMATİK TAKİP İKONU */}
+                                        <td className="p-4 text-center">
+                                            {isAutoFollowupActive ? (
+                                                <div className="inline-flex items-center gap-1 px-2 py-1 bg-orange-100 text-orange-700 rounded-full text-xs font-bold" title={`Otomatik Takip Aktif - ${followupCount} takip gönderildi`}>
+                                                    <window.Icon name="clock" className="w-3 h-3" />
+                                                    {followupCount}/5
+                                                </div>
+                                            ) : (
+                                                <span className="text-slate-300 text-xs" title="Otomatik Takip Pasif">
+                                                    <window.Icon name="clock" className="w-4 h-4 opacity-30" />
+                                                </span>
+                                            )}
                                         </td>
 
                                         <td className="p-4">

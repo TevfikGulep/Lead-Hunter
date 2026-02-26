@@ -1,5 +1,5 @@
 // FilterBar.js
-// GÜNCELLEME: Rapor İndirme Butonu Eklendi.
+// GÜNCELLEME: Otomatik Takip Filtresi eklendi.
 
 const StatusMultiSelect = window.StatusMultiSelect;
 
@@ -41,6 +41,17 @@ window.FilterBar = ({
             <option value="UNOPENED">🔴 Okunmadı (Kırmızı)</option>
         </select>
 
+        {/* YENİ: OTOMATİK TAKİP FİLTRESİ */}
+        <select
+            value={filters.autoFollowup}
+            onChange={(e) => setFilters(prev => ({ ...prev, autoFollowup: e.target.value }))}
+            className={`px-3 py-2 rounded-lg border text-sm font-medium outline-none cursor-pointer ${filters.autoFollowup !== 'ALL' ? 'bg-orange-50 text-orange-700 border-orange-200' : 'bg-slate-50 text-slate-600'}`}
+        >
+            <option value="ALL">Otomatik Takip: Tümü</option>
+            <option value="ACTIVE">🔄 Takip Aktif</option>
+            <option value="INACTIVE">⏸️ Takip Pasif</option>
+        </select>
+
         <select value={filters.quality} onChange={(e) => setFilters(prev => ({ ...prev, quality: e.target.value }))} className={`px-3 py-2 rounded-lg border text-sm font-medium outline-none cursor-pointer ${filters.quality !== 'ALL' ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-slate-50 text-slate-600'}`}>
             <option value="ALL">Veri Durumu: Tümü</option>
             <option value="GOOD">✅ Sadece Tam Veriler</option>
@@ -65,10 +76,9 @@ window.FilterBar = ({
             <input type="date" value={filters.endDate} onChange={(e) => setFilters(p => ({ ...p, endDate: e.target.value }))} className="bg-transparent text-xs p-1 outline-none text-slate-600" />
         </div>
 
-        <button onClick={() => setFilters({ search: '', language: 'ALL', status: [], lastSentStage: 'ALL', quality: 'ALL', mailStatus: 'ALL', startDate: '', endDate: '' })} className="px-3 py-2 text-xs text-red-500 hover:bg-red-50 rounded-lg transition-colors">Temizle</button>
+        <button onClick={() => setFilters({ search: '', language: 'ALL', status: [], lastSentStage: 'ALL', quality: 'ALL', mailStatus: 'ALL', autoFollowup: 'ALL', startDate: '', endDate: '' })} className="px-3 py-2 text-xs text-red-500 hover:bg-red-50 rounded-lg transition-colors">Temizle</button>
 
         <div className="ml-auto flex gap-2 animate-in fade-in items-center">
-            {/* YENİ EKLENEN BUTON: RAPORU İNDİR */}
             <button
                 onClick={onExport}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 shadow-md transition-colors"
@@ -104,7 +114,6 @@ window.FilterBar = ({
                     </button>
                     <button onClick={() => setShowBulkModal(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 shadow-lg"><window.Icon name="send" className="w-4 h-4" /> Gönder</button>
 
-                    {/* OTOMATİK TAKİP BUTONLARI - ID'ler parent component'ten geliyor */}
                     {startAutoFollowup && stopAutoFollowup && selectedIds instanceof Set && (
                         <div className="flex gap-1 ml-1 pl-1 border-l border-slate-300">
                             <button

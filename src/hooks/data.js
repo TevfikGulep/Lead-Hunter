@@ -1,6 +1,7 @@
 // LeadHunter_Data.js
 // GÜNCELLEME: Mail Durum Filtresi (mailStatus) Eklendi.
 // GÜNCELLEME 2: Sıralama mantığı (Generic Sort) iyileştirildi.
+// GÜNCELLEME 3: Otomatik Takip Filtresi (autoFollowup) eklendi.
 
 const { useState, useEffect, useMemo } = React;
 
@@ -15,10 +16,10 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
     
     const [sortConfig, setSortConfig] = useState({ key: 'lastContactDate', direction: 'desc' });
     
-    // YENİ: 'mailStatus' filtresi eklendi
+    // YENİ: 'mailStatus' ve 'autoFollowup' filtreleri eklendi
     const [filters, setFilters] = useState({ 
         search: '', language: 'ALL', status: [], lastSentStage: 'ALL', quality: 'ALL', 
-        mailStatus: 'ALL', startDate: '', endDate: ''
+        mailStatus: 'ALL', autoFollowup: 'ALL', startDate: '', endDate: ''
     });
     const [selectedIds, setSelectedIds] = useState(new Set());
 
@@ -138,9 +139,19 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
                 const isReplied = replyStatuses.includes(item.statusKey);
                 const isOpened = !!item.mailOpenedAt;
 
-                if (filters.mailStatus === 'REPLIED') return isReplied; // Mavi
-                if (filters.mailStatus === 'OPENED') return isOpened && !isReplied; // Yeşil (Okundu ama cevap yok)
-                if (filters.mailStatus === 'UNOPENED') return !isOpened && !isReplied; // Kırmızı
+                if (filters.mailStatus === 'REPLIED') return isReplied;
+                if (filters.mailStatus === 'OPENED') return isOpened && !isReplied;
+                if (filters.mailStatus === 'UNOPENED') return !isOpened && !isReplied;
+                return true;
+            });
+        }
+
+        // YENİ: OTOMATİK TAKİP FİLTRESİ
+        if (filters.autoFollowup !== 'ALL') {
+            data = data.filter(item => {
+                const isAutoFollowupActive = item.autoFollowupEnabled === true;
+                if (filters.autoFollowup === 'ACTIVE') return isAutoFollowupActive;
+                if (filters.autoFollowup === 'INACTIVE') return !isAutoFollowupActive;
                 return true;
             });
         }
@@ -166,7 +177,6 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
                 valA = window.LEAD_STATUSES[a.statusKey]?.label || a.statusLabel || 'New';
                 valB = window.LEAD_STATUSES[b.statusKey]?.label || b.statusLabel || 'New';
             } else { 
-                // İsim, Email gibi genel metin alanlarının güvenli sıralanması (BOŞ VERİLERİ DE KAPSIYOR)
                 valA = valA ? String(valA).toLowerCase() : ''; 
                 valB = valB ? String(valB).toLowerCase() : ''; 
             }

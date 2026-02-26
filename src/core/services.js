@@ -743,6 +743,12 @@ window.useLeadHunterServices = (
                         continue;
                     }
 
+                    // KRİTİK: Şablonun gerçek indeksini workflow dizisinden buluyoruz
+                    // Bu sayede eğer lead'in mevcut stage değeri hatalıysa bile, 
+                    // gönderilen mail tipine göre doğru stage set edilmiş olur.
+                    const actualStageIndex = workflow.findIndex(w => w.id === template.id);
+                    const finalStageToSet = actualStageIndex !== -1 ? actualStageIndex : nextStage;
+
                     const subject = template.subject.replace(/{{Website}}/g, domain);
                     const body = template.body.replace(/{{Website}}/g, domain);
                     const messageHtml = body.replace(/\n/g, '<br>');
@@ -784,15 +790,15 @@ window.useLeadHunterServices = (
                             content: `Otomatik Takip: ${template.label} gönderildi`
                         };
 
-                        // Stage'i bir artır
+                        // Stage'i kesinleşen indekse göre set et
                         batch.update(ref, {
-                            stage: nextStage,
+                            stage: finalStageToSet + 1, // Bir sonraki beklenen aşama
                             statusKey: 'NO_REPLY',
                             statusLabel: window.LEAD_STATUSES['NO_REPLY']?.label || 'No Reply',
                             nextFollowupDate: nextFollowupDate.toISOString(),
                             followupCount: newFollowupCount,
                             lastContactDate: new Date().toISOString(),
-                            [`history.${nextStage === 0 ? 'initial' : `repeat${nextStage}`}`]: new Date().toISOString(),
+                            [`history.${finalStageToSet === 0 ? 'initial' : `repeat${finalStageToSet}`}`]: new Date().toISOString(),
                             activityLog: firebase.firestore.FieldValue.arrayUnion(newLog)
                         });
 
