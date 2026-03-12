@@ -362,11 +362,16 @@ try {
         if (empty($domain))
             throw new Exception("Domain required");
 
+        $domain = preg_replace('#^www\.#', '', strtolower($domain));
         $baseUrl = 'https://' . $domain;
         addLog("Email discovery started for: $domain");
 
         $emails = [];
         $scannedPages = [];
+
+        // Known invalid prefixes and domains to skip
+        $skipPrefixes = ['sentry', 'noreply', 'no-reply', 'donotreply', 'test', 'example', 'abuse', 'postmaster', 'mailer-daemon', 'mailer', 'notifications', 'feedback', 'admin', 'administrator', 'webmaster', 'support-bot', 'wix', 'wordpress', 'hello@domain.com', 'yourname@', 'email@', 'name@'];
+        $skipDomains = ['example.com', 'domain.com', 'sentry.io', 'wixpress.com', 'wix.com', 'sentry.com', 'test.com'];
 
         // Cloudflare Email Decoder
         $decodeCF = function ($encoded) {
@@ -380,11 +385,36 @@ try {
             return $email;
         };
 
+        $isValidEmail = function ($email) use ($skipPrefixes, $skipDomains) {
+            $e = strtolower(trim($email));
+            if (!filter_var($e, FILTER_VALIDATE_EMAIL)) return false;
+            
+            // Skip common image/resource false positives that regex might catch
+            if (preg_match('/\.(png|jpg|jpeg|gif|css|js|webp|svg|ico|php|html|woff|ttf|eot)$/i', $e)) return false;
+
+            // Strict domain and prefix check
+            foreach ($skipDomains as $sd) {
+                if (strpos($e, '@' . $sd) !== false || str_ends_with($e, '.' . $sd)) return false;
+            }
+            foreach ($skipPrefixes as $sp) {
+                if (str_starts_with($e, $sp . '@')) return false;
+                if ($e === $sp) return false;
+            }
+
+            // Reject anything shorter than 6 characters or too long
+            if (strlen($e) < 6 || strlen($e) > 80) return false;
+
+            return true;
+        };
+
         // Helper function for fetching and extracting
-        $fetchAndExtract = function ($url) use (&$emails, &$scannedPages, $decodeCF, $domain) {
-            if (in_array($url, $scannedPages))
+        $fetchAndExtract = function ($url) use (&$emails, &$scannedPages, $decodeCF, $isValidEmail) {
+            // Normalize URL to avoid scanning same page multiple times with trailing slash / http vs https
+            $normalizedUrl = rtrim(str_replace('http://', 'https://', $url), '/');
+            if (in_array($normalizedUrl, $scannedPages))
                 return '';
-            $scannedPages[] = $url;
+            
+            $scannedPages[] = $normalizedUrl;
 
             $ch = curl_init();
             curl_setopt($ch, CURLOPT_URL, $url);
@@ -395,7 +425,8 @@ try {
             curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
             curl_setopt($ch, CURLOPT_HTTPHEADER, [
                 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+                'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language: tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7'
             ]);
             $html = curl_exec($ch);
             curl_close($ch);
@@ -405,8 +436,9 @@ try {
                 if (preg_match_all('/data-cfemail=["\']([0-9a-f]+)["\']/i', $html, $cfMatches)) {
                     foreach ($cfMatches[1] as $enc) {
                         $dec = $decodeCF($enc);
-                        if ($dec && !in_array($dec, $emails))
+                        if ($dec && $isValidEmail($dec) && !in_array($dec, $emails)) {
                             $emails[] = $dec;
+                        }
                     }
                 }
 
@@ -414,38 +446,38 @@ try {
                 if (preg_match_all('/email-protection#([0-9a-f]+)/i', $html, $cfMatches2)) {
                     foreach ($cfMatches2[1] as $enc) {
                         $dec = $decodeCF($enc);
-                        if ($dec && !in_array($dec, $emails))
+                        if ($dec && $isValidEmail($dec) && !in_array($dec, $emails)) {
                             $emails[] = $dec;
-                    }
-                }
-
-                // 3. Standard Regex for emails
-                if (preg_match_all('/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,6}/i', $html, $matches)) {
-                    foreach ($matches[0] as $email) {
-                        $email = strtolower($email);
-                        if (!preg_match('/\.(png|jpg|jpeg|gif|css|js|webp|svg|ico|php)$/i', $email) && !in_array($email, $emails)) {
-                            if (strlen($email) > 5 && strpos($email, 'domain.com') === false && strpos($email, 'example.com') === false) {
-                                $emails[] = $email;
-                            }
                         }
                     }
                 }
 
-                // 4. Obfuscated emails [at]
-                if (preg_match_all('/[a-z0-9._%+-]+\s*[\[\(\s]*at[\s\]\)]+\s*[a-z0-9.-]+\.[a-z]{2,6}/i', $html, $matchesObf)) {
-                    foreach ($matchesObf[0] as $obf) {
-                        $email = preg_replace('/\s*[\[\(\s]*at[\s\]\)]+\s*/i', '@', strtolower($obf));
-                        if (!in_array($email, $emails))
-                            $emails[] = $email;
+                // 3. Mailto links (More reliable than raw text)
+                if (preg_match_all('/mailto:([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,10})/i', $html, $matchesMailto)) {
+                    foreach ($matchesMailto[1] as $m) {
+                        $m = strtolower(trim($m));
+                        if ($isValidEmail($m) && !in_array($m, $emails)) {
+                            $emails[] = $m;
+                        }
                     }
                 }
 
-                // 5. Mailto links
-                if (preg_match_all('/mailto:([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,6})/i', $html, $matchesMailto)) {
-                    foreach ($matchesMailto[1] as $m) {
-                        $m = strtolower($m);
-                        if (!in_array($m, $emails))
-                            $emails[] = $m;
+                // 4. Standard Regex for emails within text
+                if (preg_match_all('/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,10}/i', $html, $matches)) {
+                    foreach ($matches[0] as $e) {
+                        if ($isValidEmail($e) && !in_array($e, $emails)) {
+                            $emails[] = strtolower(trim($e));
+                        }
+                    }
+                }
+
+                // 5. Obfuscated emails [at]
+                if (preg_match_all('/[a-z0-9._%+-]+\s*[\[\(\{]\s*at\s*[\]\)\}]\s*[a-z0-9.-]+\.[a-z]{2,6}/i', $html, $matchesObf)) {
+                    foreach ($matchesObf[0] as $obf) {
+                        $e = preg_replace('/\s*[\[\(\{]\s*at\s*[\]\)\}]\s*/i', '@', strtolower($obf));
+                        if ($isValidEmail($e) && !in_array($e, $emails)) {
+                            $emails[] = strtolower(trim($e));
+                        }
                     }
                 }
             }
@@ -455,38 +487,75 @@ try {
         // 1. Scan Homepage
         $homeHtml = $fetchAndExtract($baseUrl);
 
-        // 2. Look for contact/about pages with broader Turkish support
-        if (count($emails) < 2 && $homeHtml) {
-            addLog("Checking subpages for more emails (Turkish support enabled)...");
-            // Expanded keywords with Unicode support
-            $patterns = 'iletisim|contact|hakkimizda|about|kunye|bize-ulasin|destek|info|yardim|ileti\?\?im|k\?\?nye|hakk\?\?m\?\?zda';
-            // Note: PHP regex might need specific encodings or hex codes for İ, ü, ı
-            if (preg_match_all('/href=["\']([^"\']*(iletisim|contact|hakkimizda|about|kunye|iletişim|künye|hakkımızda|bize-ulasin|destek|yardim)[^"\']*)["\']/iu', $homeHtml, $links)) {
-                $subPages = array_unique($links[1]);
-                $count = 0;
-                foreach ($subPages as $path) {
-                    if ($count >= 5)
-                        break;
-
-                    $fullUrl = $path;
-                    if (strpos($path, 'http') !== 0) {
-                        if (strpos($path, '/') === 0) {
-                            $fullUrl = $baseUrl . $path;
-                        } else {
-                            $fullUrl = $baseUrl . '/' . $path;
-                        }
+        // 2. Scan Internal Pages (Priority to Contact/About)
+        if ($homeHtml) {
+            addLog("Scanning subpages to find more emails...");
+            
+            // Collect all internal links
+            $internalLinks = [];
+            
+            if (preg_match_all('/href=["\']([^"\']+)["\']/i', $homeHtml, $allLinks)) {
+                foreach ($allLinks[1] as $path) {
+                    $path = trim($path);
+                    
+                    // Skip empty, anchors, JS, tel, mailto
+                    if (empty($path) || strpos($path, '#') === 0 || strpos($path, 'javascript:') === 0 || strpos($path, 'mailto:') === 0 || strpos($path, 'tel:') === 0) {
+                        continue;
                     }
 
-                    if (strpos($fullUrl, $domain) === false)
-                        continue;
+                    // Build absolute URL
+                    $fullUrl = $path;
+                    if (strpos($path, 'http') !== 0 && strpos($path, '//') !== 0) {
+                        $fullUrl = rtrim($baseUrl, '/') . '/' . ltrim($path, '/');
+                    } else if (strpos($path, '//') === 0) {
+                        $fullUrl = 'https:' . $path;
+                    }
 
-                    addLog("Scanning subpage: $fullUrl");
-                    $fetchAndExtract($fullUrl);
-                    $count++;
-
-                    if (count($emails) >= 5)
-                        break;
+                    // Ensure it belongs to the same core domain
+                    $urlHost = parse_url($fullUrl, PHP_URL_HOST);
+                    if ($urlHost && strpos($urlHost, str_replace('www.', '', $domain)) !== false) {
+                        $cleanUrl = rtrim(explode('?', $fullUrl)[0], '/'); // strip queries & trailing slashes for deduplication
+                        if (!in_array($cleanUrl, $internalLinks) && $cleanUrl !== rtrim($baseUrl, '/')) {
+                            $internalLinks[] = $cleanUrl;
+                        }
+                    }
                 }
+            }
+
+            // Score and sort links based on likelihood of having contact info
+            $priorityLinks = [];
+            $otherLinks = [];
+            
+            // Common contact page keywords across multiple languages
+            $hotKeywords = '/(iletisim|contact|hakkimizda|about|bize-ulasin|destek|yardim|kurumsal|info|team|ekibimiz|ofis|location)/i';
+
+            foreach ($internalLinks as $link) {
+                if (preg_match($hotKeywords, $link)) {
+                    $priorityLinks[] = $link;
+                } else {
+                    $otherLinks[] = $link;
+                }
+            }
+
+            // Combine arrays, putting high-priority pages first
+            $urlsToScan = array_merge($priorityLinks, $otherLinks);
+
+            // Scan Top 15 Subpages
+            $scanLimit = 15;
+            $scannedCount = 0;
+
+            foreach ($urlsToScan as $url) {
+                if ($scannedCount >= $scanLimit) break;
+                
+                // Avoid scanning massive files / extensions
+                if (preg_match('/\.(pdf|zip|mp4|webm|jpg|jpeg|png|gif|svg)$/i', $url)) continue;
+
+                addLog("Scanning subpage: $url");
+                $fetchAndExtract($url);
+                $scannedCount++;
+                
+                // Limit amount of emails found so it doesn't run forever or grab hundreds of garbage mails
+                if (count($emails) >= 10) break;
             }
         }
 
