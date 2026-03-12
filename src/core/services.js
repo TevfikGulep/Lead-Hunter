@@ -699,126 +699,7 @@ window.useLeadHunterServices = (
     const stopScan = () => { scanIntervalRef.current = false; setIsScanning(false); };
 
     // --- AUTO FOLLOWUP SYSTEM ---
-    // Her 5 dakikada bir takip maillerini kontrol eder ve gönderir
-    // Mevcut workflow şablonlarını (İlk Temas → Takip 1 → Takip 2 → ...) sırayla kullanır
-    useEffect(() => {
-        if (!isDbConnected || !settings.googleScriptUrl) return;
-
-        const executeFollowups = async () => {
-            const now = new Date();
-            const candidates = crmDataRef.current.filter(l =>
-                l.autoFollowupEnabled &&
-                l.nextFollowupDate &&
-                new Date(l.nextFollowupDate) <= now &&
-                !['INTERESTED', 'ASKED_MORE', 'IN_PROCESS', 'DEAL_ON', 'DEAL_OFF', 'DENIED', 'NOT_VIABLE', 'MAIL_ERROR'].includes(l.statusKey)
-            );
-
-            if (candidates.length === 0) return;
-
-            console.log(`[AutoFollowup] ${candidates.length} takip maili gönderilecek`);
-
-            for (const lead of candidates) {
-                try {
-                    const domain = window.cleanDomain(lead.url);
-                    const lang = lead.language || 'TR';
-                    
-                    // Mevcut workflow şablonlarını al
-                    const workflow = lang === 'EN' ? settings.workflowEN : settings.workflowTR;
-                    
-                    // Lead'in mevcut stage'ine göre bir sonraki şablonu kullan
-                    // stage 0 = İlk Temas, stage 1 = Takip 1, vb.
-                    const currentStage = lead.stage || 0;
-                    const nextStage = currentStage + 1;
-                    
-                    // Maksimum 6 aşama (İlk Temas + 5 Takip)
-                    if (nextStage >= workflow.length) {
-                        console.log(`[AutoFollowup] Tüm aşamalar tamamlandı: ${lead.id}`);
-                        continue;
-                    }
-
-                    const template = workflow[nextStage];
-
-                    if (!template || !template.subject || !template.body) {
-                        console.warn(`[AutoFollowup] Şablon bulunamadı: ${lead.id}, stage: ${nextStage}`);
-                        continue;
-                    }
-
-                    // KRİTİK: Şablonun gerçek indeksini workflow dizisinden buluyoruz
-                    // Bu sayede eğer lead'in mevcut stage değeri hatalıysa bile, 
-                    // gönderilen mail tipine göre doğru stage set edilmiş olur.
-                    const actualStageIndex = workflow.findIndex(w => w.id === template.id);
-                    const finalStageToSet = actualStageIndex !== -1 ? actualStageIndex : nextStage;
-
-                    const subject = template.subject.replace(/{{Website}}/g, domain);
-                    const body = template.body.replace(/{{Website}}/g, domain);
-                    const messageHtml = body.replace(/\n/g, '<br>');
-
-                    let signatureHtml = settings.signature
-                        ? window.decodeHtmlEntities(settings.signature).replace(/class="MsoNormal"/g, 'style="margin:0;"')
-                        : '';
-                    const serverUrl = (window.APP_CONFIG && window.APP_CONFIG.SERVER_API_URL) || '';
-                    const trackingPixel = serverUrl
-                        ? `<img src="${serverUrl}?type=track&id=${lead.id}" width="1" height="1" style="display:none;" alt="" />`
-                        : '';
-                    const htmlContent = `<div style="font-family: Arial; font-size: 14px;">${messageHtml}</div><br><br><div>${signatureHtml}</div>${trackingPixel}`;
-                    const plainBody = body + (settings.signature ? `\n\n--\n${settings.signature.replace(/<[^>]+>/g, '')}` : '');
-
-                    const response = await fetch(settings.googleScriptUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                        body: JSON.stringify({
-                            action: 'send_mail',
-                            to: lead.email ? lead.email.split(',')[0].trim() : '',
-                            subject: subject,
-                            body: plainBody,
-                            htmlBody: htmlContent,
-                            threadId: lead.threadId || null
-                        })
-                    });
-                    const result = await response.json();
-
-                    if (result.status === 'success') {
-                        const nextFollowupDate = new Date();
-                        nextFollowupDate.setDate(nextFollowupDate.getDate() + 7);
-
-                        const batch = dbInstance.batch();
-                        const ref = dbInstance.collection("leads").doc(lead.id);
-                        const newFollowupCount = (lead.followupCount || 0) + 1;
-                        const newLog = {
-                            date: new Date().toISOString(),
-                            type: 'MAIL',
-                            content: `Otomatik Takip: ${template.label} gönderildi`
-                        };
-
-                        // Stage'i kesinleşen indekse göre set et
-                        batch.update(ref, {
-                            stage: finalStageToSet + 1, // Bir sonraki beklenen aşama
-                            statusKey: 'NO_REPLY',
-                            statusLabel: window.LEAD_STATUSES['NO_REPLY']?.label || 'No Reply',
-                            nextFollowupDate: nextFollowupDate.toISOString(),
-                            followupCount: newFollowupCount,
-                            lastContactDate: new Date().toISOString(),
-                            [`history.${finalStageToSet === 0 ? 'initial' : `repeat${finalStageToSet}`}`]: new Date().toISOString(),
-                            activityLog: firebase.firestore.FieldValue.arrayUnion(newLog)
-                        });
-
-                        await batch.commit();
-                        console.log(`[AutoFollowup] ${template.label} gönderildi: ${domain}`);
-                    }
-                } catch (e) {
-                    console.error(`[AutoFollowup] Hata: ${lead.id}`, e);
-                }
-
-                // Her mail arasında 2 saniye bekle
-                await new Promise(r => setTimeout(r, 2000));
-            }
-        };
-
-        const intervalId = setInterval(executeFollowups, 5 * 60 * 1000); // 5 dakika
-        const timeoutId = setTimeout(executeFollowups, 10000); // 10 saniye sonra ilk kontrol
-
-        return () => { clearInterval(intervalId); clearTimeout(timeoutId); };
-    }, [isDbConnected, settings.googleScriptUrl, settings.workflowTR, settings.workflowEN, settings.signature]);
+    // Frontend executeFollowups removed to eliminate duplicate emails. Automated follow-ups are completely managed by cron/followup.php.
 
     // --- START AUTO FOLLOWUP ---
     const startAutoFollowup = async (leadIds) => {
@@ -839,9 +720,15 @@ window.useLeadHunterServices = (
 
         for (const lead of validLeads) {
             const domain = window.cleanDomain(lead.url);
-            const template = lead.language === 'EN'
-                ? settings.followupTemplateEN
-                : settings.followupTemplateTR;
+            const workflow = lead.language === 'EN' ? settings.workflowEN : settings.workflowTR;
+            const currentStage = lead.stage || 0;
+            
+            if (currentStage >= workflow.length) {
+                console.log(`[AutoFollowup] Tüm aşamalar tamamlanmış, atlanıyor: ${lead.id}`);
+                continue;
+            }
+            
+            const template = workflow[currentStage];
 
             // İlk takip mailini hemen gönder
             if (template && template.subject && template.body) {
@@ -860,7 +747,7 @@ window.useLeadHunterServices = (
                     const htmlContent = `<div style="font-family: Arial; font-size: 14px;">${messageHtml}</div><br><br><div>${signatureHtml}</div>${trackingPixel}`;
                     const plainBody = body + (settings.signature ? `\n\n--\n${settings.signature.replace(/<[^>]+>/g, '')}` : '');
 
-                    await fetch(settings.googleScriptUrl, {
+                    const response = await fetch(settings.googleScriptUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                         body: JSON.stringify({
@@ -872,6 +759,11 @@ window.useLeadHunterServices = (
                             threadId: lead.threadId || null
                         })
                     });
+                    const result = await response.json();
+                    if (result.status === 'error') throw new Error(result.message);
+                    if (result.threadId) {
+                        lead.threadId = result.threadId;
+                    }
                 } catch (e) {
                     console.error(`[AutoFollowup] İlk mail gönderim hatası: ${lead.id}`, e);
                 }
@@ -881,17 +773,24 @@ window.useLeadHunterServices = (
             const newLog = {
                 date: now.toISOString(),
                 type: 'MAIL',
-                content: `Otomatik Takip başlatıldı (7 gün ara ile)`
+                content: `Otomatik Takip başlatıldı (${template.label} gönderildi, 7 gün ara ile)`
             };
 
-            batch.update(ref, {
+            const updatePayload = {
+                stage: currentStage + 1,
+                statusKey: 'NO_REPLY',
+                statusLabel: window.LEAD_STATUSES['NO_REPLY']?.label || 'No Reply',
                 autoFollowupEnabled: true,
                 autoFollowupStartedAt: now.toISOString(),
                 nextFollowupDate: nextFollowupDate.toISOString(),
-                followupCount: 1,
+                followupCount: (lead.followupCount || 0) + 1,
                 lastContactDate: now.toISOString(),
-                activityLog: firebase.firestore.FieldValue.arrayUnion(newLog)
-            });
+                activityLog: firebase.firestore.FieldValue.arrayUnion(newLog),
+                [`history.${currentStage === 0 ? 'initial' : `repeat${currentStage}`}`]: now.toISOString()
+            };
+            if (lead.threadId) updatePayload.threadId = lead.threadId;
+
+            batch.update(ref, updatePayload);
 
             // Her işlem arasında bekle
             await new Promise(r => setTimeout(r, 2000));

@@ -134,13 +134,17 @@ window.useLeadHunterActions = (dbInstance, isDbConnected, crmData, setCrmData, s
         try {
             const lead = crmData.find(l => l.id === leadId);
             if (!lead) return;
-            const newLog = { date: new Date().toISOString(), type: 'NOTE', content: noteContent };
+            const nowIso = new Date().toISOString();
+            const newLog = { date: nowIso, type: 'NOTE', content: noteContent };
             const updatedLogs = [...(lead.activityLog || []), newLog];
 
-            await dbInstance.collection("leads").doc(leadId).update({ activityLog: updatedLogs });
+            await dbInstance.collection("leads").doc(leadId).update({ 
+                activityLog: updatedLogs,
+                lastContactDate: nowIso
+            });
 
             if (setHistoryModalLead) {
-                setHistoryModalLead(prev => ({ ...prev, activityLog: updatedLogs }));
+                setHistoryModalLead(prev => ({ ...prev, activityLog: updatedLogs, lastContactDate: nowIso }));
             }
         } catch (e) { console.error(e); alert("Not eklenirken hata oluştu."); }
     };
