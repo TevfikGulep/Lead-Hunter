@@ -189,7 +189,7 @@ window.useLeadHunterServices = (
             const currentData = crmDataRef.current;
             const candidates = currentData.filter(l =>
                 l.threadId &&
-                !['MAIL_ERROR', 'NOT_VIABLE', 'DEAL_ON', 'DEAL_OFF', 'DENIED', 'INTERESTED', 'IN_PROCESS', 'ASKED_MORE'].includes(l.statusKey)
+                !['MAIL_ERROR', 'NOT_VIABLE', 'DEAL_ON', 'DEAL_OFF', 'DENIED', 'INTERESTED', 'IN_PROCESS', 'ASKED_MORE', 'NOT_POSSIBLE'].includes(l.statusKey)
             );
             if (candidates.length === 0) return;
             const sortedCandidates = [...candidates].sort((a, b) => new Date(b.lastContactDate || 0) - new Date(a.lastContactDate || 0)).slice(0, 50);
@@ -611,8 +611,8 @@ window.useLeadHunterServices = (
         if (count > 0) { await batch.commit(); alert(`${count} kayıt güncellendi!`); } else { alert("Düzeltilecek kayıt yok."); }
     };
 
-    const enrichDatabase = async (mode = 'BOTH') => {
-        const negativeStatuses = ['NOT_VIABLE', 'NOT_POSSIBLE', 'DENIED', 'DEAL_OFF', 'NON_RESPONSIVE'];
+        const enrichDatabase = async (mode = 'BOTH') => {
+        const negativeStatuses = ['NOT_VIABLE', 'DENIED', 'DEAL_OFF', 'NON_RESPONSIVE'];
         const targets = crmData.filter(item => { if (negativeStatuses.includes(item.statusKey)) return false; const missingEmail = !item.email || item.email.length < 5 || item.email === '-' || item.statusKey === 'MAIL_ERROR'; const missingTraffic = !item.trafficStatus || !item.trafficStatus.label || ['Bilinmiyor', 'Veri Yok', 'Hata', '-', 'API Ayarı Yok'].includes(item.trafficStatus.label) || !item.trafficStatus.value || item.trafficStatus.value < 100; if (mode === 'EMAIL') return missingEmail; if (mode === 'TRAFFIC') return missingTraffic; return missingEmail || missingTraffic; });
         if (targets.length === 0) return alert("Seçilen kriterlere uygun eksik veri bulunamadı.");
         setShowEnrichModal(true); setIsEnriching(true); setEnrichLogs([]); setEnrichProgress({ current: 0, total: targets.length });
@@ -1234,6 +1234,10 @@ window.useLeadHunterServices = (
                             
                             console.log(`[AutoHunter] ✅ Site eklendi! ${domain} - Trafik: ${trafficCheck?.label || 'Yok'}, Email: ${emailFound || 'Yok'}, Status: ${statusKey}`);
                             
+                            const now = new Date();
+                            const dateStr = now.toLocaleDateString('tr-TR') + ' ' + now.toLocaleTimeString('tr-TR');
+                            const autoNote = `Site Avcısı Otomasyonu ile ${dateStr} tarihinde eklenmiştir.`;
+
                             const newLead = {
                                 url: r.url,
                                 email: emailFound || '',
@@ -1242,11 +1246,12 @@ window.useLeadHunterServices = (
                                 stage: 0,
                                 language: 'TR',
                                 trafficStatus: trafficCheck || { viable: false, label: 'Veri Yok', value: 0 },
-                                addedDate: new Date().toISOString(),
+                                addedDate: now.toISOString(),
                                 source: 'AutoHunter',
                                 sourceQuery: query,
+                                notes: autoNote,
                                 activityLog: [{
-                                    date: new Date().toISOString(),
+                                    date: now.toISOString(),
                                     type: 'INFO',
                                     content: `Otomatik Tarama ile eklendi (${query}). Trafik: ${trafficCheck?.label || 'Yok'}. Email: ${emailFound || 'Yok'}.`
                                 }]
@@ -1258,13 +1263,19 @@ window.useLeadHunterServices = (
                             }
 
                             existingDomains.add(domain);
-                            foundViableCount++;
-                            console.log(`[AutoHunter] Eklendi: ${domain} (Trafik: ${trafficCheck?.label || 'Yok'}, Status: ${statusKey})`);
+                            if (isViable) {
+                                foundViableCount++;
+                            }
+                            console.log(`[AutoHunter] İşlem tamam: ${domain} (Trafik: ${trafficCheck?.label || 'Yok'}, Status: ${statusKey})`);
                         } catch (e) {
                             console.error(`[AutoHunter] Kontrol hatası: ${domain}`, e);
                             
                             // Hata olsa bile siteyi ekle (NOT_POSSIBLE olarak)
                             try {
+                                const now = new Date();
+                                const dateStr = now.toLocaleDateString('tr-TR') + ' ' + now.toLocaleTimeString('tr-TR');
+                                const autoNote = `Site Avcısı Otomasyonu ile ${dateStr} tarihinde eklenmiştir (Hata ile).`;
+
                                 const newLead = {
                                     url: r.url,
                                     email: '',
@@ -1273,11 +1284,12 @@ window.useLeadHunterServices = (
                                     stage: 0,
                                     language: 'TR',
                                     trafficStatus: { viable: false, label: 'Hata', value: 0 },
-                                    addedDate: new Date().toISOString(),
+                                    addedDate: now.toISOString(),
                                     source: 'AutoHunter',
                                     sourceQuery: query,
+                                    notes: autoNote,
                                     activityLog: [{
-                                        date: new Date().toISOString(),
+                                        date: now.toISOString(),
                                         type: 'INFO',
                                         content: `Otomatik Tarama ile eklendi (Hata nedeniyle): ${e.message}`
                                     }]
@@ -1287,7 +1299,7 @@ window.useLeadHunterServices = (
                                     await dbInstance.collection("leads").add(newLead);
                                 }
                                 existingDomains.add(domain);
-                                foundViableCount++;
+                                // foundViableCount++; // Hata durumunda sayma ki gerçek hedefe ulaşılsın
                             } catch (addError) {
                                 console.error(`[AutoHunter] Ekleme hatası: ${domain}`, addError);
                             }

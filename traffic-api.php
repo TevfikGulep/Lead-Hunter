@@ -40,7 +40,7 @@ try {
     // === BING SEARCH ===
     if ($type === 'search_bing') {
         $query = isset($_GET['q']) ? $_GET['q'] : '';
-        $depth = isset($_GET['depth']) ? (int)$_GET['depth'] : 30;
+        $depth = isset($_GET['depth']) ? (int) $_GET['depth'] : 30;
 
         if (empty($query))
             throw new Exception("Query required");
@@ -148,8 +148,7 @@ try {
                 addLog("Bing found [$count]: $url (domain: $domain)");
             }
             addLog("Bing: Toplam $count sonuç");
-        }
-        else {
+        } else {
             addLog("Bing: Yetersiz veri veya hata. HTTP: $httpCode, Length: " . strlen($html));
         }
 
@@ -159,7 +158,7 @@ try {
     // === DUCKDUCKGO SEARCH ===
     elseif ($type === 'search_duckduckgo') {
         $query = isset($_GET['q']) ? $_GET['q'] : '';
-        $depth = isset($_GET['depth']) ? (int)$_GET['depth'] : 30;
+        $depth = isset($_GET['depth']) ? (int) $_GET['depth'] : 30;
 
         if (empty($query))
             throw new Exception("Query required");
@@ -251,8 +250,7 @@ try {
                 addLog("DDG found: $cleanUrl");
             }
             addLog("DDG: Toplam $count sonuç");
-        }
-        else {
+        } else {
             addLog("DDG: Yetersiz veri veya hata. HTTP: $httpCode, Length: " . strlen($html));
         }
 
@@ -262,7 +260,7 @@ try {
     // === GOOGLE SEARCH (API or Scraping) ===
     elseif ($type === 'search') {
         $query = isset($_GET['q']) ? $_GET['q'] : '';
-        $depth = isset($_GET['depth']) ? (int)$_GET['depth'] : 30;
+        $depth = isset($_GET['depth']) ? (int) $_GET['depth'] : 30;
         $apiKey = isset($_GET['apiKey']) ? $_GET['apiKey'] : '';
         $cx = isset($_GET['cx']) ? $_GET['cx'] : '';
 
@@ -300,8 +298,7 @@ try {
                     ];
                 }
                 addLog("Google API: " . count($results) . " results");
-            }
-            else {
+            } else {
                 addLog("Google API error: " . ($data['error']['message'] ?? 'No items'));
             }
         }
@@ -339,8 +336,7 @@ try {
                         if (strpos($href, '/url?q=') !== false) {
                             parse_str(parse_url($href, PHP_URL_QUERY), $qs);
                             $url = $qs['q'] ?? '';
-                        }
-                        elseif (strpos($href, 'http') === 0) {
+                        } elseif (strpos($href, 'http') === 0) {
                             $url = $href;
                         }
 
@@ -358,6 +354,148 @@ try {
         }
 
         $response = ['success' => true, 'results' => $results, 'count' => count($results)];
+    }
+
+    // === EMAIL DISCOVERY ===
+    elseif ($type === 'email') {
+        $domain = isset($_GET['domain']) ? $_GET['domain'] : (isset($_GET['url']) ? parse_url($_GET['url'], PHP_URL_HOST) : '');
+        if (empty($domain))
+            throw new Exception("Domain required");
+
+        $baseUrl = 'https://' . $domain;
+        addLog("Email discovery started for: $domain");
+
+        $emails = [];
+        $scannedPages = [];
+
+        // Cloudflare Email Decoder
+        $decodeCF = function ($encoded) {
+            if (!$encoded || strlen($encoded) < 4)
+                return '';
+            $k = hexdec(substr($encoded, 0, 2));
+            $email = '';
+            for ($i = 2, $len = strlen($encoded); $i < $len; $i += 2) {
+                $email .= chr(hexdec(substr($encoded, $i, 2)) ^ $k);
+            }
+            return $email;
+        };
+
+        // Helper function for fetching and extracting
+        $fetchAndExtract = function ($url) use (&$emails, &$scannedPages, $decodeCF, $domain) {
+            if (in_array($url, $scannedPages))
+                return '';
+            $scannedPages[] = $url;
+
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+            curl_setopt($ch, CURLOPT_MAXREDIRS, 3);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+            ]);
+            $html = curl_exec($ch);
+            curl_close($ch);
+
+            if ($html) {
+                // 1. Cloudflare Data-CFEmail
+                if (preg_match_all('/data-cfemail=["\']([0-9a-f]+)["\']/i', $html, $cfMatches)) {
+                    foreach ($cfMatches[1] as $enc) {
+                        $dec = $decodeCF($enc);
+                        if ($dec && !in_array($dec, $emails))
+                            $emails[] = $dec;
+                    }
+                }
+
+                // 2. Cloudflare Email-Protection links
+                if (preg_match_all('/email-protection#([0-9a-f]+)/i', $html, $cfMatches2)) {
+                    foreach ($cfMatches2[1] as $enc) {
+                        $dec = $decodeCF($enc);
+                        if ($dec && !in_array($dec, $emails))
+                            $emails[] = $dec;
+                    }
+                }
+
+                // 3. Standard Regex for emails
+                if (preg_match_all('/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,6}/i', $html, $matches)) {
+                    foreach ($matches[0] as $email) {
+                        $email = strtolower($email);
+                        if (!preg_match('/\.(png|jpg|jpeg|gif|css|js|webp|svg|ico|php)$/i', $email) && !in_array($email, $emails)) {
+                            if (strlen($email) > 5 && strpos($email, 'domain.com') === false && strpos($email, 'example.com') === false) {
+                                $emails[] = $email;
+                            }
+                        }
+                    }
+                }
+
+                // 4. Obfuscated emails [at]
+                if (preg_match_all('/[a-z0-9._%+-]+\s*[\[\(\s]*at[\s\]\)]+\s*[a-z0-9.-]+\.[a-z]{2,6}/i', $html, $matchesObf)) {
+                    foreach ($matchesObf[0] as $obf) {
+                        $email = preg_replace('/\s*[\[\(\s]*at[\s\]\)]+\s*/i', '@', strtolower($obf));
+                        if (!in_array($email, $emails))
+                            $emails[] = $email;
+                    }
+                }
+
+                // 5. Mailto links
+                if (preg_match_all('/mailto:([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,6})/i', $html, $matchesMailto)) {
+                    foreach ($matchesMailto[1] as $m) {
+                        $m = strtolower($m);
+                        if (!in_array($m, $emails))
+                            $emails[] = $m;
+                    }
+                }
+            }
+            return $html;
+        };
+
+        // 1. Scan Homepage
+        $homeHtml = $fetchAndExtract($baseUrl);
+
+        // 2. Look for contact/about pages with broader Turkish support
+        if (count($emails) < 2 && $homeHtml) {
+            addLog("Checking subpages for more emails (Turkish support enabled)...");
+            // Expanded keywords with Unicode support
+            $patterns = 'iletisim|contact|hakkimizda|about|kunye|bize-ulasin|destek|info|yardim|ileti\?\?im|k\?\?nye|hakk\?\?m\?\?zda';
+            // Note: PHP regex might need specific encodings or hex codes for İ, ü, ı
+            if (preg_match_all('/href=["\']([^"\']*(iletisim|contact|hakkimizda|about|kunye|iletişim|künye|hakkımızda|bize-ulasin|destek|yardim)[^"\']*)["\']/iu', $homeHtml, $links)) {
+                $subPages = array_unique($links[1]);
+                $count = 0;
+                foreach ($subPages as $path) {
+                    if ($count >= 5)
+                        break;
+
+                    $fullUrl = $path;
+                    if (strpos($path, 'http') !== 0) {
+                        if (strpos($path, '/') === 0) {
+                            $fullUrl = $baseUrl . $path;
+                        } else {
+                            $fullUrl = $baseUrl . '/' . $path;
+                        }
+                    }
+
+                    if (strpos($fullUrl, $domain) === false)
+                        continue;
+
+                    addLog("Scanning subpage: $fullUrl");
+                    $fetchAndExtract($fullUrl);
+                    $count++;
+
+                    if (count($emails) >= 5)
+                        break;
+                }
+            }
+        }
+
+        $response = [
+            'success' => true,
+            'emails' => array_values($emails),
+            'count' => count($emails),
+            'scanned' => $scannedPages
+        ];
     }
 
     // === TRAFFIC CHECK ===
@@ -387,7 +525,7 @@ try {
         curl_close($ch);
 
         if ($html && preg_match('/"MonthlyVisits"\s*:\s*(\d+)/i', $html, $m)) {
-            $value = (int)$m[1];
+            $value = (int) $m[1];
             addLog("SimilarSites: $value");
         }
 
@@ -405,7 +543,7 @@ try {
             if ($html) {
                 if (preg_match('/Monthly Visits<span>([^<]+)<\/span>/i', $html, $m)) {
                     $raw = strip_tags($m[1]);
-                    $value = (int)str_replace(['K', 'M', 'k', 'm'], ['', '', '', ''], $raw) * (strpos($raw, 'M') !== false ? 1000000 : (strpos($raw, 'K') !== false ? 1000 : 1));
+                    $value = (int) str_replace(['K', 'M', 'k', 'm'], ['', '', '', ''], $raw) * (strpos($raw, 'M') !== false ? 1000000 : (strpos($raw, 'K') !== false ? 1000 : 1));
                     addLog("Hypestat: $value");
                 }
             }
@@ -414,16 +552,14 @@ try {
         if ($value > 0) {
             $label = $value >= 1000000 ? number_format($value / 1000000, 1) . 'M' : ($value >= 1000 ? number_format($value / 1000, 1) . 'K' : $value);
             $response = ['success' => true, 'viable' => true, 'value' => $value, 'label' => $label];
-        }
-        else {
+        } else {
             $response = ['success' => false, 'error' => 'No data'];
         }
     }
 
     $response['debug'] = $debugLog;
 
-}
-catch (Exception $e) {
+} catch (Exception $e) {
     $response = ['success' => false, 'error' => $e->getMessage(), 'debug' => $debugLog];
 }
 
