@@ -6,6 +6,7 @@ window.HistoryModal = ({
     historyModalLead, 
     setHistoryModalLead, 
     checkGmailReply, 
+    findAndLinkThread,
     isCheckingReply, 
     replyCheckResult,
     onAddNote,
@@ -200,8 +201,19 @@ window.HistoryModal = ({
                                 )}
                             </div>
                         ) : (
-                            <div className="text-xs text-slate-400 italic text-center p-3 bg-slate-50 rounded border border-dashed">Thread ID bulunamadı.</div>
+                            <div className="text-center p-6 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200">
+                                <p className="text-xs text-slate-500 italic mb-3">Bu kayıtla ilişkili bir yazışma kimliği (Thread ID) bulunamadı.</p>
+                                <button 
+                                    onClick={() => findAndLinkThread(historyModalLead)} 
+                                    disabled={isCheckingReply}
+                                    className="inline-flex items-center gap-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-4 py-2 rounded-lg text-xs font-bold border border-indigo-200 transition-all disabled:opacity-50"
+                                >
+                                    {isCheckingReply ? <window.Icon name="loader-2" className="w-4 h-4 animate-spin"/> : <window.Icon name="search" className="w-4 h-4"/>}
+                                    Gmail'de Bu Yazışmayı Bul ve Bağla
+                                </button>
+                            </div>
                         )}
+
                     </div>
                 </div>
             </div>

@@ -143,7 +143,31 @@ function doPost(e) {
       });
     }
 
+    // --- 4. THREAD BULMA (RECOVERY) ---
+    else if (data.action === 'check_thread_by_email') {
+      var email = data.to;
+      if (!email) return createJSON({ 'status': 'error', 'message': 'Email adresi yok', 'logs': debugLogs });
+      
+      log("Thread aranıyor: " + email);
+      var threads = GmailApp.search("to:" + email);
+      
+      if (threads.length > 0) {
+        var foundThreadId = threads[0].getId();
+        log("Thread bulundu: " + foundThreadId);
+        return createJSON({ 
+          'status': 'success', 
+          'threadId': foundThreadId,
+          'message': 'Thread bulundu ve bağlandı.',
+          'logs': debugLogs 
+        });
+      } else {
+        log("Thread bulunamadı: " + email);
+        return createJSON({ 'status': 'error', 'message': 'Bu email adresiyle ilişkili bir yazışma bulunamadı.', 'logs': debugLogs });
+      }
+    }
+
     return createJSON({ 'status': 'error', 'message': 'Bilinmeyen işlem', 'logs': debugLogs });
+
 
   } catch (globalError) {
     return createJSON({ 'status': 'error', 'message': 'Global Hata: ' + globalError.toString(), 'logs': debugLogs });
