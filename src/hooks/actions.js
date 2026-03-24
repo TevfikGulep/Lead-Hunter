@@ -134,17 +134,13 @@ window.useLeadHunterActions = (dbInstance, isDbConnected, crmData, setCrmData, s
         try {
             const lead = crmData.find(l => l.id === leadId);
             if (!lead) return;
-            const nowIso = new Date().toISOString();
-            const newLog = { date: nowIso, type: 'NOTE', content: noteContent };
+            const newLog = { date: new Date().toISOString(), type: 'NOTE', content: noteContent };
             const updatedLogs = [...(lead.activityLog || []), newLog];
 
-            await dbInstance.collection("leads").doc(leadId).update({ 
-                activityLog: updatedLogs,
-                lastContactDate: nowIso
-            });
+            await dbInstance.collection("leads").doc(leadId).update({ activityLog: updatedLogs });
 
             if (setHistoryModalLead) {
-                setHistoryModalLead(prev => ({ ...prev, activityLog: updatedLogs, lastContactDate: nowIso }));
+                setHistoryModalLead(prev => ({ ...prev, activityLog: updatedLogs }));
             }
         } catch (e) { console.error(e); alert("Not eklenirken hata oluştu."); }
     };
@@ -249,39 +245,6 @@ window.useLeadHunterActions = (dbInstance, isDbConnected, crmData, setCrmData, s
         } catch (e) { alert("Ekleme hatası: " + e.message); }
     };
 
-    // 6. Eksik Thread ID'yi Bul ve Bağla
-    const findAndLinkThread = async (lead) => {
-        const email = lead.email ? lead.email.split(',')[0].trim() : '';
-        if (!email) return alert("Email adresi bulunamadı.");
-
-        setIsCheckingReply(true);
-        try {
-            const response = await fetch(settings.googleScriptUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ action: 'check_thread_by_email', to: email })
-            });
-            const data = await response.json();
-
-            if (data.status === 'success' && data.threadId) {
-                if (isDbConnected) {
-                    await dbInstance.collection("leads").doc(lead.id).update({ threadId: data.threadId });
-                    
-                    const updatedLead = { ...lead, threadId: data.threadId };
-                    setCrmData(prev => prev.map(p => p.id === lead.id ? updatedLead : p));
-                    if (setHistoryModalLead) setHistoryModalLead(updatedLead);
-                    
-                    alert("Yazışma bulundu ve başarıyla bağlandı! Artık 'Kontrol Et' diyerek cevapları çekebilirsiniz.");
-                }
-            } else {
-                alert("Gmail'de bu adrese gönderilmiş bir mail bulunamadı. Lütfen maili bu uygulama üzerinden attığınızdan veya doğru hesabı kullandığınızdan emin olun.");
-            }
-        } catch (e) {
-            alert("Bağlantı hatası: " + e.message);
-        }
-        setIsCheckingReply(false);
-    };
-
     return {
         editingRowId, setEditingRowId,
         editFormData, setEditFormData,
@@ -290,8 +253,6 @@ window.useLeadHunterActions = (dbInstance, isDbConnected, crmData, setCrmData, s
 
         handleManualStageUpdate,
         checkGmailReply,
-        findAndLinkThread,
-
 
         handleAddNote,
         handleDeleteNote,
