@@ -32,6 +32,11 @@ window.SettingsTab = ({
                     <div><label className="block text-xs font-bold mb-1">Google Search API Key</label><input type="text" value={settings.googleApiKey} onChange={e => handleSettingChange('googleApiKey', e.target.value)} className="w-full p-2 border rounded" placeholder="Veritabanından çekiliyor..." /></div>
                     <div><label className="block text-xs font-bold mb-1">Search Engine ID (CX)</label><input type="text" value={settings.searchEngineId} onChange={e => handleSettingChange('searchEngineId', e.target.value)} className="w-full p-2 border rounded" placeholder="Veritabanından çekiliyor..." /></div>
                     <div><label className="block text-xs font-bold mb-1">Google Apps Script URL</label><input type="text" value={settings.googleScriptUrl} onChange={e => handleSettingChange('googleScriptUrl', e.target.value)} className="w-full p-2 border rounded" placeholder="Veritabanından çekiliyor..." /></div>
+                    <div className="mt-4">
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">Webhook URL (Slack/Discord)</label>
+                        <input type="text" className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 outline-none text-sm" placeholder="https://hooks.slack.com/services/..." value={settings.webhookUrl || ''} onChange={e => handleSettingChange('webhookUrl', e.target.value)} />
+                        <p className="text-xs text-slate-400 mt-1">Slack veya Discord webhook URL. Yeni cevaplar ve haftalık özetler gönderilir.</p>
+                    </div>
 
                     <button onClick={saveSettingsToCloud} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 rounded-lg mt-2 flex items-center justify-center gap-2 transition-colors">
                         <window.Icon name="cloud" className="w-4 h-4" /> Ayarları Veritabanına (Buluta) Kaydet

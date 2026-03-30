@@ -257,6 +257,110 @@ try {
         $response = ['success' => true, 'results' => $results, 'count' => count($results)];
     }
 
+    // === DATAFORSEO SEARCH ===
+    elseif ($type === 'search_dataforseo') {
+        $query = isset($_GET['q']) ? $_GET['q'] : '';
+        $depth = isset($_GET['depth']) ? (int) $_GET['depth'] : 30;
+        $gl = isset($_GET['gl']) ? strtoupper(trim($_GET['gl'])) : 'TR';
+        $lang = isset($_GET['lang']) ? strtoupper(trim($_GET['lang'])) : '';
+
+        if (empty($query))
+            throw new Exception("Query required");
+
+        addLog("DataForSEO: $query (gl=$gl)");
+
+        $locationMap = [
+            'TR' => 2792, 'US' => 2840, 'UK' => 2826, 'GB' => 2826,
+            'DE' => 2276, 'FR' => 2250, 'IT' => 2380, 'ES' => 2724,
+            'NL' => 2528, 'PL' => 2616, 'RO' => 2642, 'GR' => 2300, 'BG' => 2100
+        ];
+
+        $langMap = [
+            'TR' => 'tr', 'US' => 'en', 'UK' => 'en', 'GB' => 'en',
+            'DE' => 'de', 'FR' => 'fr', 'IT' => 'it', 'ES' => 'es',
+            'NL' => 'nl', 'PL' => 'pl', 'RO' => 'ro', 'GR' => 'el', 'BG' => 'bg'
+        ];
+
+        $locationCode = isset($locationMap[$gl]) ? $locationMap[$gl] : 2792;
+        $languageCode = '';
+        if ($lang && isset($langMap[$lang])) {
+            $languageCode = $langMap[$lang];
+        } elseif (isset($langMap[$gl])) {
+            $languageCode = $langMap[$gl];
+        } else {
+            $languageCode = 'tr';
+        }
+
+        $postData = json_encode([[
+            "keyword" => $query,
+            "location_code" => $locationCode,
+            "language_code" => $languageCode,
+            "device" => "desktop",
+            "os" => "windows",
+            "depth" => $depth
+        ]]);
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, "https://api.dataforseo.com/v3/serp/google/organic/live");
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Authorization: Basic dGV2ZmlrZ3VsZXBAb3hpZ2VuLnRlYW06Njg5ODAzOTc2NTlkYWQ5Ng==',
+            'Content-Type: application/json'
+        ]);
+
+        $jsonResp = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr = curl_error($ch);
+        curl_close($ch);
+
+        addLog("DataForSEO HTTP: $httpCode, Error: $curlErr, Length: " . strlen($jsonResp));
+
+        $results = [];
+        $data = json_decode($jsonResp, true);
+
+        if ($data && isset($data['tasks'][0]['result'][0]['items']) && is_array($data['tasks'][0]['result'][0]['items'])) {
+            $items = $data['tasks'][0]['result'][0]['items'];
+            addLog("DataForSEO: " . count($items) . " items returned");
+
+            $seen = [];
+            foreach ($items as $item) {
+                if (count($results) >= $depth) break;
+                if (!isset($item['type']) || $item['type'] !== 'organic') continue;
+
+                $url = isset($item['url']) ? $item['url'] : '';
+                $title = isset($item['title']) ? $item['title'] : '';
+                $snippet = isset($item['description']) ? $item['description'] : '';
+                $itemDomain = isset($item['domain']) ? $item['domain'] : '';
+
+                if (empty($url)) continue;
+
+                // Deduplicate by domain
+                $domKey = $itemDomain ?: parse_url($url, PHP_URL_HOST);
+                if ($domKey && isset($seen[$domKey])) continue;
+                if ($domKey) $seen[$domKey] = true;
+
+                $results[] = [
+                    'url' => $url,
+                    'title' => $title,
+                    'snippet' => $snippet
+                ];
+                addLog("DataForSEO found: $url");
+            }
+        } else {
+            $errMsg = 'No results';
+            if ($data && isset($data['tasks'][0]['status_message'])) {
+                $errMsg = $data['tasks'][0]['status_message'];
+            }
+            addLog("DataForSEO error: $errMsg");
+        }
+
+        $response = ['success' => true, 'results' => $results, 'count' => count($results), 'engine' => 'dataforseo'];
+    }
+
     // === GOOGLE SEARCH (API or Scraping) ===
     elseif ($type === 'search') {
         $query = isset($_GET['q']) ? $_GET['q'] : '';
@@ -303,7 +407,75 @@ try {
             }
         }
 
-        // Fallback to scraping if no API results
+        // Fallback to DataForSEO if no API results
+        if (count($results) == 0) {
+            addLog("Google API returned 0 results, trying DataForSEO fallback...");
+
+            $dfsGl = isset($_GET['gl']) ? strtoupper(trim($_GET['gl'])) : 'TR';
+            $dfsLocationMap = [
+                'TR' => 2792, 'US' => 2840, 'UK' => 2826, 'GB' => 2826,
+                'DE' => 2276, 'FR' => 2250, 'IT' => 2380, 'ES' => 2724,
+                'NL' => 2528, 'PL' => 2616, 'RO' => 2642, 'GR' => 2300, 'BG' => 2100
+            ];
+            $dfsLangMap = [
+                'TR' => 'tr', 'US' => 'en', 'UK' => 'en', 'GB' => 'en',
+                'DE' => 'de', 'FR' => 'fr', 'IT' => 'it', 'ES' => 'es',
+                'NL' => 'nl', 'PL' => 'pl', 'RO' => 'ro', 'GR' => 'el', 'BG' => 'bg'
+            ];
+
+            $dfsLocCode = isset($dfsLocationMap[$dfsGl]) ? $dfsLocationMap[$dfsGl] : 2792;
+            $dfsLangCode = isset($dfsLangMap[$dfsGl]) ? $dfsLangMap[$dfsGl] : 'tr';
+
+            $dfsPostData = json_encode([[
+                "keyword" => $query,
+                "location_code" => $dfsLocCode,
+                "language_code" => $dfsLangCode,
+                "device" => "desktop",
+                "os" => "windows",
+                "depth" => $depth
+            ]]);
+
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, "https://api.dataforseo.com/v3/serp/google/organic/live");
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $dfsPostData);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Authorization: Basic dGV2ZmlrZ3VsZXBAb3hpZ2VuLnRlYW06Njg5ODAzOTc2NTlkYWQ5Ng==',
+                'Content-Type: application/json'
+            ]);
+
+            $dfsResp = curl_exec($ch);
+            $dfsHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+
+            addLog("DataForSEO fallback HTTP: $dfsHttpCode, Length: " . strlen($dfsResp));
+
+            $dfsData = json_decode($dfsResp, true);
+            if ($dfsData && isset($dfsData['tasks'][0]['result'][0]['items']) && is_array($dfsData['tasks'][0]['result'][0]['items'])) {
+                $seen = [];
+                foreach ($dfsData['tasks'][0]['result'][0]['items'] as $item) {
+                    if (count($results) >= $depth) break;
+                    if (!isset($item['type']) || $item['type'] !== 'organic') continue;
+                    $dfsUrl = isset($item['url']) ? $item['url'] : '';
+                    if (empty($dfsUrl)) continue;
+                    $dfsDom = isset($item['domain']) ? $item['domain'] : parse_url($dfsUrl, PHP_URL_HOST);
+                    if ($dfsDom && isset($seen[$dfsDom])) continue;
+                    if ($dfsDom) $seen[$dfsDom] = true;
+
+                    $results[] = [
+                        'url' => $dfsUrl,
+                        'title' => isset($item['title']) ? $item['title'] : '',
+                        'snippet' => isset($item['description']) ? $item['description'] : ''
+                    ];
+                }
+                addLog("DataForSEO fallback: " . count($results) . " results");
+            }
+        }
+
+        // Fallback to scraping if still no results
         if (count($results) == 0) {
             addLog("Using Google Scraping");
 
@@ -527,7 +699,7 @@ try {
             $otherLinks = [];
             
             // Common contact page keywords across multiple languages
-            $hotKeywords = '/(iletisim|contact|hakkimizda|about|bize-ulasin|destek|yardim|kurumsal|info|team|ekibimiz|ofis|location)/i';
+            $hotKeywords = '/(iletisim|contact|hakkimizda|about|bize-ulasin|destek|yardim|kurumsal|info|team|ekibimiz|ofis|location|kontakt|contatto|contacto|uber-uns|a-propos|impressum|o-nas|kapcsolat|epikoinonia)/i';
 
             foreach ($internalLinks as $link) {
                 if (preg_match($hotKeywords, $link)) {
@@ -540,8 +712,8 @@ try {
             // Combine arrays, putting high-priority pages first
             $urlsToScan = array_merge($priorityLinks, $otherLinks);
 
-            // Scan Top 15 Subpages
-            $scanLimit = 15;
+            // Scan Top 25 Subpages
+            $scanLimit = 25;
             $scannedCount = 0;
 
             foreach ($urlsToScan as $url) {
@@ -559,11 +731,422 @@ try {
             }
         }
 
+        // Hunter.io API fallback
+        $hunterApiKey = isset($_GET['hunterApiKey']) ? $_GET['hunterApiKey'] : '';
+        if (count($emails) === 0 && $hunterApiKey) {
+            addLog("Hunter.io API deneniyor...");
+            $hunterUrl = "https://api.hunter.io/v2/domain-search?domain=" . urlencode($domain) . "&api_key=" . urlencode($hunterApiKey);
+
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $hunterUrl);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            $hunterResponse = curl_exec($ch);
+            curl_close($ch);
+
+            $hunterData = json_decode($hunterResponse, true);
+            if ($hunterData && isset($hunterData['data']['emails'])) {
+                foreach ($hunterData['data']['emails'] as $hunterEmail) {
+                    $e = strtolower(trim($hunterEmail['value'] ?? ''));
+                    if ($e && $isValidEmail($e) && !in_array($e, $emails)) {
+                        $emails[] = $e;
+                        addLog("Hunter.io email bulundu: $e");
+                    }
+                    if (count($emails) >= 10) break;
+                }
+            }
+            addLog("Hunter.io: " . count($emails) . " email");
+        }
+
+        // === WHOIS email extraction (tertiary source) ===
+        if (count($emails) === 0) {
+            addLog("No emails found, trying WHOIS lookup...");
+            $whoisUrl = "https://www.whois.com/whois/" . urlencode($domain);
+
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $whoisUrl);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept: text/html'
+            ]);
+            $whoisHtml = curl_exec($ch);
+            $whoisHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+
+            addLog("WHOIS HTTP: $whoisHttpCode, Length: " . strlen($whoisHtml));
+
+            if ($whoisHtml && strlen($whoisHtml) > 200) {
+                if (preg_match_all('/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,10}/i', $whoisHtml, $whoisMatches)) {
+                    foreach ($whoisMatches[0] as $we) {
+                        $we = strtolower(trim($we));
+                        if ($isValidEmail($we) && !in_array($we, $emails)) {
+                            $emails[] = $we;
+                            addLog("WHOIS found: $we");
+                        }
+                    }
+                }
+            }
+        }
+
+        // Score and sort emails - personal first, role second, generic last
+        if (count($emails) > 1) {
+            $scoreEmail = function($email) {
+                $e = strtolower($email);
+                $local = explode('@', $e)[0];
+
+                // Generic emails (lowest priority)
+                $genericPrefixes = ['info', 'contact', 'iletisim', 'destek', 'support', 'hello', 'hallo', 'merhaba', 'office', 'genel'];
+                foreach ($genericPrefixes as $prefix) {
+                    if ($local === $prefix) return 1;
+                }
+
+                // Role emails (medium priority)
+                $rolePrefixes = ['editor', 'reklam', 'advertising', 'ilan', 'marketing', 'pazarlama', 'satis', 'sales', 'yonetim', 'management', 'muhasebe', 'finans', 'press', 'media', 'medya', 'ceo', 'founder', 'director'];
+                foreach ($rolePrefixes as $prefix) {
+                    if (strpos($local, $prefix) !== false) return 2;
+                }
+
+                // Personal emails with dots/underscores (highest priority)
+                if (strpos($local, '.') !== false || strpos($local, '_') !== false) return 3;
+
+                // Single name (likely personal)
+                if (strlen($local) > 3 && strlen($local) < 20 && preg_match('/^[a-z]+$/', $local)) return 2;
+
+                return 1; // Default to generic
+            };
+
+            usort($emails, function($a, $b) use ($scoreEmail) {
+                return $scoreEmail($b) - $scoreEmail($a);
+            });
+        }
+
         $response = [
             'success' => true,
             'emails' => array_values($emails),
             'count' => count($emails),
             'scanned' => $scannedPages
+        ];
+    }
+
+    // === EMAIL DEEP DISCOVERY ===
+    elseif ($type === 'email_deep') {
+        $domain = isset($_GET['domain']) ? $_GET['domain'] : (isset($_GET['url']) ? parse_url($_GET['url'], PHP_URL_HOST) : '');
+        if (empty($domain))
+            throw new Exception("Domain required");
+
+        $domain = preg_replace('#^www\.#', '', strtolower($domain));
+        $baseUrl = 'https://' . $domain;
+        addLog("Email DEEP discovery started for: $domain");
+
+        $emails = [];
+        $scannedPages = [];
+
+        // Known invalid prefixes and domains to skip
+        $skipPrefixes = ['sentry', 'noreply', 'no-reply', 'donotreply', 'test', 'example', 'abuse', 'postmaster', 'mailer-daemon', 'mailer', 'notifications', 'feedback', 'admin', 'administrator', 'webmaster', 'support-bot', 'wix', 'wordpress', 'hello@domain.com', 'yourname@', 'email@', 'name@'];
+        $skipDomains = ['example.com', 'domain.com', 'sentry.io', 'wixpress.com', 'wix.com', 'sentry.com', 'test.com'];
+
+        // Cloudflare Email Decoder
+        $decodeCF = function ($encoded) {
+            if (!$encoded || strlen($encoded) < 4)
+                return '';
+            $k = hexdec(substr($encoded, 0, 2));
+            $email = '';
+            for ($i = 2, $len = strlen($encoded); $i < $len; $i += 2) {
+                $email .= chr(hexdec(substr($encoded, $i, 2)) ^ $k);
+            }
+            return $email;
+        };
+
+        $isValidEmail = function ($email) use ($skipPrefixes, $skipDomains) {
+            $e = strtolower(trim($email));
+            if (!filter_var($e, FILTER_VALIDATE_EMAIL)) return false;
+            if (preg_match('/\.(png|jpg|jpeg|gif|css|js|webp|svg|ico|php|html|woff|ttf|eot)$/i', $e)) return false;
+            foreach ($skipDomains as $sd) {
+                if (strpos($e, '@' . $sd) !== false || str_ends_with($e, '.' . $sd)) return false;
+            }
+            foreach ($skipPrefixes as $sp) {
+                if (str_starts_with($e, $sp . '@')) return false;
+                if ($e === $sp) return false;
+            }
+            if (strlen($e) < 6 || strlen($e) > 80) return false;
+            return true;
+        };
+
+        // Helper function for fetching and extracting
+        $fetchAndExtract = function ($url) use (&$emails, &$scannedPages, $decodeCF, $isValidEmail) {
+            $normalizedUrl = rtrim(str_replace('http://', 'https://', $url), '/');
+            if (in_array($normalizedUrl, $scannedPages))
+                return '';
+            $scannedPages[] = $normalizedUrl;
+
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+            curl_setopt($ch, CURLOPT_MAXREDIRS, 3);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language: tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7'
+            ]);
+            $html = curl_exec($ch);
+            curl_close($ch);
+
+            if ($html) {
+                if (preg_match_all('/data-cfemail=["\']([0-9a-f]+)["\']/i', $html, $cfMatches)) {
+                    foreach ($cfMatches[1] as $enc) {
+                        $dec = $decodeCF($enc);
+                        if ($dec && $isValidEmail($dec) && !in_array($dec, $emails)) {
+                            $emails[] = $dec;
+                        }
+                    }
+                }
+                if (preg_match_all('/email-protection#([0-9a-f]+)/i', $html, $cfMatches2)) {
+                    foreach ($cfMatches2[1] as $enc) {
+                        $dec = $decodeCF($enc);
+                        if ($dec && $isValidEmail($dec) && !in_array($dec, $emails)) {
+                            $emails[] = $dec;
+                        }
+                    }
+                }
+                if (preg_match_all('/mailto:([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,10})/i', $html, $matchesMailto)) {
+                    foreach ($matchesMailto[1] as $m) {
+                        $m = strtolower(trim($m));
+                        if ($isValidEmail($m) && !in_array($m, $emails)) {
+                            $emails[] = $m;
+                        }
+                    }
+                }
+                if (preg_match_all('/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,10}/i', $html, $matches)) {
+                    foreach ($matches[0] as $e) {
+                        if ($isValidEmail($e) && !in_array($e, $emails)) {
+                            $emails[] = strtolower(trim($e));
+                        }
+                    }
+                }
+                if (preg_match_all('/[a-z0-9._%+-]+\s*[\[\(\{]\s*at\s*[\]\)\}]\s*[a-z0-9.-]+\.[a-z]{2,6}/i', $html, $matchesObf)) {
+                    foreach ($matchesObf[0] as $obf) {
+                        $e = preg_replace('/\s*[\[\(\{]\s*at\s*[\]\)\}]\s*/i', '@', strtolower($obf));
+                        if ($isValidEmail($e) && !in_array($e, $emails)) {
+                            $emails[] = strtolower(trim($e));
+                        }
+                    }
+                }
+            }
+            return $html;
+        };
+
+        // 1. Scan Homepage
+        $homeHtml = $fetchAndExtract($baseUrl);
+
+        // 2. Collect internal links from homepage
+        $internalLinks = [];
+        if ($homeHtml) {
+            if (preg_match_all('/href=["\']([^"\']+)["\']/i', $homeHtml, $allLinks)) {
+                foreach ($allLinks[1] as $path) {
+                    $path = trim($path);
+                    if (empty($path) || strpos($path, '#') === 0 || strpos($path, 'javascript:') === 0 || strpos($path, 'mailto:') === 0 || strpos($path, 'tel:') === 0) {
+                        continue;
+                    }
+                    $fullUrl = $path;
+                    if (strpos($path, 'http') !== 0 && strpos($path, '//') !== 0) {
+                        $fullUrl = rtrim($baseUrl, '/') . '/' . ltrim($path, '/');
+                    } else if (strpos($path, '//') === 0) {
+                        $fullUrl = 'https:' . $path;
+                    }
+                    $urlHost = parse_url($fullUrl, PHP_URL_HOST);
+                    if ($urlHost && strpos($urlHost, str_replace('www.', '', $domain)) !== false) {
+                        $cleanUrl = rtrim(explode('?', $fullUrl)[0], '/');
+                        if (!in_array($cleanUrl, $internalLinks) && $cleanUrl !== rtrim($baseUrl, '/')) {
+                            $internalLinks[] = $cleanUrl;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Also check robots.txt and sitemap.xml for additional URLs
+        addLog("Deep scan: checking robots.txt and sitemap.xml for extra URLs...");
+
+        // Parse robots.txt for sitemap references
+        $robotsUrl = rtrim($baseUrl, '/') . '/robots.txt';
+        $chRobots = curl_init();
+        curl_setopt($chRobots, CURLOPT_URL, $robotsUrl);
+        curl_setopt($chRobots, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($chRobots, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($chRobots, CURLOPT_TIMEOUT, 10);
+        curl_setopt($chRobots, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($chRobots, CURLOPT_HTTPHEADER, ['User-Agent: Mozilla/5.0']);
+        $robotsTxt = curl_exec($chRobots);
+        curl_close($chRobots);
+
+        $sitemapUrls = [rtrim($baseUrl, '/') . '/sitemap.xml'];
+        if ($robotsTxt) {
+            if (preg_match_all('/Sitemap:\s*(.+)/i', $robotsTxt, $smMatches)) {
+                foreach ($smMatches[1] as $smUrl) {
+                    $smUrl = trim($smUrl);
+                    if (!empty($smUrl) && !in_array($smUrl, $sitemapUrls)) {
+                        $sitemapUrls[] = $smUrl;
+                    }
+                }
+            }
+            addLog("Found " . count($sitemapUrls) . " sitemap URL(s) from robots.txt");
+        }
+
+        // Parse sitemaps for page URLs (contact/about pages etc.)
+        $hotKeywordsDeep = '/(iletisim|contact|hakkimizda|about|bize-ulasin|destek|yardim|kurumsal|info|team|ekibimiz|ofis|location|kontakt|contatto|contacto|uber-uns|a-propos|impressum|o-nas|kapcsolat|epikoinonia)/i';
+        $sitemapPages = [];
+
+        foreach ($sitemapUrls as $smUrl) {
+            $chSm = curl_init();
+            curl_setopt($chSm, CURLOPT_URL, $smUrl);
+            curl_setopt($chSm, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($chSm, CURLOPT_FOLLOWLOCATION, true);
+            curl_setopt($chSm, CURLOPT_TIMEOUT, 10);
+            curl_setopt($chSm, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($chSm, CURLOPT_HTTPHEADER, ['User-Agent: Mozilla/5.0']);
+            $smContent = curl_exec($chSm);
+            curl_close($chSm);
+
+            if ($smContent) {
+                // Extract URLs from sitemap XML
+                if (preg_match_all('/<loc>\s*(https?:\/\/[^<]+)\s*<\/loc>/i', $smContent, $locMatches)) {
+                    foreach ($locMatches[1] as $locUrl) {
+                        $locUrl = trim($locUrl);
+                        $locHost = parse_url($locUrl, PHP_URL_HOST);
+                        if ($locHost && strpos($locHost, str_replace('www.', '', $domain)) !== false) {
+                            // Prioritize contact-like pages from sitemap
+                            if (preg_match($hotKeywordsDeep, $locUrl)) {
+                                $cleanLoc = rtrim(explode('?', $locUrl)[0], '/');
+                                if (!in_array($cleanLoc, $sitemapPages) && !in_array($cleanLoc, $internalLinks)) {
+                                    $sitemapPages[] = $cleanLoc;
+                                }
+                            }
+                        }
+                    }
+                    addLog("Sitemap $smUrl: found " . count($locMatches[1]) . " URLs, " . count($sitemapPages) . " contact-like pages");
+                }
+            }
+        }
+
+        // 4. Score and sort all collected links
+        $priorityLinks = [];
+        $otherLinks = [];
+
+        foreach ($internalLinks as $link) {
+            if (preg_match($hotKeywordsDeep, $link)) {
+                $priorityLinks[] = $link;
+            } else {
+                $otherLinks[] = $link;
+            }
+        }
+
+        // Sitemap contact pages go right after homepage-discovered priority links
+        $urlsToScan = array_merge($priorityLinks, $sitemapPages, $otherLinks);
+        // Deduplicate
+        $urlsToScan = array_values(array_unique($urlsToScan));
+
+        // Deep scan: up to 50 subpages
+        $scanLimit = 50;
+        $scannedCount = 0;
+
+        addLog("Deep scan: " . count($urlsToScan) . " candidate URLs, limit=$scanLimit");
+
+        foreach ($urlsToScan as $url) {
+            if ($scannedCount >= $scanLimit) break;
+            if (preg_match('/\.(pdf|zip|mp4|webm|jpg|jpeg|png|gif|svg)$/i', $url)) continue;
+
+            addLog("Deep scanning: $url");
+            $fetchAndExtract($url);
+            $scannedCount++;
+
+            if (count($emails) >= 20) break;
+        }
+
+        // 4. Hunter.io fallback
+        $hunterApiKey = isset($_GET['hunterApiKey']) ? $_GET['hunterApiKey'] : '';
+        if (count($emails) === 0 && $hunterApiKey) {
+            addLog("Hunter.io API deneniyor (deep)...");
+            $hunterUrl = "https://api.hunter.io/v2/domain-search?domain=" . urlencode($domain) . "&api_key=" . urlencode($hunterApiKey);
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $hunterUrl);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+            $hunterResponse = curl_exec($ch);
+            curl_close($ch);
+            $hunterData = json_decode($hunterResponse, true);
+            if ($hunterData && isset($hunterData['data']['emails'])) {
+                foreach ($hunterData['data']['emails'] as $he) {
+                    $e = strtolower(trim($he['value'] ?? ''));
+                    if ($e && $isValidEmail($e) && !in_array($e, $emails)) {
+                        $emails[] = $e;
+                        addLog("Hunter.io: $e");
+                    }
+                    if (count($emails) >= 15) break;
+                }
+            }
+        }
+
+        // === WHOIS email extraction (tertiary source) ===
+        if (count($emails) === 0) {
+            addLog("No emails found, trying WHOIS lookup...");
+            $whoisUrl = "https://www.whois.com/whois/" . urlencode($domain);
+
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $whoisUrl);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept: text/html'
+            ]);
+            $whoisHtml = curl_exec($ch);
+            curl_close($ch);
+
+            if ($whoisHtml && strlen($whoisHtml) > 200) {
+                if (preg_match_all('/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,10}/i', $whoisHtml, $whoisMatches)) {
+                    foreach ($whoisMatches[0] as $we) {
+                        $we = strtolower(trim($we));
+                        if ($isValidEmail($we) && !in_array($we, $emails)) {
+                            $emails[] = $we;
+                            addLog("WHOIS found: $we");
+                        }
+                    }
+                }
+            }
+        }
+
+        // Score and sort
+        if (count($emails) > 1) {
+            $scoreEmail = function($email) {
+                $e = strtolower($email);
+                $local = explode('@', $e)[0];
+                $genericPrefixes = ['info', 'contact', 'iletisim', 'destek', 'support', 'hello', 'office', 'genel'];
+                foreach ($genericPrefixes as $prefix) { if ($local === $prefix) return 1; }
+                $rolePrefixes = ['editor', 'reklam', 'advertising', 'marketing', 'satis', 'sales', 'yonetim', 'ceo', 'founder'];
+                foreach ($rolePrefixes as $prefix) { if (strpos($local, $prefix) !== false) return 2; }
+                if (strpos($local, '.') !== false || strpos($local, '_') !== false) return 3;
+                if (strlen($local) > 3 && strlen($local) < 20 && preg_match('/^[a-z]+$/', $local)) return 2;
+                return 1;
+            };
+            usort($emails, function($a, $b) use ($scoreEmail) { return $scoreEmail($b) - $scoreEmail($a); });
+        }
+
+        $response = [
+            'success' => true,
+            'emails' => array_values($emails),
+            'count' => count($emails),
+            'scanned' => count($scannedPages),
+            'mode' => 'deep'
         ];
     }
 

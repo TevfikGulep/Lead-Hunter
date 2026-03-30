@@ -186,10 +186,16 @@ function getAllFirestoreLeads($accessToken, $projectId)
     return [];
 }
 
-// Firestore'a veri yazma
+// Firestore'a veri yazma (updateMask ile sadece belirtilen alanları günceller)
 function updateFirestoreLead($accessToken, $projectId, $docId, $data)
 {
-    $url = "https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents/leads/$docId";
+    // updateMask parametreleri oluştur - sadece gönderilen alanları güncelle, diğerlerine dokunma
+    $maskParams = array_map(function ($key) {
+        return 'updateMask.fieldPaths=' . urlencode($key);
+    }, array_keys($data));
+    $maskQuery = implode('&', $maskParams);
+
+    $url = "https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents/leads/$docId?$maskQuery";
 
     // Firestore formatında veri hazırla
     $fields = [];
@@ -226,7 +232,7 @@ function updateFirestoreLead($accessToken, $projectId, $docId, $data)
 }
 
 // Email gönderme fonksiyonu (Google Apps Script üzerinden)
-function sendEmail($to, $subject, $body, $googleScriptUrl)
+function sendEmail($to, $subject, $body, $googleScriptUrl, $existingThreadId = null)
 {
     $htmlBody = nl2br(htmlspecialchars($body));
 
@@ -236,7 +242,7 @@ function sendEmail($to, $subject, $body, $googleScriptUrl)
         'subject' => $subject,
         'body' => $body,
         'htmlBody' => $htmlBody,
-        'threadId' => null
+        'threadId' => $existingThreadId
     ]);
 
     $ch = curl_init();
@@ -424,7 +430,8 @@ try {
             'stage' => $stage,
             'statusKey' => $statusKey,
             'language' => $language,
-            'followupCount' => isset($fields['followupCount']['integerValue']) ? (int) $fields['followupCount']['integerValue'] : 0
+            'followupCount' => isset($fields['followupCount']['integerValue']) ? (int) $fields['followupCount']['integerValue'] : 0,
+            'threadId' => $getStringValue($fields, 'threadId')
         ];
     }
 
@@ -462,7 +469,8 @@ try {
         writeLog("Email gönderiliyor: {$lead['email']} (Aşama: $nextStage)", "INFO");
 
         // Email gönder
-        $result = sendEmail($lead['email'], $subject, $body, $googleScriptUrl);
+        $existingThreadId = !empty($lead['threadId']) ? $lead['threadId'] : null;
+        $result = sendEmail($lead['email'], $subject, $body, $googleScriptUrl, $existingThreadId);
 
         if ($result['success']) {
             writeLog("Email gönderildi: {$lead['email']} (Thread: {$result['threadId']})", "SUCCESS");

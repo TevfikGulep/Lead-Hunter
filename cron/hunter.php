@@ -1,220 +1,444 @@
 <?php
 /**
- * Lead Hunter - Otomatik Tarama Cron Script
- * 
- * cPanel Cron Job ile çalıştır:
+ * Lead Hunter - Otomatik Tarama Cron Script (v2 - Firebase REST API)
+ *
+ * cPanel Cron Job:
  * Pazartesi 03:00: /usr/bin/php /home/[cpanel_kullanici]/public_html/cron/hunter.php
- * 
- * Manuel tetikleme: https://leadhunter.tevfikgulep.com/cron/hunter.php?manual=1
+ * Manuel: ?manual=1 veya ?secret=LEADHUNTER_CRON_2026
  */
 
-// Güvenlik anahtarı (sadece yetkili erişim için)
+define('SERVICE_ACCOUNT_FILE', __DIR__ . '/../lead-hunter-1500-firebase-admin-service-account.json');
 define('SECRET_KEY', 'LEADHUNTER_CRON_2026');
-
-// Log dosyası yolu
 define('LOG_FILE', __DIR__ . '/../logs/hunter.log');
+define('SERVER_URL', 'https://leadhunter.tevfikgulep.com/traffic-api.php');
 
-// Firebase config (manuel doldurulmalı)
-define('FIREBASE_CONFIG', [
-    'apiKey' => '',
-    'authDomain' => '',
-    'projectId' => '',
-    'storageBucket' => '',
-    'messagingSenderId' => '',
-    'appId' => ''
-]);
+header('Content-Type: text/plain; charset=utf-8');
 
-// Log fonksiyonu
-function writeLog($message, $type = 'INFO')
-{
+function writeLog($message, $type = 'INFO') {
     $timestamp = date('Y-m-d H:i:s');
     $logMessage = "[$timestamp] [$type] $message\n";
-    file_put_contents(LOG_FILE, $logMessage, FILE_APPEND);
+    @file_put_contents(LOG_FILE, $logMessage, FILE_APPEND);
     echo $logMessage;
 }
 
-// CORS ve güvenlik kontrolü
-header('Content-Type: text/plain; charset=utf-8');
-
+// --- AUTH & ACCESS CONTROL ---
 $isManual = isset($_GET['manual']);
 $secret = $_GET['secret'] ?? '';
 
-// Güvenlik kontrolü
-if ($secret !== SECRET_KEY && !$isManual) {
-    writeLog("Yetkisiz erişim denemesi", "ERROR");
-    http_response_code(403);
-    echo "ERROR: Yetkisiz erişim\n";
-    exit;
-}
-
-// Manuel veya otomatik kontrol
-if ($isManual) {
+if ($secret === SECRET_KEY) {
+    writeLog("Güvenli erişimle tarama başlatıldı", "INFO");
+} elseif ($isManual) {
     writeLog("Manuel tarama başlatıldı", "INFO");
-}
-else {
-    // Otomatik çalışma - sadece Pazartesi 03:00-04:00 arası
-    $now = new DateTime('Europe/Istanbul');
-    $dayOfWeek = (int)$now->format('N'); // 1 = Pazartesi
+} else {
+    $now = new DateTime('now', new DateTimeZone('Europe/Istanbul'));
+    $dayOfWeek = (int)$now->format('N');
     $hour = (int)$now->format('H');
-
     if ($dayOfWeek !== 1 || $hour < 3 || $hour >= 4) {
-        writeLog("Otomatik tarama zamanı değil (Bugün: $dayOfWeek, Saat: $hour)", "INFO");
-        echo "SKIP: Otomatik tarama sadece Pazartesi 03:00-04:00 arası çalışır\n";
+        writeLog("Otomatik tarama zamanı değil (Gün: $dayOfWeek, Saat: $hour)", "INFO");
+        echo "SKIP: Sadece Pazartesi 03:00-04:00 arası çalışır\n";
         exit;
     }
-
     writeLog("Otomatik tarama başlıyor", "INFO");
 }
 
-// Firebase yükleme (PHP Firebase SDK gerekli)
-function loadFirebaseData($collection, $doc)
-{
-    // Basit file-based simulation - gerçek Firebase için PHP SDK kurulmalı
-    $dataFile = __DIR__ . '/../data/' . $collection . '_' . $doc . '.json';
-    if (file_exists($dataFile)) {
-        return json_decode(file_get_contents($dataFile), true);
-    }
-    return null;
+// --- FIREBASE AUTH (copy exact pattern from followup.php) ---
+function getFirebaseAccessToken($serviceAccountFile) {
+    if (!file_exists($serviceAccountFile)) return null;
+    $serviceAccount = json_decode(file_get_contents($serviceAccountFile), true);
+
+    $header = base64url_encode(json_encode(['typ' => 'JWT', 'alg' => 'RS256']));
+    $now = time();
+    $payload = base64url_encode(json_encode([
+        'iss' => $serviceAccount['client_email'],
+        'sub' => $serviceAccount['client_email'],
+        'aud' => 'https://oauth2.googleapis.com/token',
+        'iat' => $now,
+        'exp' => $now + 3600,
+        'scope' => 'https://www.googleapis.com/auth/firestore https://www.googleapis.com/auth/datastore'
+    ]));
+
+    $privateKey = $serviceAccount['private_key'];
+    $signature = '';
+    openssl_sign($header . '.' . $payload, $signature, $privateKey, OPENSSL_ALGO_SHA256);
+    $signature = base64url_encode($signature);
+
+    $jwt = $header . '.' . $payload . '.' . $signature;
+
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, 'https://oauth2.googleapis.com/token');
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
+        'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+        'assertion' => $jwt
+    ]));
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    $response = curl_exec($ch);
+    curl_close($ch);
+
+    $result = json_decode($response, true);
+    return $result['access_token'] ?? null;
 }
 
-function saveFirebaseData($collection, $doc, $data)
-{
-    $dataFile = __DIR__ . '/../data/' . $collection . '_' . $doc . '.json';
-    $dir = dirname($dataFile);
-    if (!is_dir($dir)) {
-        mkdir($dir, 0755, true);
-    }
-    file_put_contents($dataFile, json_encode($data, JSON_PRETTY_PRINT));
+function base64url_encode($data) {
+    return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
 }
 
-// Ana işlemler
+// --- FIRESTORE HELPERS ---
+function getFirestoreSettings($accessToken, $projectId) {
+    $url = "https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents/system/config";
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer $accessToken"]);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($httpCode !== 200) return null;
+    $data = json_decode($response, true);
+    return $data['fields'] ?? null;
+}
+
+function getStringValue($fields, $key, $default = '') {
+    if (!isset($fields[$key])) return $default;
+    $field = $fields[$key];
+    if (isset($field['stringValue'])) return $field['stringValue'];
+    if (isset($field['integerValue'])) return (string)$field['integerValue'];
+    return $default;
+}
+
+function getIntValue($fields, $key, $default = 0) {
+    if (!isset($fields[$key])) return $default;
+    $field = $fields[$key];
+    if (isset($field['integerValue'])) return (int)$field['integerValue'];
+    if (isset($field['stringValue'])) return (int)$field['stringValue'];
+    return $default;
+}
+
+function getBoolValue($fields, $key, $default = false) {
+    if (!isset($fields[$key])) return $default;
+    return isset($fields[$key]['booleanValue']) ? $fields[$key]['booleanValue'] : $default;
+}
+
+function getExistingDomains($accessToken, $projectId) {
+    $domains = [];
+    $url = "https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents/leads?pageSize=1000";
+    $nextPageToken = null;
+
+    do {
+        $fetchUrl = $nextPageToken ? $url . "&pageToken=" . urlencode($nextPageToken) : $url;
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $fetchUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer $accessToken"]);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+        $response = curl_exec($ch);
+        curl_close($ch);
+
+        $data = json_decode($response, true);
+        if (isset($data['documents'])) {
+            foreach ($data['documents'] as $doc) {
+                $fields = $doc['fields'] ?? [];
+                $docUrl = getStringValue($fields, 'url');
+                if ($docUrl) {
+                    $parsed = parse_url($docUrl, PHP_URL_HOST);
+                    if ($parsed) $domains[] = strtolower(preg_replace('/^www\./', '', $parsed));
+                }
+            }
+        }
+        $nextPageToken = $data['nextPageToken'] ?? null;
+    } while ($nextPageToken);
+
+    return $domains;
+}
+
+function addFirestoreLead($accessToken, $projectId, $leadData) {
+    $url = "https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents/leads";
+
+    $fields = [];
+    foreach ($leadData as $key => $value) {
+        if ($key === 'trafficStatus' && is_array($value)) {
+            // Map type for trafficStatus
+            $mapFields = [];
+            foreach ($value as $k => $v) {
+                if (is_bool($v)) {
+                    $mapFields[$k] = ['booleanValue' => $v];
+                } elseif (is_int($v) || is_float($v)) {
+                    $mapFields[$k] = ['doubleValue' => $v];
+                } else {
+                    $mapFields[$k] = ['stringValue' => (string)$v];
+                }
+            }
+            $fields[$key] = ['mapValue' => ['fields' => $mapFields]];
+        } elseif ($key === 'activityLog' && is_array($value)) {
+            // Array type for activityLog
+            $arrayValues = [];
+            foreach ($value as $entry) {
+                $entryFields = [];
+                foreach ($entry as $k => $v) {
+                    $entryFields[$k] = ['stringValue' => (string)$v];
+                }
+                $arrayValues[] = ['mapValue' => ['fields' => $entryFields]];
+            }
+            $fields[$key] = ['arrayValue' => ['values' => $arrayValues]];
+        } elseif (is_bool($value)) {
+            $fields[$key] = ['booleanValue' => $value];
+        } elseif (is_int($value)) {
+            $fields[$key] = ['integerValue' => (string)$value];
+        } else {
+            $fields[$key] = ['stringValue' => (string)$value];
+        }
+    }
+
+    $body = json_encode(['fields' => $fields]);
+
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        "Authorization: Bearer $accessToken",
+        "Content-Type: application/json"
+    ]);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    return $httpCode === 200 || $httpCode === 201;
+}
+
+function updateFirestoreSettings($accessToken, $projectId, $updates) {
+    $maskParams = array_map(function($key) {
+        return 'updateMask.fieldPaths=' . urlencode($key);
+    }, array_keys($updates));
+    $maskQuery = implode('&', $maskParams);
+
+    $url = "https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents/system/config?$maskQuery";
+
+    $fields = [];
+    foreach ($updates as $key => $value) {
+        if (is_bool($value)) $fields[$key] = ['booleanValue' => $value];
+        elseif (is_int($value)) $fields[$key] = ['integerValue' => (string)$value];
+        else $fields[$key] = ['stringValue' => (string)$value];
+    }
+
+    $body = json_encode(['fields' => $fields]);
+
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PATCH');
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        "Authorization: Bearer $accessToken",
+        "Content-Type: application/json"
+    ]);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    return $httpCode === 200;
+}
+
+// === MAIN EXECUTION ===
 try {
     writeLog("Tarama başladı", "INFO");
 
-    // 1. Ayarları çek
-    $settings = loadFirebaseData('system', 'config');
-    if (!$settings) {
+    // 1. Firebase Auth
+    if (!file_exists(SERVICE_ACCOUNT_FILE)) {
+        writeLog("Service account dosyası bulunamadı", "ERROR");
+        exit;
+    }
+
+    $serviceAccount = json_decode(file_get_contents(SERVICE_ACCOUNT_FILE), true);
+    $projectId = $serviceAccount['project_id'];
+
+    $accessToken = getFirebaseAccessToken(SERVICE_ACCOUNT_FILE);
+    if (!$accessToken) {
+        writeLog("Firebase access token alınamadı", "ERROR");
+        exit;
+    }
+    writeLog("Firebase bağlantısı başarılı (Proje: $projectId)", "INFO");
+
+    // 2. Settings
+    $settingsFields = getFirestoreSettings($accessToken, $projectId);
+    if (!$settingsFields) {
         writeLog("Ayarlar bulunamadı", "ERROR");
         exit;
     }
 
-    // 2. İlçe listesini al
-    $ilceListesi = isset($settings['ilceListesi']) ? $settings['ilceListesi'] : '';
+    $ilceListesi = getStringValue($settingsFields, 'ilceListesi');
+    $hunterTargetCount = getIntValue($settingsFields, 'hunterTargetCount', 100);
+    $lastIlceIndex = getIntValue($settingsFields, 'lastHunterIlceIndex', 0);
+    $autoHunterEnabled = getBoolValue($settingsFields, 'autoHunterEnabled', false);
+    $googleApiKey = getStringValue($settingsFields, 'googleApiKey');
+    $searchEngineId = getStringValue($settingsFields, 'searchEngineId');
+
     if (empty($ilceListesi)) {
         writeLog("İlçe listesi boş", "ERROR");
         exit;
     }
 
     $ilceList = array_filter(array_map('trim', explode("\n", $ilceListesi)));
-    $targetCount = isset($settings['hunterTargetCount']) ? (int)$settings['hunterTargetCount'] : 100;
-    $lastIndex = isset($settings['lastHunterIlceIndex']) ? (int)$settings['lastHunterIlceIndex'] : 0;
+    writeLog("Hedef: $hunterTargetCount site | Son index: $lastIlceIndex | İlçe: " . count($ilceList), "INFO");
 
-    writeLog("Hedef: $targetCount site, Son index: $lastIndex, Toplam ilçe: " . count($ilceList), "INFO");
+    // 3. Get existing domains
+    writeLog("Mevcut domainler kontrol ediliyor...", "INFO");
+    $existingDomains = getExistingDomains($accessToken, $projectId);
+    writeLog("Mevcut domain sayısı: " . count($existingDomains), "INFO");
 
-    // 3. Keywords
+    // 4. Keywords
     $keywords = ['haberleri', 'son dakika', 'güncel', 'haber', 'gazete'];
 
-    // 4. Mevcut domainleri çek (gerçek Firebase'den)
-    $existingDomains = [];
-    writeLog("Mevcut domainler kontrol ediliyor...", "INFO");
-
-    // 5. Tarama döngüsü
+    // 5. Search loop
     $foundViableCount = 0;
     $totalSearches = 0;
-    $maxSearches = count($ilceList) * count($keywords);
+    $addedCount = 0;
 
-    $serverUrl = 'https://leadhunter.tevfikgulep.com/traffic-api.php';
-    $apiKey = isset($settings['googleApiKey']) ? $settings['googleApiKey'] : '';
-    $cx = isset($settings['searchEngineId']) ? $settings['searchEngineId'] : '';
-
-    for ($i = 0; $i < count($ilceList) && $foundViableCount < $targetCount; $i++) {
-        $ilce = $ilceList[($lastIndex + $i) % count($ilceList)];
+    for ($i = 0; $i < count($ilceList) && $foundViableCount < $hunterTargetCount; $i++) {
+        $ilce = $ilceList[($lastIlceIndex + $i) % count($ilceList)];
 
         foreach ($keywords as $kw) {
-            if ($foundViableCount >= $targetCount)
-                break;
-            if ($totalSearches >= $maxSearches)
-                break;
+            if ($foundViableCount >= $hunterTargetCount) break;
 
             $query = "$ilce $kw";
             $totalSearches++;
+            writeLog("[$totalSearches] Aranıyor: $query", "INFO");
 
-            writeLog("Aranıyor: $query", "INFO");
-
-            // Google Custom Search API çağrısı
-            $searchUrl = "$serverUrl?type=search&q=" . urlencode($query) . "&depth=30&gl=TR&apiKey=" . urlencode($apiKey) . "&cx=" . urlencode($cx);
+            // PRIMARY: DataForSEO
+            $searchUrl = SERVER_URL . "?type=search_dataforseo&q=" . urlencode($query) . "&depth=30&gl=TR";
 
             $ch = curl_init();
             curl_setopt($ch, CURLOPT_URL, $searchUrl);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 45);
             $response = curl_exec($ch);
             curl_close($ch);
 
             $json = json_decode($response, true);
 
-            if ($json && isset($json['success']) && $json['success']) {
-                $results = $json['results'];
+            // FALLBACK: Google API
+            if (!$json || !$json['success'] || empty($json['results'])) {
+                writeLog("DataForSEO başarısız, Google API deneniyor...", "WARN");
+                $fallbackUrl = SERVER_URL . "?type=search&q=" . urlencode($query) . "&depth=30&gl=TR&apiKey=" . urlencode($googleApiKey) . "&cx=" . urlencode($searchEngineId);
 
-                foreach ($results as $r) {
-                    if ($foundViableCount >= $targetCount)
-                        break;
+                $ch = curl_init();
+                curl_setopt($ch, CURLOPT_URL, $fallbackUrl);
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+                $response = curl_exec($ch);
+                curl_close($ch);
+
+                $json = json_decode($response, true);
+            }
+
+            if ($json && isset($json['success']) && $json['success'] && !empty($json['results'])) {
+                writeLog("Sonuç: " . count($json['results']) . " site bulundu", "INFO");
+
+                foreach ($json['results'] as $r) {
+                    if ($foundViableCount >= $hunterTargetCount) break;
 
                     $domain = parse_url($r['url'], PHP_URL_HOST);
-                    if (!$domain)
-                        continue;
+                    if (!$domain) continue;
+                    $domain = strtolower(preg_replace('/^www\./', '', $domain));
 
-                    // Domain zaten varsa atla
-                    if (in_array($domain, $existingDomains))
-                        continue;
+                    // Skip duplicates
+                    if (in_array($domain, $existingDomains)) continue;
 
-                    // Trafik kontrolü
-                    $trafficUrl = "$serverUrl?type=traffic&url=" . urlencode($r['url']);
-                    $trafficCh = curl_init();
-                    curl_setopt($trafficCh, CURLOPT_URL, $trafficUrl);
-                    curl_setopt($trafficCh, CURLOPT_RETURNTRANSFER, true);
-                    curl_setopt($trafficCh, CURLOPT_TIMEOUT, 30);
-                    $trafficResponse = curl_exec($trafficCh);
-                    curl_close($trafficCh);
+                    // Traffic check
+                    $trafficUrl = SERVER_URL . "?type=traffic&domain=" . urlencode($domain);
+                    $ch = curl_init();
+                    curl_setopt($ch, CURLOPT_URL, $trafficUrl);
+                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                    curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+                    $trafficResponse = curl_exec($ch);
+                    curl_close($ch);
 
                     $traffic = json_decode($trafficResponse, true);
 
-                    if ($traffic && isset($traffic['viable']) && $traffic['viable']) {
-                        // Site uygun - veritabanına ekle (gerçek Firebase)
-                        writeLog("Eklendi: $domain (Trafik: " . ($traffic['label'] ?? 'bilinmiyor') . ")", "SUCCESS");
-                        $foundViableCount++;
-                        $existingDomains[] = $domain;
+                    if ($traffic && isset($traffic['success']) && $traffic['success'] && isset($traffic['value']) && $traffic['value'] > 20000) {
+                        // Email discovery
+                        $emailUrl = SERVER_URL . "?type=email&domain=" . urlencode($domain);
+                        $ch = curl_init();
+                        curl_setopt($ch, CURLOPT_URL, $emailUrl);
+                        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+                        $emailResponse = curl_exec($ch);
+                        curl_close($ch);
 
-                    // Burada gerçek Firebase'e yazma kodu olacak
-                    // firebase::firestore->collection('leads')->add([...])
+                        $emailData = json_decode($emailResponse, true);
+                        $foundEmail = '';
+                        if ($emailData && $emailData['success'] && !empty($emailData['emails'])) {
+                            $foundEmail = implode(', ', $emailData['emails']);
+                        }
+
+                        // Determine initial status
+                        $statusKey = $foundEmail ? 'READY_TO_SEND' : 'NEW';
+                        $statusLabel = $foundEmail ? 'Ready to Send' : 'New';
+
+                        // Add to Firestore
+                        $newLead = [
+                            'url' => 'https://' . $domain,
+                            'email' => $foundEmail,
+                            'statusKey' => $statusKey,
+                            'statusLabel' => $statusLabel,
+                            'stage' => 0,
+                            'language' => 'TR',
+                            'trafficStatus' => [
+                                'viable' => true,
+                                'value' => (int)($traffic['value'] ?? 0),
+                                'label' => $traffic['label'] ?? 'Bilinmiyor'
+                            ],
+                            'addedDate' => date('c'),
+                            'addedBy' => 'auto-hunter',
+                            'autoFollowupEnabled' => false,
+                            'activityLog' => [[
+                                'date' => date('c'),
+                                'type' => 'SYSTEM',
+                                'content' => 'Otomatik Hunter tarafından eklendi (Trafik: ' . ($traffic['label'] ?? '?') . ')'
+                            ]]
+                        ];
+
+                        $addResult = addFirestoreLead($accessToken, $projectId, $newLead);
+
+                        if ($addResult) {
+                            $foundViableCount++;
+                            $addedCount++;
+                            $existingDomains[] = $domain;
+                            $emailNote = $foundEmail ? " | Email: $foundEmail" : " | Email: Bulunamadı";
+                            writeLog("✅ Eklendi [$addedCount]: $domain (Trafik: " . ($traffic['label'] ?? '?') . "$emailNote)", "SUCCESS");
+                        } else {
+                            writeLog("❌ Firebase yazma hatası: $domain", "ERROR");
+                        }
                     }
 
-                    // Rate limiting
-                    usleep(500000); // 0.5 saniye bekle
+                    usleep(500000); // 0.5s rate limit
                 }
+            } else {
+                writeLog("Sonuç bulunamadı: $query", "WARN");
             }
 
-            // Her arama arasında bekle
-            sleep(1);
+            sleep(1); // Between searches
         }
 
-        // İlçe index güncelle
-        $lastIndex = ($lastIndex + 1) % count($ilceList);
+        // Update index
+        $lastIlceIndex = ($lastIlceIndex + 1) % count($ilceList);
     }
 
-    // 6. Son durumu kaydet
-    $settings['lastHunterIlceIndex'] = $lastIndex;
-    $settings['lastHunterRunDate'] = date('c');
-    saveFirebaseData('system', 'config', $settings);
+    // 6. Save state
+    updateFirestoreSettings($accessToken, $projectId, [
+        'lastHunterIlceIndex' => $lastIlceIndex,
+        'lastHunterRunDate' => date('c')
+    ]);
 
-    writeLog("Tarama tamamlandı. Bulunan: $foundViableCount site", "INFO");
-    writeLog("Sonraki ilçe index: $lastIndex", "INFO");
+    writeLog("Tarama tamamlandı. Bulunan: $foundViableCount | Eklenen: $addedCount | Toplam Arama: $totalSearches", "INFO");
+    echo "\nSUCCESS: Tarama tamamlandı. $addedCount site eklendi.\n";
 
-    echo "SUCCESS: Tarama tamamlandı. $foundViableCount site bulundu.\n";
-
-
-}
-catch (Exception $e) {
+} catch (Exception $e) {
     writeLog("HATA: " . $e->getMessage(), "ERROR");
     echo "ERROR: " . $e->getMessage() . "\n";
 }

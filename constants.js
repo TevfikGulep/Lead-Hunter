@@ -35,7 +35,78 @@ window.LEAD_STATUSES = {
     MAIL_ERROR: { label: 'Error in mail', color: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
     NOT_VIABLE: { label: 'Not viable', color: 'bg-gray-200 text-gray-500 border-gray-300 decoration-line-through' },
     NOT_POSSIBLE: { label: 'Not Possible', color: 'bg-gray-300 text-gray-600 border-gray-400 decoration-line-through font-medium' },
-    NON_RESPONSIVE: { label: 'Non Responsive', color: 'bg-orange-50 text-orange-700 border-orange-200' }
+    NON_RESPONSIVE: { label: 'Non Responsive', color: 'bg-orange-50 text-orange-700 border-orange-200' },
+    READY_TO_SEND: { label: 'Ready to Send', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+    NEEDS_REVIEW: { label: 'Needs Review', color: 'bg-amber-50 text-amber-700 border-amber-200' },
+    FOLLOW_LATER: { label: 'Follow Later', color: 'bg-cyan-50 text-cyan-700 border-cyan-200' }
+};
+
+// Lead Skorlama Konfigürasyonu
+window.LEAD_SCORE_CONFIG = {
+    traffic: {
+        weight: 40,
+        tiers: [
+            { min: 500000, score: 40 },
+            { min: 100000, score: 30 },
+            { min: 50000, score: 20 },
+            { min: 20000, score: 10 },
+            { min: 0, score: 0 }
+        ]
+    },
+    emailQuality: {
+        weight: 20,
+        personal: 20,    // firstname@, name.surname@
+        role: 15,         // editor@, reklam@, advertising@
+        generic: 10,      // info@, contact@, iletisim@
+        noEmail: 0
+    },
+    engagement: {
+        weight: 20,
+        replied: 20,
+        opened: 10,
+        sent: 5,
+        noContact: 0,
+        bounced: -20
+    },
+    freshness: {
+        weight: 20,
+        maxDaysForFullScore: 7,
+        decayPerWeek: 5
+    }
+};
+
+// Pipeline Otomasyonu Durumları (statusKey flow)
+window.PIPELINE_FLOW = {
+    'NEW': { next: 'READY_TO_SEND', action: 'enrich', description: 'Yeni lead - zenginleştirme bekliyor' },
+    'READY_TO_SEND': { next: 'NO_REPLY', action: 'first_contact', description: 'Zenginleştirildi - ilk mail bekliyor' },
+    'NO_REPLY': { next: null, action: 'followup', description: 'Mail gönderildi - takip devam ediyor' },
+    'INTERESTED': { next: null, action: 'notify', description: 'İlgilendi - manuel aksiyon gerekli' },
+    'ASKED_MORE': { next: null, action: 'auto_reply', description: 'Bilgi istedi - detay maili gönderilecek' },
+    'NEEDS_REVIEW': { next: null, action: 'manual', description: 'Manuel inceleme gerekli' },
+    'FOLLOW_LATER': { next: 'READY_TO_SEND', action: 'schedule', description: 'İleride takip edilecek' }
+};
+
+// Otomatik Cevap Şablonları (Bilgi Talebi Yanıtları)
+window.DEFAULT_INFO_RESPONSE_TR = {
+    label: 'Bilgi Yanıtı',
+    subject: 'Re: {{Website}} Reklam Partnerlik Hk.',
+    body: `Merhabalar,\n\nİlginiz için çok teşekkür ederim! Size kısaca bilgi vermek isterim:\n\n• Google Certified Publisher Partner olarak, mevcut reklam düzeninize dokunmadan üzerine ek bir gelir katmanı ekliyoruz.\n• Ortalama %20-40 arası gelir artışı sağlıyoruz.\n• Entegrasyon süreci sadece birkaç dakika sürüyor.\n• Herhangi bir ücret veya taahhüt söz konusu değil.\n\nSize özel hazırlanmış bir gelir analizi raporu paylaşmak ve detayları konuşmak için kısa bir görüşme ayarlayabilir miyiz?\n\nSaygılarımla,`
+};
+
+window.DEFAULT_INFO_RESPONSE_EN = {
+    label: 'Info Response',
+    subject: 'Re: Partnership Opportunity for {{Website}}',
+    body: `Hello,\n\nThank you for your interest! Let me share some quick details:\n\n• As a Google Certified Publisher Partner, we add an extra revenue layer on top of your existing ad setup without touching anything.\n• We typically achieve a 20-40% revenue increase.\n• Integration takes just a few minutes.\n• There are no fees or commitments involved.\n\nWould you like to schedule a quick call so I can share a customized revenue analysis for your site?\n\nBest regards,`
+};
+
+// Bildirim Olay Türleri
+window.NOTIFICATION_EVENTS = {
+    NEW_REPLY: { label: 'Yeni Cevap', priority: 'high', icon: 'mail' },
+    DEAL_ON: { label: 'Deal Kapandı', priority: 'high', icon: 'check-circle' },
+    DEAL_OFF: { label: 'Deal Kaybedildi', priority: 'medium', icon: 'x-circle' },
+    BOUNCE: { label: 'Mail Hata', priority: 'low', icon: 'alert-triangle' },
+    PIPELINE_COMPLETE: { label: 'Pipeline Tamamlandı', priority: 'low', icon: 'activity' },
+    WEEKLY_SUMMARY: { label: 'Haftalık Özet', priority: 'medium', icon: 'bar-chart' }
 };
 
 // Varsayılan İş Akışları (TR)
