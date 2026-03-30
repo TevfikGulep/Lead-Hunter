@@ -7,7 +7,6 @@ window.SettingsTab = ({
     showSignatureHtml,
     setShowSignatureHtml,
     fixHtmlCode,
-    fixAllTrafficData,
     activeTemplateLang,
     setActiveTemplateLang,
     activeTemplateIndex,
@@ -98,18 +97,6 @@ window.SettingsTab = ({
                         </div>
                     </div>
 
-                    {/* --- MAINTENANCE TOOLS SECTION --- */}
-                    <div className="pt-4 border-t space-y-2">
-                        <h4 className="text-xs font-bold text-slate-700 mb-2 flex items-center gap-2"><window.Icon name="wrench" className="w-3 h-3" /> Veritabanı Bakım Araçları</h4>
-
-                        <button
-                            onClick={fixAllTrafficData}
-                            className="w-full text-left px-3 py-2 bg-slate-50 hover:bg-indigo-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-600 hover:text-indigo-700 transition-colors flex items-center gap-2"
-                        >
-                            <window.Icon name="bar-chart-2" className="w-4 h-4 text-indigo-500" />
-                            Trafik Verilerini Sayısala Çevir & Düzelt (Örn: 150k &rarr; 150000)
-                        </button>
-                    </div>
                 </div>
             </div>
 
@@ -242,18 +229,6 @@ window.SettingsTab = ({
                 </p>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <label className="block text-xs font-bold text-slate-500 mb-1">DuckDuckGo API Key (İsteğe Bağlı)</label>
-                        <input
-                            type="text"
-                            value={settings.duckDuckGoApiKey || ''}
-                            onChange={e => handleSettingChange('duckDuckGoApiKey', e.target.value)}
-                            className="w-full p-2 border rounded text-sm"
-                            placeholder="İleride kullanılacak (şimdilik boş bırakın)"
-                        />
-                        <p className="text-[10px] text-slate-400 mt-1">DuckDuckGo'nun ücretsiz API'si yoktur. Şimdilik HTML scraping kullanılıyor.</p>
-                    </div>
-
                     <div>
                         <label className="block text-xs font-bold text-slate-500 mb-1">Haftalık Hedef (Site Sayısı)</label>
                         <input

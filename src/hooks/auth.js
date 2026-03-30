@@ -19,15 +19,14 @@ window.useLeadHunterAuth = () => {
         : '';
 
     const [settings, setSettings] = useState({
-        googleApiKey: '', searchEngineId: '', geminiApiKey: '',
-        googleScriptUrl: '', signature: '', followUpDays: 7,
+        googleApiKey: '', searchEngineId: '',
+        googleScriptUrl: '', signature: '', webhookUrl: '', followUpDays: 7,
         firebaseConfig: defaultFirebaseConfig,
         workflowTR: window.DEFAULT_WORKFLOW_TR,
         workflowEN: window.DEFAULT_WORKFLOW_EN,
         promotionTemplateTR: window.DEFAULT_PROMOTION_TEMPLATE_TR,
         promotionTemplateEN: window.DEFAULT_PROMOTION_TEMPLATE_EN,
         // Site Avcısı Otomasyon Ayarları
-        duckDuckGoApiKey: '',
         ilceListesi: '',
         autoHunterEnabled: false,
         hunterTargetCount: 100,
@@ -116,10 +115,9 @@ window.useLeadHunterAuth = () => {
                             googleApiKey: cloudData.googleApiKey || prev.googleApiKey,
                             searchEngineId: cloudData.searchEngineId || prev.searchEngineId,
                             googleScriptUrl: cloudData.googleScriptUrl || prev.googleScriptUrl,
-                            geminiApiKey: cloudData.geminiApiKey || prev.geminiApiKey,
                             signature: cloudData.signature || prev.signature,
+                            webhookUrl: cloudData.webhookUrl || prev.webhookUrl,
                             // Site Avcısı Otomasyon
-                            duckDuckGoApiKey: cloudData.duckDuckGoApiKey || prev.duckDuckGoApiKey,
                             ilceListesi: cloudData.ilceListesi || prev.ilceListesi,
                             autoHunterEnabled: cloudData.autoHunterEnabled || prev.autoHunterEnabled,
                             hunterTargetCount: cloudData.hunterTargetCount || prev.hunterTargetCount,
@@ -165,10 +163,9 @@ window.useLeadHunterAuth = () => {
                 googleApiKey: settings.googleApiKey,
                 searchEngineId: settings.searchEngineId,
                 googleScriptUrl: settings.googleScriptUrl,
-                geminiApiKey: settings.geminiApiKey,
                 signature: settings.signature,
+                webhookUrl: settings.webhookUrl,
                 // Site Avcısı Otomasyon
-                duckDuckGoApiKey: settings.duckDuckGoApiKey,
                 ilceListesi: settings.ilceListesi,
                 autoHunterEnabled: settings.autoHunterEnabled,
                 hunterTargetCount: settings.hunterTargetCount,

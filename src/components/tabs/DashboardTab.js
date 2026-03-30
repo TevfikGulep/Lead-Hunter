@@ -42,73 +42,15 @@ const KpiCard = ({ value, label, borderColor, icon, trend }) => (
     </div>
 );
 
-// --- Lead Skor Hesaplama (LEAD_SCORE_CONFIG kullanarak) ---
-const computeLeadScore = (lead) => {
-    const config = window.LEAD_SCORE_CONFIG;
-    if (!config) return 50;
-    let score = 0;
-
-    // Traffic
-    if (config.traffic && lead.trafficStatus) {
-        const monthlyVisits = lead.trafficStatus.monthlyVisits || 0;
-        const tier = config.traffic.tiers.find(t => monthlyVisits >= t.min);
-        score += tier ? tier.score : 0;
-    }
-
-    // Email Quality
-    if (config.emailQuality && lead.email) {
-        const email = lead.email.toLowerCase();
-        const genericPrefixes = ['info@', 'contact@', 'iletisim@', 'hello@', 'destek@', 'support@'];
-        const rolePrefixes = ['editor@', 'reklam@', 'advertising@', 'marketing@', 'ads@', 'admin@'];
-        if (genericPrefixes.some(p => email.startsWith(p))) {
-            score += config.emailQuality.generic;
-        } else if (rolePrefixes.some(p => email.startsWith(p))) {
-            score += config.emailQuality.role;
-        } else {
-            score += config.emailQuality.personal;
-        }
-    }
-
-    // Engagement
-    if (config.engagement) {
-        const repliedStatuses = ['ASKED_MORE', 'INTERESTED', 'IN_PROCESS', 'DEAL_ON'];
-        if (repliedStatuses.includes(lead.statusKey)) {
-            score += config.engagement.replied;
-        } else if (lead.mailOpenedAt) {
-            score += config.engagement.opened;
-        } else if (lead.stage > 0) {
-            score += config.engagement.sent;
-        }
-    }
-
-    // Freshness
-    if (config.freshness && lead.addedDate) {
-        const daysSinceAdded = Math.floor((Date.now() - new Date(lead.addedDate).getTime()) / (1000 * 60 * 60 * 24));
-        if (daysSinceAdded <= config.freshness.maxDaysForFullScore) {
-            score += config.freshness.weight;
-        } else {
-            const weeksOld = Math.floor(daysSinceAdded / 7);
-            score += Math.max(0, config.freshness.weight - (weeksOld * config.freshness.decayPerWeek));
-        }
-    }
-
-    return Math.min(100, Math.max(0, score));
-};
-
-// Harici calculateLeadScore fonksiyonu varsa onu kullan, yoksa yerel hesaplama
-const getLeadScore = (lead) => {
-    if (typeof window.calculateLeadScore === 'function') {
-        return window.calculateLeadScore(lead);
-    }
-    return computeLeadScore(lead);
-};
+// --- Lead Skor Hesaplama (helpers.js'deki window.calculateLeadScore kullanılır) ---
+const getLeadScore = (lead) => window.calculateLeadScore(lead);
 
 
 // --- Ana Bileşen ---
 
 window.DashboardTab = ({
     crmData, filters, setFilters, selectedIds, toggleSelection, toggleSelectAll, selectedCount,
-    setShowBulkModal, activeTab, fixAllTrafficData, onBulkCheck, isCheckingBulk, paginatedItems,
+    setShowBulkModal, activeTab, onBulkCheck, isCheckingBulk, paginatedItems,
     currentPage, totalPages, setCurrentPage, totalRecords, setHistoryModalLead, getStageInfo,
     handleSort, sortConfig, onStageChange, workflow, bulkUpdateStatus,
     itemsPerPage, setItemsPerPage, selectAllFiltered, clearSelection, onExport
@@ -518,7 +460,7 @@ window.DashboardTab = ({
             </div>
 
             {/* ===== MEVCUT: FILTER BAR ===== */}
-            <window.FilterBar filters={filters} setFilters={setFilters} selectedCount={selectedCount} selectedIds={selectedIds} setShowBulkModal={setShowBulkModal} activeTab={activeTab} fixAllTrafficData={fixAllTrafficData} onBulkCheck={onBulkCheck} isCheckingBulk={isCheckingBulk} onBulkStatusChange={bulkUpdateStatus} onExport={onExport} />
+            <window.FilterBar filters={filters} setFilters={setFilters} selectedCount={selectedCount} selectedIds={selectedIds} setShowBulkModal={setShowBulkModal} activeTab={activeTab} onBulkCheck={onBulkCheck} isCheckingBulk={isCheckingBulk} onBulkStatusChange={bulkUpdateStatus} onExport={onExport} />
 
             {/* ===== MEVCUT: AKTİF SÜREÇ TABLOSU ===== */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">

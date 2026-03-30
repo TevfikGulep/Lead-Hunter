@@ -78,7 +78,7 @@ const LeadHunter = () => {
                             selectedCount={data.selectedIds.size}
                             setShowBulkModal={services.setShowBulkModal}
                             activeTab={auth.activeTab}
-                            fixAllTrafficData={services.fixAllTrafficData}
+                            
                             onBulkCheck={services.handleBulkReplyCheck}
                             isCheckingBulk={services.isCheckingBulk}
                             paginatedItems={data.getPaginatedData()}
@@ -137,7 +137,7 @@ const LeadHunter = () => {
                             selectedIds={data.selectedIds}
                             setShowBulkModal={services.setShowBulkModal}
                             activeTab={auth.activeTab}
-                            fixAllTrafficData={services.fixAllTrafficData}
+                            
                             onBulkCheck={services.handleBulkReplyCheck}
                             isCheckingBulk={services.isCheckingBulk}
                             paginatedItems={data.getPaginatedData()}
@@ -183,7 +183,7 @@ const LeadHunter = () => {
                             showSignatureHtml={auth.showSignatureHtml}
                             setShowSignatureHtml={auth.setShowSignatureHtml}
                             fixHtmlCode={auth.fixHtmlCode}
-                            fixAllTrafficData={services.fixAllTrafficData}
+                            
                             activeTemplateLang={auth.activeTemplateLang}
                             setActiveTemplateLang={auth.setActiveTemplateLang}
                             activeTemplateIndex={auth.activeTemplateIndex}

@@ -2,7 +2,7 @@
 // GÜNCELLEME: "İsim" (contactName) sütunu, Sıralama özellikleri ve Rapor Export entegre edildi.
 
 window.CrmTab = ({
-    crmData, filters, setFilters, selectedIds, setShowBulkModal, activeTab, fixAllTrafficData, onBulkCheck, isCheckingBulk,
+    crmData, filters, setFilters, selectedIds, setShowBulkModal, activeTab, onBulkCheck, isCheckingBulk,
     paginatedItems, selectedCount, toggleSelectAll, toggleSelection, handleSort, sortConfig,
     editingRowId, editFormData, handleEditChange, handleEditSave, handleEditCancel, handleEditClick,
     setHistoryModalLead, openMailModal, openPromotionModal, currentPage, totalPages, setCurrentPage, totalRecords, emailMap, getStageInfo,
@@ -47,7 +47,7 @@ window.CrmTab = ({
                         </div>
                     </div>
                 </div>
-                <window.FilterBar filters={filters} setFilters={setFilters} selectedCount={selectedCount} selectedIds={selectedIds} setShowBulkModal={setShowBulkModal} activeTab={activeTab} fixAllTrafficData={fixAllTrafficData} onBulkCheck={onBulkCheck} isCheckingBulk={isCheckingBulk} onBulkStatusChange={bulkUpdateStatus} onExport={onExport} startAutoFollowup={startAutoFollowup} stopAutoFollowup={stopAutoFollowup} />
+                <window.FilterBar filters={filters} setFilters={setFilters} selectedCount={selectedCount} selectedIds={selectedIds} setShowBulkModal={setShowBulkModal} activeTab={activeTab} onBulkCheck={onBulkCheck} isCheckingBulk={isCheckingBulk} onBulkStatusChange={bulkUpdateStatus} onExport={onExport} startAutoFollowup={startAutoFollowup} stopAutoFollowup={stopAutoFollowup} />
             </div>
 
             <div className="overflow-x-auto">

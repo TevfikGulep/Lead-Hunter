@@ -10,7 +10,6 @@ window.FilterBar = ({
     selectedIds,
     setShowBulkModal,
     activeTab,
-    fixAllTrafficData,
     onBulkCheck,
     isCheckingBulk,
     onBulkStatusChange,
@@ -136,8 +135,5 @@ window.FilterBar = ({
             )}
         </div>
 
-        {activeTab === 'crm' && (
-            <button onClick={fixAllTrafficData} className="p-2 bg-slate-100 text-slate-500 hover:text-indigo-600 rounded-lg ml-2" title="Trafik Verilerini Düzelt"><window.Icon name="wrench" className="w-4 h-4" /></button>
-        )}
     </div>
 );

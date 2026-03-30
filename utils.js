@@ -51,29 +51,6 @@ window.parseCSV = (text) => {
     });
 };
 
-window.mapCsvStatusToKey = (csvStatus) => {
-    const normalized = csvStatus?.trim().toLowerCase();
-    if (normalized === 'not possible' || normalized === 'notpossible') return 'NOT_POSSIBLE';
-    if (normalized === 'not viable' || normalized === 'notviable' || normalized === 'not found') return 'NOT_VIABLE';
-    for (const [key, val] of Object.entries(window.LEAD_STATUSES)) {
-        if (val.label.toLowerCase() === normalized) return key;
-    }
-    return 'NEW';
-};
-
-window.parseDate = (dateStr) => {
-    if (!dateStr) return null;
-    try {
-        const cleanStr = dateStr.trim().replace(/"/g, '');
-        if(!cleanStr) return null;
-        const parts = cleanStr.split('/');
-        if (parts.length === 3) { return new Date(`${parts[2]}-${parts[1]}-${parts[0]}`).toISOString(); }
-        const d = new Date(cleanStr);
-        if (!isNaN(d.getTime())) return d.toISOString();
-        return null;
-    } catch (e) { return null; }
-};
-
 window.getLastInteractionDate = (item) => {
     const dates = [
         item.lastContactDate,
@@ -88,17 +65,7 @@ window.getLastInteractionDate = (item) => {
     return new Date(Math.max(...dates)).toISOString();
 };
 
-window.formatPotential = (val) => {
-    if (val === undefined || val === null || val === '') return '-';
-    if (typeof val === 'object') return '-';
-    const str = String(val);
-    return str.toLowerCase().includes('k') ? str : `${str}k`;
-};
-
 // --- CHECKERS ---
-window.checkRealAdSenseOnSite = async (url) => {
-    return { found: true, source: 'simulated' }; 
-};
 
 // SERVER-SIDE PHP API KULLANAN YENİ CHECKTRAFFIC
 window.checkTraffic = async (siteUrl) => {

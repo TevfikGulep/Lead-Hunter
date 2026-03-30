@@ -687,13 +687,6 @@ window.useLeadHunterServices = (
         if (count > 0) { await batch.commit(); setLeads(prev => prev.filter(l => !selectedIds.has(l.id))); setSelectedIds(new Set()); alert(`${count} site eklendi.`); }
     };
 
-    const fixAllTrafficData = async () => {
-        if (!isDbConnected) return alert("Veritabanı bağlı değil."); if (!confirm("Trafik verileri düzeltilecek. Onay?")) return;
-        const batch = dbInstance.batch(); let count = 0;
-        crmData.forEach(lead => { if (lead.trafficStatus && lead.trafficStatus.label && (lead.trafficStatus.value === undefined || lead.trafficStatus.value === 0)) { const parsedValue = window.parseTrafficToNumber(lead.trafficStatus.label); batch.update(dbInstance.collection("leads").doc(lead.id), { trafficStatus: { ...lead.trafficStatus, value: parsedValue } }); count++; } });
-        if (count > 0) { await batch.commit(); alert(`${count} kayıt güncellendi!`); } else { alert("Düzeltilecek kayıt yok."); }
-    };
-
         const enrichDatabase = async (mode = 'BOTH') => {
         const negativeStatuses = ['NOT_VIABLE', 'DENIED', 'DEAL_OFF', 'NON_RESPONSIVE'];
         // MAIL_ERROR is intentionally NOT in negativeStatuses - these leads get re-enriched with new email
@@ -1365,7 +1358,7 @@ window.useLeadHunterServices = (
 
     // --- FINAL CHECK ---
     const servicesObj = {
-        selectedLead, setSelectedLead, isSending, openMailModal, openPromotionModal, handleSendMail, showBulkModal, setShowBulkModal, isBulkSending, bulkProgress, bulkConfig, setBulkConfig, executeBulkSend, executeBulkPromotion, isCheckingBulk, handleBulkReplyCheck, bulkUpdateStatus, bulkAddNotViable, isEnriching, showEnrichModal, setShowEnrichModal, enrichLogs, enrichProgress, enrichDatabase, isScanning, keywords, setKeywords, searchDepth, setSearchDepth, hunterLogs, hunterProgress, hunterLogsEndRef, startScan, stopScan, fixAllTrafficData, handleExportData, fixEncodedNames, startAutoFollowup, stopAutoFollowup, runAutoHunterScan, stopAutoHunterScan, isHunterRunning
+        selectedLead, setSelectedLead, isSending, openMailModal, openPromotionModal, handleSendMail, showBulkModal, setShowBulkModal, isBulkSending, bulkProgress, bulkConfig, setBulkConfig, executeBulkSend, executeBulkPromotion, isCheckingBulk, handleBulkReplyCheck, bulkUpdateStatus, bulkAddNotViable, isEnriching, showEnrichModal, setShowEnrichModal, enrichLogs, enrichProgress, enrichDatabase, isScanning, keywords, setKeywords, searchDepth, setSearchDepth, hunterLogs, hunterProgress, hunterLogsEndRef, startScan, stopScan, handleExportData, fixEncodedNames, startAutoFollowup, stopAutoFollowup, runAutoHunterScan, stopAutoHunterScan, isHunterRunning
     };
 
     return servicesObj;
