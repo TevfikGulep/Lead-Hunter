@@ -88,6 +88,9 @@ window.CrmTab = ({
                             <th className="p-4 cursor-pointer hover:text-indigo-600 transition-colors select-none" onClick={() => handleSort('potential')}>
                                 <div className="flex items-center gap-1">Potansiyel <window.SortIcon column="potential" sortConfig={sortConfig} /></div>
                             </th>
+                            <th className="p-4 cursor-pointer hover:text-indigo-600 transition-colors select-none" onClick={() => handleSort('leadScore')}>
+                                <div className="flex items-center gap-1">Skor <window.SortIcon column="leadScore" sortConfig={sortConfig} /></div>
+                            </th>
                             <th className="p-4">Notlar</th>
                             <th className="p-4">Dil</th>
                             <th className="p-4 cursor-pointer hover:text-indigo-600 transition-colors select-none" onClick={() => handleSort('statusKey')}>
@@ -156,6 +159,13 @@ window.CrmTab = ({
                                         {editingRowId === item.id ? <input value={editFormData.potential} onChange={e => handleEditChange('potential', e.target.value)} className="w-20 p-1 border rounded" /> : (
                                             item.trafficStatus && item.trafficStatus.label ? <span className={`flex items-center gap-1 ${item.trafficStatus.viable ? 'text-green-600 font-bold' : 'text-slate-400'}`}><window.Icon name={item.trafficStatus.viable ? "trending-up" : "minus"} className="w-3 h-3" /> {item.trafficStatus.label}</span> : <span className="text-slate-300">-</span>
                                         )}
+                                    </td>
+                                    <td className="p-4 text-xs">
+                                        {(() => {
+                                            const score = item.leadScore != null ? item.leadScore : window.calculateLeadScore(item);
+                                            const sl = window.getScoreLabel(score);
+                                            return <span className={`font-bold ${sl.color}`}>{score} <span className="font-normal">({sl.label})</span></span>;
+                                        })()}
                                     </td>
                                     <td className="p-4 text-slate-500 text-xs max-w-[150px] truncate" title={item.notes}>{editingRowId === item.id ? <input value={editFormData.notes} onChange={e => handleEditChange('notes', e.target.value)} className="w-full p-1 border rounded" /> : item.notes || '-'}</td>
                                     <td className="p-4">{editingRowId === item.id ? <select value={editFormData.language} onChange={e => handleEditChange('language', e.target.value)} className="p-1 border rounded"><option value="TR">TR</option><option value="EN">EN</option></select> : <span className={`text-[10px] px-2 py-1 rounded border ${item.language === 'TR' ? 'bg-red-50 border-red-200 text-red-700' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>{item.language || 'TR'}</span>}</td>

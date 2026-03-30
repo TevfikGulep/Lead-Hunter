@@ -173,6 +173,9 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
                 let numA = a.trafficStatus?.value || (a.trafficStatus?.label ? window.parseTrafficToNumber(a.trafficStatus.label) : 0);
                 let numB = b.trafficStatus?.value || (b.trafficStatus?.label ? window.parseTrafficToNumber(b.trafficStatus.label) : 0);
                 valA = numA; valB = numB;
+            } else if (sortConfig.key === 'leadScore') {
+                valA = a.leadScore != null ? a.leadScore : window.calculateLeadScore(a);
+                valB = b.leadScore != null ? b.leadScore : window.calculateLeadScore(b);
             } else if (sortConfig.key === 'statusKey') {
                 valA = window.LEAD_STATUSES[a.statusKey]?.label || a.statusLabel || 'New';
                 valB = window.LEAD_STATUSES[b.statusKey]?.label || b.statusLabel || 'New';
