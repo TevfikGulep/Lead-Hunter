@@ -666,6 +666,46 @@ try {
                         }
                     }
                 }
+
+                // 6. [dot] obfuscation: user[dot]name[at]domain[dot]com
+                $htmlDotDecoded = preg_replace('/\s*[\[\(\{]\s*dot\s*[\]\)\}]\s*/i', '.', $html);
+                if ($htmlDotDecoded !== $html) {
+                    if (preg_match_all('/[a-z0-9._%+-]+\s*[\[\(\{]\s*at\s*[\]\)\}]\s*[a-z0-9.-]+\.[a-z]{2,6}/i', $htmlDotDecoded, $dotAtMatches)) {
+                        foreach ($dotAtMatches[0] as $obf) {
+                            $e = preg_replace('/\s*[\[\(\{]\s*at\s*[\]\)\}]\s*/i', '@', strtolower($obf));
+                            if ($isValidEmail($e) && !in_array($e, $emails)) $emails[] = strtolower(trim($e));
+                        }
+                    }
+                    if (preg_match_all('/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,10}/i', $htmlDotDecoded, $dotEmailMatches)) {
+                        foreach ($dotEmailMatches[0] as $e) {
+                            if ($isValidEmail($e) && !in_array(strtolower($e), $emails)) $emails[] = strtolower(trim($e));
+                        }
+                    }
+                }
+
+                // 7. HTML entity encoded @ sign: user&#64;domain.com or user&#x40;domain.com
+                $htmlEntityDecoded = preg_replace_callback('/&#(x[0-9a-f]+|\d+);/i', function($m) {
+                    $c = $m[1];
+                    return chr(strtolower($c[0]) === 'x' ? hexdec(substr($c, 1)) : (int)$c);
+                }, $html);
+                if ($htmlEntityDecoded !== $html && preg_match_all('/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,10}/i', $htmlEntityDecoded, $entityMatches)) {
+                    foreach ($entityMatches[0] as $e) {
+                        $e = strtolower(trim($e));
+                        if ($isValidEmail($e) && !in_array($e, $emails)) $emails[] = $e;
+                    }
+                }
+
+                // 8. JSON-LD structured data: "email": "user@domain.com"
+                if (preg_match_all('/<script[^>]+type=["\']application\/ld\+json["\'][^>]*>(.*?)<\/script>/si', $html, $jsonLdBlocks)) {
+                    foreach ($jsonLdBlocks[1] as $jsonBlock) {
+                        if (preg_match_all('/"(?:email|contactEmail)"\s*:\s*"([^"@\s]+@[^"@\s]+)"/i', $jsonBlock, $ldEmailMatches)) {
+                            foreach ($ldEmailMatches[1] as $ldEmail) {
+                                $ldEmail = strtolower(trim($ldEmail));
+                                if ($isValidEmail($ldEmail) && !in_array($ldEmail, $emails)) $emails[] = $ldEmail;
+                            }
+                        }
+                    }
+                }
             }
             return $html;
         };
@@ -953,12 +993,60 @@ try {
                         }
                     }
                 }
+
+                // 6. [dot] obfuscation: user[dot]name[at]domain[dot]com
+                $htmlDotDecoded = preg_replace('/\s*[\[\(\{]\s*dot\s*[\]\)\}]\s*/i', '.', $html);
+                if ($htmlDotDecoded !== $html) {
+                    if (preg_match_all('/[a-z0-9._%+-]+\s*[\[\(\{]\s*at\s*[\]\)\}]\s*[a-z0-9.-]+\.[a-z]{2,6}/i', $htmlDotDecoded, $dotAtMatches)) {
+                        foreach ($dotAtMatches[0] as $obf) {
+                            $e = preg_replace('/\s*[\[\(\{]\s*at\s*[\]\)\}]\s*/i', '@', strtolower($obf));
+                            if ($isValidEmail($e) && !in_array($e, $emails)) $emails[] = strtolower(trim($e));
+                        }
+                    }
+                    if (preg_match_all('/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,10}/i', $htmlDotDecoded, $dotEmailMatches)) {
+                        foreach ($dotEmailMatches[0] as $e) {
+                            if ($isValidEmail($e) && !in_array(strtolower($e), $emails)) $emails[] = strtolower(trim($e));
+                        }
+                    }
+                }
+
+                // 7. HTML entity encoded @ sign: user&#64;domain.com or user&#x40;domain.com
+                $htmlEntityDecoded = preg_replace_callback('/&#(x[0-9a-f]+|\d+);/i', function($m) {
+                    $c = $m[1];
+                    return chr(strtolower($c[0]) === 'x' ? hexdec(substr($c, 1)) : (int)$c);
+                }, $html);
+                if ($htmlEntityDecoded !== $html && preg_match_all('/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,10}/i', $htmlEntityDecoded, $entityMatches)) {
+                    foreach ($entityMatches[0] as $e) {
+                        $e = strtolower(trim($e));
+                        if ($isValidEmail($e) && !in_array($e, $emails)) $emails[] = $e;
+                    }
+                }
+
+                // 8. JSON-LD structured data: "email": "user@domain.com"
+                if (preg_match_all('/<script[^>]+type=["\']application\/ld\+json["\'][^>]*>(.*?)<\/script>/si', $html, $jsonLdBlocks)) {
+                    foreach ($jsonLdBlocks[1] as $jsonBlock) {
+                        if (preg_match_all('/"(?:email|contactEmail)"\s*:\s*"([^"@\s]+@[^"@\s]+)"/i', $jsonBlock, $ldEmailMatches)) {
+                            foreach ($ldEmailMatches[1] as $ldEmail) {
+                                $ldEmail = strtolower(trim($ldEmail));
+                                if ($isValidEmail($ldEmail) && !in_array($ldEmail, $emails)) $emails[] = $ldEmail;
+                            }
+                        }
+                    }
+                }
             }
             return $html;
         };
 
         // 1. Scan Homepage
         $homeHtml = $fetchAndExtract($baseUrl);
+
+        // 1b. www subdomain fallback if homepage returned nothing
+        if (!$homeHtml && strpos($baseUrl, '://www.') === false) {
+            $wwwUrl = 'https://www.' . $domain;
+            addLog("Deep scan: trying www subdomain: $wwwUrl");
+            $homeHtml = $fetchAndExtract($wwwUrl);
+            if ($homeHtml) $baseUrl = $wwwUrl;
+        }
 
         // 2. Collect internal links from homepage
         $internalLinks = [];
@@ -1066,6 +1154,20 @@ try {
         $urlsToScan = array_merge($priorityLinks, $sitemapPages, $otherLinks);
         // Deduplicate
         $urlsToScan = array_values(array_unique($urlsToScan));
+
+        // Guess common contact page paths not found via crawling (prepend to front)
+        $contactGuesses = ['/iletisim', '/contact', '/contact-us', '/hakkimizda', '/about', '/about-us', '/bize-ulasin', '/impressum', '/kontakt', '/contacto', '/ueber-uns', '/ekip', '/team'];
+        $guessedUrls = [];
+        foreach ($contactGuesses as $path) {
+            $guessUrl = rtrim($baseUrl, '/') . $path;
+            if (!in_array($guessUrl, $urlsToScan) && !in_array($guessUrl, $scannedPages)) {
+                $guessedUrls[] = $guessUrl;
+            }
+        }
+        if (!empty($guessedUrls)) {
+            $urlsToScan = array_merge($guessedUrls, $urlsToScan);
+            addLog("Deep scan: added " . count($guessedUrls) . " guessed contact page paths");
+        }
 
         // Deep scan: up to 50 subpages
         $scanLimit = 50;
