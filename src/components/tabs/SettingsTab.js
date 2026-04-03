@@ -19,6 +19,16 @@ window.SettingsTab = ({
     stopAutoHunterScan,
     isHunterRunning
 }) => {
+    const [ilceSaved, setIlceSaved] = React.useState(false);
+
+    const handleSaveIlceIndex = async () => {
+        const ok = await saveSettingsToCloud({ lastHunterIlceIndex: settings.lastHunterIlceIndex });
+        if (ok) {
+            setIlceSaved(true);
+            setTimeout(() => setIlceSaved(false), 2500);
+        }
+    };
+
     return (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pb-10">
             {/* API Settings */}
@@ -282,9 +292,9 @@ window.SettingsTab = ({
                                 className="w-16 px-1 py-0.5 border border-slate-300 rounded text-xs text-center"
                             />
                             <button
-                                onClick={() => saveSettingsToCloud({ lastHunterIlceIndex: settings.lastHunterIlceIndex })}
-                                className="text-[10px] px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded font-medium"
-                            >Kaydet</button>
+                                onClick={handleSaveIlceIndex}
+                                className={`text-[10px] px-2 py-0.5 rounded font-medium transition-colors ${ilceSaved ? 'bg-green-500 text-white' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'}`}
+                            >{ilceSaved ? '✓ Kaydedildi' : 'Kaydet'}</button>
                         </div>
                         <button
                             onClick={() => {

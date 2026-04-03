@@ -173,8 +173,9 @@ window.useLeadHunterAuth = () => {
                 lastHunterIlceIndex: data.lastHunterIlceIndex,
                 lastHunterRunDate: data.lastHunterRunDate
             }, { merge: true });
-            alert(!overrides ? "Ayarlar buluta kaydedildi!" : "Kaydedildi!");
-        } catch (e) { alert("Hata: " + e.message); }
+            if (!overrides) alert("Ayarlar buluta kaydedildi!");
+            return true;
+        } catch (e) { alert("Hata: " + e.message); return false; }
     };
 
     const handleSettingChange = (key, value) => setSettings(prev => ({ ...prev, [key]: value }));
