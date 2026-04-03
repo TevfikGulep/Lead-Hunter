@@ -121,8 +121,8 @@ window.useLeadHunterAuth = () => {
                             ilceListesi: cloudData.ilceListesi || prev.ilceListesi,
                             autoHunterEnabled: cloudData.autoHunterEnabled || prev.autoHunterEnabled,
                             hunterTargetCount: cloudData.hunterTargetCount || prev.hunterTargetCount,
-                            lastHunterIlceIndex: cloudData.lastHunterIlceIndex || prev.lastHunterIlceIndex,
-                            lastHunterRunDate: cloudData.lastHunterRunDate || prev.lastHunterRunDate
+                            lastHunterIlceIndex: cloudData.lastHunterIlceIndex != null ? cloudData.lastHunterIlceIndex : prev.lastHunterIlceIndex,
+                            lastHunterRunDate: cloudData.lastHunterRunDate !== undefined ? cloudData.lastHunterRunDate : prev.lastHunterRunDate
                         }));
                     }
                 } catch (error) { console.error("Bulut ayarları hatası:", error); }
@@ -155,28 +155,40 @@ window.useLeadHunterAuth = () => {
         } catch (err) { setLoginError('Giriş Başarısız: ' + err.message); }
     };
 
-    const saveSettingsToCloud = async () => {
+    const saveSettingsToCloud = async (overrides = null) => {
         if (!isDbConnected || !dbInstance) return alert("Veritabanı bağlı değil!");
-        if (!confirm("Ayarlar veritabanına kaydedilecek. Onaylıyor musunuz?")) return;
+        if (!overrides && !confirm("Ayarlar veritabanına kaydedilecek. Onaylıyor musunuz?")) return;
+        const data = overrides ? { ...settings, ...overrides } : settings;
         try {
             await dbInstance.collection('system').doc('config').set({
-                googleApiKey: settings.googleApiKey,
-                searchEngineId: settings.searchEngineId,
-                googleScriptUrl: settings.googleScriptUrl,
-                signature: settings.signature,
-                webhookUrl: settings.webhookUrl,
+                googleApiKey: data.googleApiKey,
+                searchEngineId: data.searchEngineId,
+                googleScriptUrl: data.googleScriptUrl,
+                signature: data.signature,
+                webhookUrl: data.webhookUrl,
                 // Site Avcısı Otomasyon
-                ilceListesi: settings.ilceListesi,
-                autoHunterEnabled: settings.autoHunterEnabled,
-                hunterTargetCount: settings.hunterTargetCount,
-                lastHunterIlceIndex: settings.lastHunterIlceIndex,
-                lastHunterRunDate: settings.lastHunterRunDate
+                ilceListesi: data.ilceListesi,
+                autoHunterEnabled: data.autoHunterEnabled,
+                hunterTargetCount: data.hunterTargetCount,
+                lastHunterIlceIndex: data.lastHunterIlceIndex,
+                lastHunterRunDate: data.lastHunterRunDate
             }, { merge: true });
-            alert("Ayarlar buluta kaydedildi!");
+            if (!overrides) alert("Ayarlar buluta kaydedildi!");
         } catch (e) { alert("Hata: " + e.message); }
     };
 
     const handleSettingChange = (key, value) => setSettings(prev => ({ ...prev, [key]: value }));
+
+    const resetHunterProgress = async () => {
+        if (!isDbConnected || !dbInstance) return alert("Veritabanı bağlı değil!");
+        setSettings(prev => ({ ...prev, lastHunterIlceIndex: 0, lastHunterRunDate: null }));
+        try {
+            await dbInstance.collection('system').doc('config').update({
+                lastHunterIlceIndex: 0,
+                lastHunterRunDate: null
+            });
+        } catch (e) { alert("Sıfırlama hatası: " + e.message); }
+    };
 
     const updateWorkflowStep = (index, field, value) => {
         const k = activeTemplateLang === 'EN' ? 'workflowEN' : 'workflowTR';
@@ -204,7 +216,7 @@ window.useLeadHunterAuth = () => {
         searchLocation, setSearchLocation,
         settings, setSettings,
         dbInstance, isDbConnected,
-        saveSettingsToCloud, handleSettingChange,
+        saveSettingsToCloud, handleSettingChange, resetHunterProgress,
         showSignatureHtml, setShowSignatureHtml, fixHtmlCode,
         activeTemplateIndex, setActiveTemplateIndex,
         activeTemplateLang, setActiveTemplateLang,

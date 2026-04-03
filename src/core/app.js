@@ -180,6 +180,7 @@ const LeadHunter = () => {
                             settings={auth.settings}
                             handleSettingChange={auth.handleSettingChange}
                             saveSettingsToCloud={auth.saveSettingsToCloud}
+                            resetHunterProgress={auth.resetHunterProgress}
                             showSignatureHtml={auth.showSignatureHtml}
                             setShowSignatureHtml={auth.setShowSignatureHtml}
                             fixHtmlCode={auth.fixHtmlCode}

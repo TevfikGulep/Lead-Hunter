@@ -4,6 +4,7 @@ window.SettingsTab = ({
     settings,
     handleSettingChange,
     saveSettingsToCloud,
+    resetHunterProgress,
     showSignatureHtml,
     setShowSignatureHtml,
     fixHtmlCode,
@@ -276,9 +277,7 @@ window.SettingsTab = ({
                         <button 
                             onClick={() => {
                                 if (confirm('İlçe indeksi sıfırlanacak! Tarama en baştan başlayacak. Onaylıyor musunuz?')) {
-                                    handleSettingChange('lastHunterIlceIndex', 0);
-                                    handleSettingChange('lastHunterRunDate', null);
-                                    saveSettingsToCloud();
+                                    resetHunterProgress();
                                 }
                             }}
                             className="mt-2 px-3 py-1 bg-red-100 hover:bg-red-200 text-red-700 rounded text-xs font-bold"
