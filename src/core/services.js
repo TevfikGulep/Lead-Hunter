@@ -1001,6 +1001,7 @@ window.useLeadHunterServices = (
         
         // Fallback search engine system
         let activeSearchEngine = 'google'; // google, bing, duckduckgo
+        let dataForSEOFailed = false;
         let googleFailed = false;
         let bingFailed = false;
         let duckduckgoFailed = false;
@@ -1059,16 +1060,21 @@ window.useLeadHunterServices = (
                 let searchResult = null;
 
                 // PRIMARY: DataForSEO
-                if (!searchResult) {
+                if (!searchResult && !dataForSEOFailed) {
                     console.log(`[AutoHunter] DataForSEO deneniyor: ${query}`);
-                    const dfUrl = `${serverUrl}?type=search_dataforseo&q=${encodeURIComponent(query)}&depth=30&gl=TR`;
+                    const dfUrl = `${serverUrl}?type=search_dataforseo&q=${encodeURIComponent(query)}&depth=10&gl=TR`;
                     try {
                         const response = await fetch(dfUrl);
                         const text = await response.text();
                         let json = JSON.parse(text);
-                        if (json.success && Array.isArray(json.results) && json.results.length > 0) {
+                        if (json.rate_limited) {
+                            console.log(`[AutoHunter] ⚠️ DataForSEO rate limit! Bu oturum için devre dışı bırakıldı.`);
+                            dataForSEOFailed = true;
+                        } else if (json.success && Array.isArray(json.results) && json.results.length > 0) {
                             console.log(`[AutoHunter] ✅ DataForSEO başarılı! ${json.results.length} sonuç`);
                             searchResult = { results: json.results, engine: 'dataforseo' };
+                        } else {
+                            console.log(`[AutoHunter] ⚠️ DataForSEO sonuç yok`);
                         }
                     } catch (e) {
                         console.log(`[AutoHunter] ❌ DataForSEO hata: ${e.message}`);

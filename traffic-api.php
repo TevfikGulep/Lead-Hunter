@@ -321,8 +321,20 @@ try {
 
         $results = [];
         $data = json_decode($jsonResp, true);
+        $dfRateLimited = false;
 
-        if ($data && isset($data['tasks'][0]['result'][0]['items']) && is_array($data['tasks'][0]['result'][0]['items'])) {
+        // Rate limit / hata kodu kontrolü
+        if ($data && isset($data['tasks'][0]['status_code'])) {
+            $dfStatusCode = (int)$data['tasks'][0]['status_code'];
+            if (in_array($dfStatusCode, [40202, 40301, 40302, 20100])) {
+                $dfErrMsg = $data['tasks'][0]['status_message'] ?? 'Rate limit';
+                addLog("DataForSEO RATE LIMIT: status=$dfStatusCode, msg=$dfErrMsg");
+                $response = ['success' => false, 'results' => [], 'error' => 'rate_limited', 'rate_limited' => true, 'status_code' => $dfStatusCode];
+                $dfRateLimited = true;
+            }
+        }
+
+        if (!$dfRateLimited && $data && isset($data['tasks'][0]['result'][0]['items']) && is_array($data['tasks'][0]['result'][0]['items'])) {
             $items = $data['tasks'][0]['result'][0]['items'];
             addLog("DataForSEO: " . count($items) . " items returned");
 
@@ -350,7 +362,7 @@ try {
                 ];
                 addLog("DataForSEO found: $url");
             }
-        } else {
+        } elseif (!$dfRateLimited) {
             $errMsg = 'No results';
             if ($data && isset($data['tasks'][0]['status_message'])) {
                 $errMsg = $data['tasks'][0]['status_message'];
@@ -358,7 +370,9 @@ try {
             addLog("DataForSEO error: $errMsg");
         }
 
-        $response = ['success' => true, 'results' => $results, 'count' => count($results), 'engine' => 'dataforseo'];
+        if (!$dfRateLimited) {
+            $response = ['success' => count($results) > 0, 'results' => $results, 'count' => count($results), 'engine' => 'dataforseo'];
+        }
     }
 
     // === GOOGLE SEARCH (API or Scraping) ===

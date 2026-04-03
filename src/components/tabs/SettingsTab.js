@@ -269,12 +269,24 @@ window.SettingsTab = ({
                     <div>
                         <label className="block text-xs font-bold text-slate-500 mb-1">Son Tarama</label>
                         <div className="p-2 bg-slate-50 rounded text-sm text-slate-600">
-                            {settings.lastHunterRunDate 
+                            {settings.lastHunterRunDate
                                 ? new Date(settings.lastHunterRunDate).toLocaleString('tr-TR')
                                 : 'Henüz çalıştırılmadı'}
                         </div>
-                        <p className="text-[10px] text-slate-400 mt-1">Son çalışılan ilçe: #{settings.lastHunterIlceIndex || 0}</p>
-                        <button 
+                        <div className="flex items-center gap-2 mt-1">
+                            <p className="text-[10px] text-slate-400 whitespace-nowrap">Son çalışılan ilçe #:</p>
+                            <input
+                                type="number" min="0"
+                                value={settings.lastHunterIlceIndex || 0}
+                                onChange={e => handleSettingChange('lastHunterIlceIndex', parseInt(e.target.value) || 0)}
+                                className="w-16 px-1 py-0.5 border border-slate-300 rounded text-xs text-center"
+                            />
+                            <button
+                                onClick={() => saveSettingsToCloud({ lastHunterIlceIndex: settings.lastHunterIlceIndex })}
+                                className="text-[10px] px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded font-medium"
+                            >Kaydet</button>
+                        </div>
+                        <button
                             onClick={() => {
                                 if (confirm('İlçe indeksi sıfırlanacak! Tarama en baştan başlayacak. Onaylıyor musunuz?')) {
                                     resetHunterProgress();
