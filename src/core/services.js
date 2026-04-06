@@ -128,6 +128,7 @@ window.useLeadHunterServices = (
     const [showEnrichModal, setShowEnrichModal] = useState(false);
     const [enrichLogs, setEnrichLogs] = useState([]);
     const [enrichProgress, setEnrichProgress] = useState({ current: 0, total: 0 });
+    const enrichPollRef = useRef(null);
     const [isScanning, setIsScanning] = useState(false);
     const [keywords, setKeywords] = useState('');
     const [searchDepth, setSearchDepth] = useState(30);
@@ -687,42 +688,141 @@ window.useLeadHunterServices = (
         if (count > 0) { await batch.commit(); setLeads(prev => prev.filter(l => !selectedIds.has(l.id))); setSelectedIds(new Set()); alert(`${count} site eklendi.`); }
     };
 
-        const enrichDatabase = async (mode = 'BOTH') => {
-        const negativeStatuses = ['NOT_VIABLE', 'DENIED', 'DEAL_OFF', 'NON_RESPONSIVE'];
-        // MAIL_ERROR is intentionally NOT in negativeStatuses - these leads get re-enriched with new email
-        const targets = crmData.filter(item => { if (negativeStatuses.includes(item.statusKey)) return false; const missingEmail = !item.email || item.email.length < 5 || item.email === '-' || item.statusKey === 'MAIL_ERROR'; const missingTraffic = !item.trafficStatus || !item.trafficStatus.label || ['Bilinmiyor', 'Veri Yok', 'Hata', '-', 'API Ayarı Yok'].includes(item.trafficStatus.label) || !item.trafficStatus.value || item.trafficStatus.value < 100; if (mode === 'EMAIL') return missingEmail; if (mode === 'TRAFFIC') return missingTraffic; return missingEmail || missingTraffic; });
-        if (targets.length === 0) return alert("Seçilen kriterlere uygun eksik veri bulunamadı.");
-        setShowEnrichModal(true); setIsEnriching(true); setEnrichLogs([]); setEnrichProgress({ current: 0, total: targets.length });
-        const addEnrichLog = (msg, type = 'info') => { setEnrichLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), msg: msg, type: type }]); };
-        addEnrichLog(`Toplam ${targets.length} site taranacak...`, 'info');
-        for (let i = 0; i < targets.length; i++) {
-            const lead = targets[i]; let updates = {}; setEnrichProgress(prev => ({ ...prev, current: i + 1 }));
-            const missingEmail = !lead.email || lead.email.length < 5 || lead.statusKey === 'MAIL_ERROR'; const missingTraffic = !lead.trafficStatus || !lead.trafficStatus.label || ['Bilinmiyor', 'Veri Yok', 'Hata', '-', 'API Ayarı Yok'].includes(lead.trafficStatus.label) || !lead.trafficStatus.value || lead.trafficStatus.value < 100;
-            addEnrichLog(`${window.cleanDomain(lead.url)} analizi başlıyor...`, 'info');
-            if ((mode === 'TRAFFIC' || mode === 'BOTH') && missingTraffic) { addEnrichLog(`> Trafik aranıyor...`, 'warning'); try { const t = await window.checkTraffic(lead.url); if (t && t.label !== 'Hata' && t.label !== 'API Ayarı Yok') { updates.trafficStatus = t; addEnrichLog(`> Trafik bulundu: ${t.label}`, 'success'); } else { addEnrichLog(`> Trafik verisi alınamadı (${t.label}).`, 'error'); } } catch (e) { addEnrichLog(`> Trafik API hatası: ${e.message}`, 'error'); } }
-            if ((mode === 'EMAIL' || mode === 'BOTH') && missingEmail) { addEnrichLog(`> Email taranıyor...`, 'warning'); try { const e = await window.findEmailsOnSite(lead.url); if (e) { updates.email = e; addEnrichLog(`> Email bulundu: ${e}`, 'success'); if (lead.statusKey === 'MAIL_ERROR') { updates.statusKey = 'New'; updates.stage = 0; addEnrichLog(`> Durum düzeltildi (New).`, 'success'); } } else { addEnrichLog(`> Email bulunamadı.`, 'error'); } } catch (err) { addEnrichLog(`> Email hatası: ${err.message}`, 'error'); } }
-            if ((mode === 'EMAIL' || mode === 'BOTH') && missingEmail && !updates.email) {
-                addEnrichLog(`> Deep scan deneniyor...`, 'warning');
-                try {
-                    const serverUrl = (window.APP_CONFIG && window.APP_CONFIG.SERVER_API_URL) || '';
-                    const deepResp = await fetch(`${serverUrl}?type=email_deep&domain=${encodeURIComponent(window.cleanDomain(lead.url))}`);
-                    const deepData = await deepResp.json();
-                    if (deepData.success && deepData.emails && deepData.emails.length > 0) {
-                        const deepEmail = deepData.emails.join(', ');
-                        updates.email = deepEmail;
-                        addEnrichLog(`> Deep scan email: ${deepEmail}`, 'success');
-                        if (lead.statusKey === 'MAIL_ERROR') { updates.statusKey = 'New'; updates.stage = 0; }
-                    } else {
-                        addEnrichLog(`> Deep scan: email bulunamadı.`, 'error');
-                    }
-                } catch (deepErr) { addEnrichLog(`> Deep scan hatası: ${deepErr.message}`, 'error'); }
+    // --- ARKA PLAN VERİ ZENGİNLEŞTİRME (Sunucu Tarafında) ---
+    const enrichDatabase = async (mode = 'BOTH') => {
+        const serverUrl = (window.APP_CONFIG && window.APP_CONFIG.SERVER_API_URL) || '';
+        if (!serverUrl) return alert('Sunucu URL tanımlı değil!');
+
+        // Enrich endpoint URL'si (traffic-api.php ile aynı dizinde)
+        const enrichApiUrl = serverUrl.replace('traffic-api.php', 'cron/enrich-background.php');
+
+        setShowEnrichModal(true);
+        setIsEnriching(true);
+        setEnrichLogs([{ time: new Date().toLocaleTimeString(), msg: 'Sunucuya istek gönderiliyor...', type: 'info' }]);
+        setEnrichProgress({ current: 0, total: 0 });
+
+        try {
+            // Sunucuya başlatma isteği gönder
+            const startResp = await fetch(`${enrichApiUrl}?action=start&mode=${mode}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const startResult = await startResp.json();
+
+            if (!startResult.success) {
+                if (startResult.status === 'already_running') {
+                    setEnrichLogs([{ time: new Date().toLocaleTimeString(), msg: 'Bir zenginleştirme işlemi zaten çalışıyor! Durumu takip ediliyor...', type: 'warning' }]);
+                } else {
+                    setEnrichLogs([{ time: new Date().toLocaleTimeString(), msg: 'Hata: ' + startResult.message, type: 'error' }]);
+                    setIsEnriching(false);
+                    return;
+                }
+            } else {
+                setEnrichLogs([{ time: new Date().toLocaleTimeString(), msg: 'İşlem sunucuda başlatıldı! Tarayıcıyı kapatabilirsiniz.', type: 'success' }]);
             }
-            const hasUpdates = Object.keys(updates).length > 0;
-            if (hasUpdates && isDbConnected) { try { await dbInstance.collection("leads").doc(lead.id).update(updates); addEnrichLog(`✓ Veritabanı güncellendi.`, 'success'); setCrmData(prev => prev.map(p => p.id === lead.id ? { ...p, ...updates } : p)); } catch (dbErr) { addEnrichLog(`x DB Yazma Hatası: ${dbErr.message}`, 'error'); } } else { addEnrichLog(`- Güncelleme yapılmadı.`, 'info'); }
-            await new Promise(r => setTimeout(r, 1000));
+
+            // Polling başlat: Sunucudan progress bilgisini her 3 saniyede çek
+            if (enrichPollRef.current) clearInterval(enrichPollRef.current);
+
+            enrichPollRef.current = setInterval(async () => {
+                try {
+                    const statusResp = await fetch(`${enrichApiUrl}?action=status`);
+                    const statusResult = await statusResp.json();
+
+                    if (statusResult.success && statusResult.data) {
+                        const d = statusResult.data;
+
+                        // Progress güncelle
+                        setEnrichProgress({ current: d.current || 0, total: d.total || 0 });
+
+                        // Log'ları güncelle (sunucudan gelen tüm logları yansıt)
+                        if (d.logs && Array.isArray(d.logs)) {
+                            setEnrichLogs(d.logs);
+                        }
+
+                        // İşlem tamamlandı / durduruldu / hata
+                        if (d.status === 'completed' || d.status === 'error') {
+                            clearInterval(enrichPollRef.current);
+                            enrichPollRef.current = null;
+                            setIsEnriching(false);
+
+                            // Firestore'dan güncel verileri tekrar yükle
+                            if (isDbConnected) {
+                                try {
+                                    const snapshot = await dbInstance.collection('leads').get();
+                                    const freshData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                                    setCrmData(freshData);
+                                } catch (e) { console.warn('Veri yenileme hatası:', e); }
+                            }
+                        }
+                    }
+                } catch (pollErr) {
+                    console.warn('Enrich polling hatası:', pollErr);
+                }
+            }, 3000);
+
+        } catch (err) {
+            setEnrichLogs([{ time: new Date().toLocaleTimeString(), msg: 'Sunucu bağlantı hatası: ' + err.message, type: 'error' }]);
+            setIsEnriching(false);
         }
-        addEnrichLog(`Tüm işlemler tamamlandı.`, 'success'); setIsEnriching(false);
     };
+
+    // Arka plan zenginleştirmeyi durdur
+    const stopEnrichBackground = async () => {
+        const serverUrl = (window.APP_CONFIG && window.APP_CONFIG.SERVER_API_URL) || '';
+        const enrichApiUrl = serverUrl.replace('traffic-api.php', 'cron/enrich-background.php');
+        try {
+            await fetch(`${enrichApiUrl}?action=stop`, { method: 'POST' });
+            setEnrichLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), msg: 'Durdurma isteği gönderildi...', type: 'warning' }]);
+        } catch (e) {
+            alert('Durdurma hatası: ' + e.message);
+        }
+    };
+
+    // Sayfa açıldığında devam eden bir arka plan işlemi var mı kontrol et
+    useEffect(() => {
+        const checkRunningEnrichment = async () => {
+            const serverUrl = (window.APP_CONFIG && window.APP_CONFIG.SERVER_API_URL) || '';
+            if (!serverUrl) return;
+            const enrichApiUrl = serverUrl.replace('traffic-api.php', 'cron/enrich-background.php');
+            try {
+                const resp = await fetch(`${enrichApiUrl}?action=status`);
+                const result = await resp.json();
+                if (result.success && result.data && result.data.status === 'running') {
+                    // Devam eden işlem var - modal'ı aç ve polling başlat
+                    setShowEnrichModal(true);
+                    setIsEnriching(true);
+                    setEnrichProgress({ current: result.data.current || 0, total: result.data.total || 0 });
+                    if (result.data.logs) setEnrichLogs(result.data.logs);
+
+                    enrichPollRef.current = setInterval(async () => {
+                        try {
+                            const sr = await fetch(`${enrichApiUrl}?action=status`);
+                            const sd = await sr.json();
+                            if (sd.success && sd.data) {
+                                setEnrichProgress({ current: sd.data.current || 0, total: sd.data.total || 0 });
+                                if (sd.data.logs) setEnrichLogs(sd.data.logs);
+                                if (sd.data.status === 'completed' || sd.data.status === 'error') {
+                                    clearInterval(enrichPollRef.current);
+                                    enrichPollRef.current = null;
+                                    setIsEnriching(false);
+                                    if (isDbConnected) {
+                                        try {
+                                            const snapshot = await dbInstance.collection('leads').get();
+                                            const freshData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                                            setCrmData(freshData);
+                                        } catch (e) { console.warn('Veri yenileme hatası:', e); }
+                                    }
+                                }
+                            }
+                        } catch (e) { console.warn('Enrich resume polling hatası:', e); }
+                    }, 3000);
+                }
+            } catch (e) { /* suskunluk */ }
+        };
+        const t = setTimeout(checkRunningEnrichment, 2000);
+        return () => { clearTimeout(t); if (enrichPollRef.current) clearInterval(enrichPollRef.current); };
+    }, [isDbConnected]);
 
     const startScan = async () => {
         const keywordList = keywords.split(/[\n,]+/).map(k => k.trim()).filter(k => k.length > 0);
@@ -1364,7 +1464,7 @@ window.useLeadHunterServices = (
 
     // --- FINAL CHECK ---
     const servicesObj = {
-        selectedLead, setSelectedLead, isSending, openMailModal, openPromotionModal, handleSendMail, showBulkModal, setShowBulkModal, isBulkSending, bulkProgress, bulkConfig, setBulkConfig, executeBulkSend, executeBulkPromotion, isCheckingBulk, handleBulkReplyCheck, bulkUpdateStatus, bulkAddNotViable, isEnriching, showEnrichModal, setShowEnrichModal, enrichLogs, enrichProgress, enrichDatabase, isScanning, keywords, setKeywords, searchDepth, setSearchDepth, hunterLogs, hunterProgress, hunterLogsEndRef, startScan, stopScan, handleExportData, fixEncodedNames, startAutoFollowup, stopAutoFollowup, runAutoHunterScan, stopAutoHunterScan, isHunterRunning
+        selectedLead, setSelectedLead, isSending, openMailModal, openPromotionModal, handleSendMail, showBulkModal, setShowBulkModal, isBulkSending, bulkProgress, bulkConfig, setBulkConfig, executeBulkSend, executeBulkPromotion, isCheckingBulk, handleBulkReplyCheck, bulkUpdateStatus, bulkAddNotViable, isEnriching, showEnrichModal, setShowEnrichModal, enrichLogs, enrichProgress, enrichDatabase, stopEnrichBackground, isScanning, keywords, setKeywords, searchDepth, setSearchDepth, hunterLogs, hunterProgress, hunterLogsEndRef, startScan, stopScan, handleExportData, fixEncodedNames, startAutoFollowup, stopAutoFollowup, runAutoHunterScan, stopAutoHunterScan, isHunterRunning
     };
 
     return servicesObj;

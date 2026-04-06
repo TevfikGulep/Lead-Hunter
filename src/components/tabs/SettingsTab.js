@@ -19,14 +19,17 @@ window.SettingsTab = ({
     stopAutoHunterScan,
     isHunterRunning
 }) => {
-    const [ilceSaved, setIlceSaved] = React.useState(false);
+    const [saveMsg, setSaveMsg] = React.useState('');
 
     const handleSaveIlceIndex = async () => {
-        const ok = await saveSettingsToCloud({ lastHunterIlceIndex: settings.lastHunterIlceIndex });
-        if (ok) {
-            setIlceSaved(true);
-            setTimeout(() => setIlceSaved(false), 2500);
+        setSaveMsg('...');
+        try {
+            const ok = await saveSettingsToCloud({ lastHunterIlceIndex: settings.lastHunterIlceIndex });
+            setSaveMsg(ok === true ? 'ok' : 'err');
+        } catch (e) {
+            setSaveMsg('err');
         }
+        setTimeout(() => setSaveMsg(''), 3000);
     };
 
     return (
@@ -293,8 +296,8 @@ window.SettingsTab = ({
                             />
                             <button
                                 onClick={handleSaveIlceIndex}
-                                className={`text-[10px] px-2 py-0.5 rounded font-medium transition-colors ${ilceSaved ? 'bg-green-500 text-white' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'}`}
-                            >{ilceSaved ? '✓ Kaydedildi' : 'Kaydet'}</button>
+                                className={`text-[10px] px-2 py-0.5 rounded font-medium transition-colors ${saveMsg === 'ok' ? 'bg-green-500 text-white' : saveMsg === 'err' ? 'bg-red-400 text-white' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'}`}
+                            >{saveMsg === 'ok' ? '✓ Kaydedildi' : saveMsg === 'err' ? '✗ Bağlantı Yok' : saveMsg === '...' ? '...' : 'Kaydet'}</button>
                         </div>
                         <button
                             onClick={() => {
