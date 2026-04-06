@@ -83,11 +83,10 @@ function getFirebaseAccessToken($serviceAccountFile)
     $now = time();
     $payload = base64_encode(json_encode([
         'iss' => $serviceAccount['client_email'],
-        'sub' => $serviceAccount['client_email'],
         'aud' => 'https://oauth2.googleapis.com/token',
         'iat' => $now,
         'exp' => $now + 3600,
-        'scope' => 'https://www.googleapis.com/auth/firestore https://www.googleapis.com/auth/datastore'
+        'scope' => 'https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/cloud-platform'
     ]));
 
     // Private key ile imzala (basit mock - gerçek uygulamada Firebase SDK kullanılmalı)
@@ -114,8 +113,9 @@ function getFirebaseAccessToken($serviceAccountFile)
     curl_close($ch);
 
     $result = json_decode($response, true);
+    if (!$result) return null;
 
-    return $result['access_token'] ?? null;
+    return $result['access_token'] ?? $result['id_token'] ?? null;
 }
 
 // Firestore'dan lead verilerini çek

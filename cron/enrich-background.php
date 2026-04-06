@@ -108,25 +108,46 @@ function base64url_encode($data) {
 }
 
 function getFirebaseAccessToken($serviceAccountFile) {
-    if (!file_exists($serviceAccountFile)) return null;
-    $serviceAccount = json_decode(file_get_contents($serviceAccountFile), true);
+    if (!file_exists($serviceAccountFile)) {
+        writeLog("Service account dosyası bulunamadı: $serviceAccountFile", "ERROR");
+        return null;
+    }
+
+    $fileContent = file_get_contents($serviceAccountFile);
+    if (!$fileContent) {
+        writeLog("Service account dosyası okunamadı", "ERROR");
+        return null;
+    }
+
+    $serviceAccount = json_decode($fileContent, true);
+    if (!$serviceAccount || !isset($serviceAccount['client_email']) || !isset($serviceAccount['private_key'])) {
+        writeLog("Service account JSON parse hatası veya eksik alan", "ERROR");
+        return null;
+    }
+
+    writeLog("Service account OK: " . $serviceAccount['client_email'], "DEBUG");
 
     $header = base64url_encode(json_encode(['typ' => 'JWT', 'alg' => 'RS256']));
     $now = time();
     $payload = base64url_encode(json_encode([
         'iss' => $serviceAccount['client_email'],
-        'sub' => $serviceAccount['client_email'],
         'aud' => 'https://oauth2.googleapis.com/token',
         'iat' => $now,
         'exp' => $now + 3600,
-        'scope' => 'https://www.googleapis.com/auth/firestore https://www.googleapis.com/auth/datastore'
+        'scope' => 'https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/cloud-platform'
     ]));
 
     $signature = '';
-    openssl_sign($header . '.' . $payload, $signature, $serviceAccount['private_key'], OPENSSL_ALGO_SHA256);
+    $signResult = openssl_sign($header . '.' . $payload, $signature, $serviceAccount['private_key'], OPENSSL_ALGO_SHA256);
+    if (!$signResult) {
+        $opensslError = openssl_error_string();
+        writeLog("OpenSSL imzalama hatası: $opensslError", "ERROR");
+        return null;
+    }
     $signature = base64url_encode($signature);
 
     $jwt = $header . '.' . $payload . '.' . $signature;
+    writeLog("JWT oluşturuldu, Google OAuth'a istek gönderiliyor...", "DEBUG");
 
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, 'https://oauth2.googleapis.com/token');
@@ -137,10 +158,34 @@ function getFirebaseAccessToken($serviceAccountFile) {
     ]));
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     $response = curl_exec($ch);
+    $curlError = curl_error($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
-    return json_decode($response, true)['access_token'] ?? null;
+    if ($curlError) {
+        writeLog("cURL hatası: $curlError", "ERROR");
+        return null;
+    }
+
+    writeLog("Google OAuth yanıtı HTTP $httpCode, Length: " . strlen($response), "DEBUG");
+
+    $tokenData = json_decode($response, true);
+    if (!$tokenData) {
+        writeLog("Token parse hatası. Yanıt: " . substr($response, 0, 500), "ERROR");
+        return null;
+    }
+
+    $token = $tokenData['access_token'] ?? $tokenData['id_token'] ?? null;
+    
+    if (!$token) {
+        writeLog("Token bulunamadı. Yanıt: " . substr($response, 0, 500), "ERROR");
+        return null;
+    }
+
+    writeLog("Firebase token alındı ✓ (Tip: " . (isset($tokenData['access_token']) ? 'access' : 'id') . ")", "DEBUG");
+    return $token;
 }
 
 function getStringValue($fields, $key, $default = '') {
@@ -183,9 +228,15 @@ function getAllLeads($accessToken, $projectId) {
         curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer $accessToken"]);
         curl_setopt($ch, CURLOPT_TIMEOUT, 60);
         $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
         $data = json_decode($response, true);
+        
+        if ($httpCode !== 200) {
+            writeLog("Firestore getAllLeads Hatası HTTP $httpCode: " . substr($response, 0, 500), "ERROR");
+        }
+
         if (isset($data['documents'])) {
             foreach ($data['documents'] as $doc) {
                 $docName = $doc['name'] ?? '';

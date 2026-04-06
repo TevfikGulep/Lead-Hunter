@@ -65,11 +65,10 @@ function getFirebaseAccessToken($serviceAccountFile) {
     $now = time();
     $payload = base64url_encode(json_encode([
         'iss' => $serviceAccount['client_email'],
-        'sub' => $serviceAccount['client_email'],
         'aud' => 'https://oauth2.googleapis.com/token',
         'iat' => $now,
         'exp' => $now + 3600,
-        'scope' => 'https://www.googleapis.com/auth/firestore https://www.googleapis.com/auth/datastore'
+        'scope' => 'https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/cloud-platform'
     ]));
 
     $signature = '';
@@ -87,9 +86,13 @@ function getFirebaseAccessToken($serviceAccountFile) {
     ]));
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
-    return json_decode($response, true)['access_token'] ?? null;
+    $tokenData = json_decode($response, true);
+    if (!$tokenData) return null;
+    
+    return $tokenData['access_token'] ?? $tokenData['id_token'] ?? null;
 }
 
 function getStringValue($fields, $key, $default = '') {
