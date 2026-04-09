@@ -17,7 +17,8 @@ window.SettingsTab = ({
     openPromotionModal,
     runAutoHunterScan,
     stopAutoHunterScan,
-    isHunterRunning
+    isHunterRunning,
+    fixLeadConsistency
 }) => {
     const [saveMsg, setSaveMsg] = React.useState('');
 
@@ -356,12 +357,27 @@ window.SettingsTab = ({
 
                 <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                     <p className="text-xs text-amber-800">
-                        <strong>Nasıl Çalışır:</strong> Her pazartesi 07:00'de otomatik başlar. 
+                        <strong>Nasıl Çalışır:</strong> Her pazartesi 07:00'de otomatik başlar.
                         İlçe listesinden sırayla "haberleri", "son dakika", "güncel", "haber", "gazete" kelimeleriyle arama yapar.
                         Her arama sonucu trafiği kontrol edilir ve uygun siteler (trafik büyüktür 0) CRM'e "New" olarak eklenir.
                         {settings.hunterTargetCount || 100} site bulunduktan sonra o hafta durur, bir sonraki hafta kaldığı yerden devam eder.
                     </p>
                 </div>
+            </div>
+
+            {/* Veri Bakım */}
+            <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2">
+                <h3 className="font-bold mb-4 flex items-center gap-2"><window.Icon name="tool" className="w-5 h-5 text-slate-600" /> Veri Bakım</h3>
+                <p className="text-xs text-slate-500 mb-4 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                    Tutarsız verileri düzeltir: Mail gönderilmiş/okunmuş ama hâlâ "New" durumunda olan lead'leri "No Reply" olarak günceller.
+                    Bounce kaydı olan ama "Error in Mail" olarak işaretlenmemiş lead'leri düzeltir.
+                </p>
+                <button
+                    onClick={fixLeadConsistency}
+                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-bold text-sm transition-colors flex items-center gap-2"
+                >
+                    <window.Icon name="refresh-cw" className="w-4 h-4" /> Veri Tutarlılığını Düzelt
+                </button>
             </div>
         </div >
     );

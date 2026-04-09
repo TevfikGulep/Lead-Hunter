@@ -33,6 +33,7 @@ define('SERVER_URL', 'https://leadhunter.tevfikgulep.com/traffic-api.php');
 define('PROGRESS_FILE', __DIR__ . '/../logs/enrich-progress.json');
 define('LOCK_FILE', __DIR__ . '/../logs/enrich.lock');
 define('ENRICH_LOG_FILE', __DIR__ . '/../logs/enrich-background.log');
+define('CANDIDATES_FILE', __DIR__ . '/../logs/enrich-candidates.json');
 
 // Rate limit: cPanel hosting kaynakları için her lead arası bekleme (saniye)
 define('DELAY_BETWEEN_LEADS', 3);
@@ -326,6 +327,19 @@ if ($action === 'status') {
     if (!$progress) {
         echo json_encode(['success' => true, 'status' => 'idle', 'message' => 'Aktif işlem yok']);
     } else {
+        // Eğer işlem 'running' durumundaysa ancak 10 dakikadan (600s) uzun süredir güncellenmiyorsa
+        // sunucu arka plan işlemini (zaman aşımı vs. sebebiyle) öldürmüş demektir.
+        if (isset($progress['status']) && $progress['status'] === 'running' && isset($progress['updatedAt'])) {
+            $updatedAt = strtotime($progress['updatedAt']);
+            if (time() - $updatedAt > 600) {
+                $progress['status'] = 'error';
+                $progress['errorMessage'] = 'İşlem sunucu tarafından beklenmedik şekilde sonlandırıldı (zaman aşımı). Kaldığınız yerden tekrar başlatabilirsiniz.';
+                @unlink(LOCK_FILE);
+                writeLog("Stuck process tespit edildi, kilit açıldı ve durum hataya çekildi.", "WARN");
+                writeProgress($progress);
+            }
+        }
+        
         echo json_encode(['success' => true, 'status' => $progress['status'] ?? 'unknown', 'data' => $progress]);
     }
     exit;
@@ -349,6 +363,7 @@ if ($action === 'stop') {
 if ($action === 'start') {
 
     $mode = $_GET['mode'] ?? $_POST['mode'] ?? 'BOTH'; // BOTH, EMAIL, TRAFFIC
+    $internalResume = isset($_GET['internal_resume']) || isset($_POST['internal_resume']);
 
     // Lock kontrolü — zaten çalışıyorsa başlatma
     if (!acquireLock()) {
@@ -362,18 +377,28 @@ if ($action === 'start') {
         exit;
     }
 
-    // Hemen cevap ver, sonra arka planda çalışmaya devam et
-    writeProgress([
-        'status' => 'starting',
-        'mode' => $mode,
-        'current' => 0,
-        'total' => 0,
-        'enrichedCount' => 0,
-        'failedCount' => 0,
-        'logs' => [['time' => date('H:i:s'), 'msg' => 'İşlem başlatılıyor...', 'type' => 'info']],
-        'startedAt' => date('c'),
-        'stopRequested' => false
-    ]);
+    if ($internalResume) {
+        $progress = readProgress() ?: [];
+        $progress['status'] = 'starting';
+        $progress['logs'][] = ['time' => date('H:i:s'), 'msg' => 'Sunucu limiti atlatıldı: Süreç kaldığı yerden devam ettiriliyor...', 'type' => 'info'];
+        writeProgress($progress);
+    } else {
+        // Hemen cevap ver, sonra arka planda çalışmaya devam et
+        writeProgress([
+            'status' => 'starting',
+            'mode' => $mode,
+            'current' => 0,
+            'total' => 0,
+            'enrichedCount' => 0,
+            'failedCount' => 0,
+            'logs' => [['time' => date('H:i:s'), 'msg' => 'İşlem başlatılıyor...', 'type' => 'info']],
+            'startedAt' => date('c'),
+            'stopRequested' => false
+        ]);
+        if (file_exists(CANDIDATES_FILE)) {
+            @unlink(CANDIDATES_FILE);
+        }
+    }
 
     // Yanıtı hemen gönder (bağlantı kapansa bile devam et)
     echo json_encode(['success' => true, 'message' => 'Zenginleştirme işlemi başlatıldı', 'status' => 'started', 'mode' => $mode]);
@@ -416,33 +441,53 @@ if ($action === 'start') {
         addProgressLog("Firebase bağlantısı başarılı", "success");
         writeLog("Firebase bağlantısı OK", "INFO");
 
-        // Tüm lead'leri çek
-        addProgressLog("Lead'ler yükleniyor...", "info");
-        $allLeads = getAllLeads($accessToken, $projectId);
-        addProgressLog("Toplam " . count($allLeads) . " lead yüklendi", "info");
-        writeLog("Toplam lead: " . count($allLeads), "INFO");
+        $scriptStartTime = time();
+        $candidates = [];
+        $totalCount = 0;
+        $startingIndex = 0;
+        $enrichedCount = 0;
+        $failedCount = 0;
 
-        // Filtreleme: Hangi lead'ler zenginleştirilecek?
-        $negativeStatuses = ['NOT_VIABLE', 'DENIED', 'DEAL_OFF', 'NON_RESPONSIVE'];
+        if ($internalResume && file_exists(CANDIDATES_FILE)) {
+            $candidates = json_decode(file_get_contents(CANDIDATES_FILE), true) ?: [];
+            $totalCount = count($candidates);
+            $p = readProgress();
+            $startingIndex = isset($p['current']) ? $p['current'] : 0;
+            $enrichedCount = isset($p['enrichedCount']) ? $p['enrichedCount'] : 0;
+            $failedCount = isset($p['failedCount']) ? $p['failedCount'] : 0;
+            
+            writeLog("İçsel Devam (Resume) tetiklendi. Başlangıç indeksi: $startingIndex", "INFO");
+            addProgressLog("Kaldığı yerden devam ediliyor...", "info");
+        } else {
+            // Tüm lead'leri çek
+            addProgressLog("Lead'ler yükleniyor...", "info");
+            $allLeads = getAllLeads($accessToken, $projectId);
+            addProgressLog("Toplam " . count($allLeads) . " lead yüklendi", "info");
+            writeLog("Toplam lead: " . count($allLeads), "INFO");
+    
+            // Filtreleme: Hangi lead'ler zenginleştirilecek?
+            $negativeStatuses = ['NOT_VIABLE', 'DENIED', 'DEAL_OFF', 'NON_RESPONSIVE'];
+    
+            $candidates = array_filter($allLeads, function($lead) use ($negativeStatuses, $mode) {
+                if (in_array($lead['statusKey'], $negativeStatuses)) return false;
+    
+                $missingEmail = empty($lead['email']) || strlen($lead['email']) < 5 || $lead['email'] === '-' || $lead['statusKey'] === 'MAIL_ERROR';
+    
+                $ts = $lead['trafficStatus'];
+                $missingTraffic = !$ts || !isset($ts['label']) || in_array($ts['label'] ?? '', ['Bilinmiyor', 'Veri Yok', 'Hata', '-', 'API Ayarı Yok']) || !isset($ts['value']) || $ts['value'] < 100;
+    
+                if ($mode === 'EMAIL') return $missingEmail;
+                if ($mode === 'TRAFFIC') return $missingTraffic;
+                return $missingEmail || $missingTraffic;
+            });
+    
+            $candidates = array_values($candidates);
+            $totalCount = count($candidates);
+            @file_put_contents(CANDIDATES_FILE, json_encode($candidates, JSON_UNESCAPED_UNICODE));
+        }
 
-        $candidates = array_filter($allLeads, function($lead) use ($negativeStatuses, $mode) {
-            if (in_array($lead['statusKey'], $negativeStatuses)) return false;
-
-            $missingEmail = empty($lead['email']) || strlen($lead['email']) < 5 || $lead['email'] === '-' || $lead['statusKey'] === 'MAIL_ERROR';
-
-            $ts = $lead['trafficStatus'];
-            $missingTraffic = !$ts || !isset($ts['label']) || in_array($ts['label'] ?? '', ['Bilinmiyor', 'Veri Yok', 'Hata', '-', 'API Ayarı Yok']) || !isset($ts['value']) || $ts['value'] < 100;
-
-            if ($mode === 'EMAIL') return $missingEmail;
-            if ($mode === 'TRAFFIC') return $missingTraffic;
-            return $missingEmail || $missingTraffic;
-        });
-
-        $candidates = array_values($candidates);
-        $totalCount = count($candidates);
-
-        if ($totalCount === 0) {
-            addProgressLog("Eksik verisi olan lead bulunamadı", "success");
+        if ($totalCount === 0 || $startingIndex >= $totalCount) {
+            addProgressLog("Zenginleştirilecek / Kalan lead bulunamadı", "success");
             $progress = readProgress();
             $progress['status'] = 'completed';
             $progress['total'] = 0;
@@ -460,23 +505,43 @@ if ($action === 'start') {
         $progress = readProgress();
         $progress['status'] = 'running';
         $progress['total'] = $totalCount;
-        $progress['current'] = 0;
-        $progress['enrichedCount'] = 0;
-        $progress['failedCount'] = 0;
+        if (!$internalResume) {
+            $progress['current'] = 0;
+            $progress['enrichedCount'] = 0;
+            $progress['failedCount'] = 0;
+        }
         writeProgress($progress);
 
-        $enrichedCount = 0;
-        $failedCount = 0;
         $tokenRefreshTime = time();
 
         // Her BATCH_SIZE lead'de bir durum kontrolü ve token yenileme
-        for ($i = 0; $i < $totalCount; $i++) {
+        for ($i = $startingIndex; $i < $totalCount; $i++) {
 
             // Durdurma isteği kontrolü
             if (isStopRequested()) {
                 addProgressLog("İşlem kullanıcı tarafından durduruldu", "warning");
                 writeLog("İşlem durduruldu (kullanıcı isteği)", "WARN");
                 break;
+            }
+
+            // Zaman limiti kontrolü (Sunucunun script'i öldürmemesi için 50 dakikada bir kendini resetler)
+            if (time() - $scriptStartTime > 3000) {
+                addProgressLog("Süre limiti doluyor. İşlem arka planda yeni bir süreçle devam ettirilecek...", "warning");
+                writeLog("Süre limiti aşıldı, internal resume tetikleniyor...", "INFO");
+                releaseLock(); // Kilidi aç ki yeni süreç alabilsin
+                
+                $baseUrl = 'https://' . $_SERVER['HTTP_HOST'] . strtok($_SERVER['REQUEST_URI'], '?');
+                $url = $baseUrl . '?action=start&internal_resume=1&mode=' . urlencode($mode);
+                
+                $ch = curl_init();
+                curl_setopt($ch, CURLOPT_URL, $url);
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_TIMEOUT_MS, 1500); // çok kısa tutarak bağlantıyı asenkron çalışmaya bırak
+                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                curl_exec($ch);
+                curl_close($ch);
+                
+                exit; 
             }
 
             // Token yenileme (50 dakikada bir)

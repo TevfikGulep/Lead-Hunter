@@ -1462,9 +1462,64 @@ window.useLeadHunterServices = (
         }
     }, [isHunterRunning]);
 
+    // --- TEK SEFERLİK VERİ TUTARLILIK DÜZELTMESİ ---
+    const fixLeadConsistency = async () => {
+        if (!isDbConnected || !dbInstance) return alert("Veritabanı bağlı değil!");
+        if (!confirm("Tutarsız lead verileri düzeltilecek (statusKey/stage uyumsuzlukları).\nDevam edilsin mi?")) return;
+
+        let fixCount = 0;
+        let batch = dbInstance.batch();
+        let batchCount = 0;
+        const allUpdates = {};
+
+        for (const lead of crmData) {
+            const updates = {};
+            const sk = lead.statusKey || '';
+            const isNewOrEmpty = !sk || sk === 'New';
+            const hasBounce = Array.isArray(lead.activityLog) && lead.activityLog.some(a => a.type === 'BOUNCE');
+            const hasBeenContacted = !!lead.lastContactDate;
+            const hasBeenOpened = !!lead.mailOpenedAt;
+            const hasNoEmail = !lead.email || lead.email.length < 5 || lead.email === '-';
+
+            // 1. Bounce kaydı var ama statusKey MAIL_ERROR değil → düzelt
+            if (hasBounce && sk !== 'MAIL_ERROR') {
+                updates.statusKey = 'MAIL_ERROR';
+                updates.statusLabel = 'Error in mail (Bounced)';
+            }
+            // 2. Email yok/geçersiz + mail gönderilmiş + hâlâ New → MAIL_ERROR
+            else if (hasNoEmail && hasBeenContacted && isNewOrEmpty) {
+                updates.statusKey = 'MAIL_ERROR';
+                updates.statusLabel = 'Error in mail';
+            }
+            // 3. Mail gönderilmiş veya okunmuş ama hâlâ New → NO_REPLY + stage düzelt
+            else if ((hasBeenContacted || hasBeenOpened) && isNewOrEmpty) {
+                updates.statusKey = 'NO_REPLY';
+                updates.statusLabel = window.LEAD_STATUSES['NO_REPLY']?.label || 'No reply yet';
+                if ((lead.stage || 0) === 0) updates.stage = 1;
+            }
+
+            if (Object.keys(updates).length > 0) {
+                batch.update(dbInstance.collection("leads").doc(lead.id), updates);
+                allUpdates[lead.id] = updates;
+                batchCount++;
+                fixCount++;
+
+                if (batchCount >= 490) {
+                    await batch.commit();
+                    batch = dbInstance.batch();
+                    batchCount = 0;
+                }
+            }
+        }
+
+        if (batchCount > 0) await batch.commit();
+        setCrmData(prev => prev.map(p => allUpdates[p.id] ? { ...p, ...allUpdates[p.id] } : p));
+        alert(`${fixCount} lead düzeltildi.`);
+    };
+
     // --- FINAL CHECK ---
     const servicesObj = {
-        selectedLead, setSelectedLead, isSending, openMailModal, openPromotionModal, handleSendMail, showBulkModal, setShowBulkModal, isBulkSending, bulkProgress, bulkConfig, setBulkConfig, executeBulkSend, executeBulkPromotion, isCheckingBulk, handleBulkReplyCheck, bulkUpdateStatus, bulkAddNotViable, isEnriching, showEnrichModal, setShowEnrichModal, enrichLogs, enrichProgress, enrichDatabase, stopEnrichBackground, isScanning, keywords, setKeywords, searchDepth, setSearchDepth, hunterLogs, hunterProgress, hunterLogsEndRef, startScan, stopScan, handleExportData, fixEncodedNames, startAutoFollowup, stopAutoFollowup, runAutoHunterScan, stopAutoHunterScan, isHunterRunning
+        selectedLead, setSelectedLead, isSending, openMailModal, openPromotionModal, handleSendMail, showBulkModal, setShowBulkModal, isBulkSending, bulkProgress, bulkConfig, setBulkConfig, executeBulkSend, executeBulkPromotion, isCheckingBulk, handleBulkReplyCheck, bulkUpdateStatus, bulkAddNotViable, isEnriching, showEnrichModal, setShowEnrichModal, enrichLogs, enrichProgress, enrichDatabase, stopEnrichBackground, isScanning, keywords, setKeywords, searchDepth, setSearchDepth, hunterLogs, hunterProgress, hunterLogsEndRef, startScan, stopScan, handleExportData, fixEncodedNames, startAutoFollowup, stopAutoFollowup, runAutoHunterScan, stopAutoHunterScan, isHunterRunning, fixLeadConsistency
     };
 
     return servicesObj;

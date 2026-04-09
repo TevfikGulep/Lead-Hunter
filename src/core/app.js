@@ -195,6 +195,7 @@ const LeadHunter = () => {
                             runAutoHunterScan={services.runAutoHunterScan}
                             stopAutoHunterScan={services.stopAutoHunterScan}
                             isHunterRunning={services.isHunterRunning}
+                            fixLeadConsistency={services.fixLeadConsistency}
                         />
                     )}
                 </div>
