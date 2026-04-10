@@ -848,7 +848,9 @@ window.useLeadHunterServices = (
                 if (!serverUrl) { addLog("HATA: Server API URL tanımlı değil.", 'error'); continue; }
 
                 const country = searchLocation || 'TR';
-                const url = `${serverUrl}?type=search_dataforseo&q=${encodeURIComponent(kw)}&depth=${searchDepth}&gl=${country}`;
+                const apiKey = settings.googleApiKey || '';
+                const cx = settings.searchEngineId || '';
+                const url = `${serverUrl}?type=search&q=${encodeURIComponent(kw)}&depth=${searchDepth}&gl=${country}&apiKey=${encodeURIComponent(apiKey)}&cx=${encodeURIComponent(cx)}`;
 
                 const response = await fetch(url);
                 const text = await response.text();
@@ -1118,49 +1120,10 @@ window.useLeadHunterServices = (
             }
         };
         
-        // Fallback search engine system
-        let activeSearchEngine = 'google'; // google, bing, duckduckgo
-        let dataForSEOFailed = false;
+        // Fallback search engine system: Google CSE → Bing → DuckDuckGo
         let googleFailed = false;
         let bingFailed = false;
         let duckduckgoFailed = false;
-        
-        // Helper function to try different search engines
-        const trySearch = async (query, searchEngine) => {
-            const apiKey = settings.googleApiKey || '';
-            const cx = settings.searchEngineId || '';
-            
-            let url = '';
-            
-            if (searchEngine === 'google') {
-                url = `${serverUrl}?type=search&q=${encodeURIComponent(query)}&depth=30&gl=TR&apiKey=${encodeURIComponent(apiKey)}&cx=${encodeURIComponent(cx)}`;
-            } else if (searchEngine === 'bing') {
-                // Bing fallback - use a different endpoint
-                url = `${serverUrl}?type=search_bing&q=${encodeURIComponent(query)}&depth=30&gl=TR`;
-            } else if (searchEngine === 'duckduckgo') {
-                // DuckDuckGo fallback
-                url = `${serverUrl}?type=search_duckduckgo&q=${encodeURIComponent(query)}&depth=30&gl=TR`;
-            }
-            
-            console.log(`[AutoHunter] ${searchEngine.toUpperCase()} deneniyor: ${query}`);
-            
-            try {
-                const response = await fetch(url);
-                const text = await response.text();
-                let json = JSON.parse(text);
-                
-                if (json.success && Array.isArray(json.results) && json.results.length > 0) {
-                    console.log(`[AutoHunter] ✅ ${searchEngine.toUpperCase()} başarılı! ${json.results.length} sonuç`);
-                    return { success: true, results: json.results, engine: searchEngine };
-                } else {
-                    console.log(`[AutoHunter] ⚠️ ${searchEngine.toUpperCase()} sonuç yok: ${json.debug?.[0] || 'bilinmiyor'}`);
-                    return { success: false, error: json.debug?.[0] || 'Sonuç yok', engine: searchEngine };
-                }
-            } catch (e) {
-                console.log(`[AutoHunter] ❌ ${searchEngine.toUpperCase()} hata: ${e.message}`);
-                return { success: false, error: e.message, engine: searchEngine };
-            }
-        };
 
         try {
         for (let i = 0; i < ilceList.length; i++) {
@@ -1177,32 +1140,11 @@ window.useLeadHunterServices = (
                 totalSearches++;
 
                 // FARKLI ARAMA MOTORLARINI DENE - FALLBACK SİSTEMİ
+                // Sıra: Google CSE (primary) → Bing → DuckDuckGo
                 let searchResult = null;
 
-                // PRIMARY: DataForSEO
-                if (!searchResult && !dataForSEOFailed) {
-                    console.log(`[AutoHunter] DataForSEO deneniyor: ${query}`);
-                    const dfUrl = `${serverUrl}?type=search_dataforseo&q=${encodeURIComponent(query)}&depth=10&gl=TR`;
-                    try {
-                        const response = await fetch(dfUrl);
-                        const text = await response.text();
-                        let json = JSON.parse(text);
-                        if (json.rate_limited) {
-                            console.log(`[AutoHunter] ⚠️ DataForSEO rate limit! Bu oturum için devre dışı bırakıldı.`);
-                            dataForSEOFailed = true;
-                        } else if (json.success && Array.isArray(json.results) && json.results.length > 0) {
-                            console.log(`[AutoHunter] ✅ DataForSEO başarılı! ${json.results.length} sonuç`);
-                            searchResult = { results: json.results, engine: 'dataforseo' };
-                        } else {
-                            console.log(`[AutoHunter] ⚠️ DataForSEO sonuç yok`);
-                        }
-                    } catch (e) {
-                        console.log(`[AutoHunter] ❌ DataForSEO hata: ${e.message}`);
-                    }
-                }
-
-                // Google (sadece daha önce başarısız olmamışsa)
-                if (!googleFailed) {
+                // PRIMARY: Google Custom Search
+                if (!searchResult && !googleFailed) {
                     console.log(`[AutoHunter] Google deneniyor: ${query}`);
                     const apiKey = settings.googleApiKey || '';
                     const cx = settings.searchEngineId || '';
@@ -1361,12 +1303,11 @@ window.useLeadHunterServices = (
                             console.log(`[AutoHunter] Trafik sonucu: ${JSON.stringify(trafficCheck)}`);
                             console.log(`[AutoHunter] Email sonucu: ${emailFound || 'bulunamadı'}`);
                             
-                            // YENİ MANTIK:
-                            // - Trafik uygunsa (viable=true) → status: NEW
-                            // - Trafik düşük/yoksa (viable=false) → status: NOT_POSSIBLE
+                            // YENİ MANTIK: Tüm siteler "New" olarak eklenir (trafik/email olsa da olmasa da)
+                            // Kullanıcı mail gönderirken filtrelerle ayırıyor.
                             const isViable = trafficCheck && trafficCheck.viable && trafficCheck.value > 0;
-                            const statusKey = isViable ? 'New' : 'NOT_POSSIBLE';
-                            const statusLabel = isViable ? 'New' : 'Not Possible';
+                            const statusKey = 'New';
+                            const statusLabel = 'New';
                             
                             console.log(`[AutoHunter] ✅ Site eklendi! ${domain} - Trafik: ${trafficCheck?.label || 'Yok'}, Email: ${emailFound || 'Yok'}, Status: ${statusKey}`);
                             
@@ -1413,21 +1354,21 @@ window.useLeadHunterServices = (
                             console.log(`[AutoHunter] İşlem tamam: ${domain} (Trafik: ${trafficCheck?.label || 'Yok'}, Status: ${statusKey})`);
                         } catch (e) {
                             console.error(`[AutoHunter] Kontrol hatası: ${domain}`, e);
-                            
-                            // Hata olsa bile siteyi ekle (NOT_POSSIBLE olarak)
+
+                            // Hata olsa bile siteyi New olarak ekle
                             try {
                                 const now = new Date();
                                 const dateStr = now.toLocaleDateString('tr-TR') + ' ' + now.toLocaleTimeString('tr-TR');
-                                const autoNote = `Site Avcısı Otomasyonu ile ${dateStr} tarihinde eklenmiştir (Hata ile).`;
+                                const autoNote = `Site Avcısı Otomasyonu ile ${dateStr} tarihinde eklenmiştir (Trafik/Email kontrolü hata ile).`;
 
                                 const newLead = {
                                     url: r.url,
                                     email: '',
-                                    statusKey: 'NOT_POSSIBLE',
-                                    statusLabel: 'Not Possible',
+                                    statusKey: 'New',
+                                    statusLabel: 'New',
                                     stage: 0,
                                     language: 'TR',
-                                    trafficStatus: { viable: false, label: 'Hata', value: 0 },
+                                    trafficStatus: { viable: false, label: 'Veri Yok', value: 0, note: '' },
                                     addedDate: now.toISOString(),
                                     source: 'AutoHunter',
                                     sourceQuery: query,

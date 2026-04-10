@@ -110,11 +110,20 @@ window.checkTraffic = async (siteUrl) => {
             const numVal = parseFloat(data.value) || 0;
             const isViable = numVal > 20000;
 
-            console.log(`%c✅ [Result] ${rootDomain}: ${data.raw} (${data.source})`, 'color: green; font-weight: bold;');
+            // Label fallback: data.raw yoksa numVal'dan oku (ör: "135K")
+            let label = data.raw;
+            if (!label || label === 'Veri Yok') {
+                if (numVal >= 1000000) label = (numVal / 1000000).toFixed(1).replace('.0', '') + 'M';
+                else if (numVal >= 1000) label = Math.round(numVal / 1000) + 'K';
+                else if (numVal > 0) label = String(numVal);
+                else label = 'Veri Yok';
+            }
+
+            console.log(`%c✅ [Result] ${rootDomain}: ${label} (${data.source || 'api'})`, 'color: green; font-weight: bold;');
 
             return {
                 viable: isViable,
-                label: data.raw || 'Veri Yok',
+                label: label,
                 value: numVal,
                 note: isViable ? 'İyi Trafik' : 'Düşük Trafik'
             };

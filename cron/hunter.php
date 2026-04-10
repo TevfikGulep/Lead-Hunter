@@ -309,25 +309,40 @@ try {
             $totalSearches++;
             writeLog("[$totalSearches] Aranıyor: $query", "INFO");
 
-            // PRIMARY: DataForSEO
-            $searchUrl = SERVER_URL . "?type=search_dataforseo&q=" . urlencode($query) . "&depth=30&gl=TR";
+            // PRIMARY: Google Custom Search API
+            $searchUrl = SERVER_URL . "?type=search&q=" . urlencode($query) . "&depth=30&gl=TR&apiKey=" . urlencode($googleApiKey) . "&cx=" . urlencode($searchEngineId);
 
             $ch = curl_init();
             curl_setopt($ch, CURLOPT_URL, $searchUrl);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 45);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
             $response = curl_exec($ch);
             curl_close($ch);
 
             $json = json_decode($response, true);
 
-            // FALLBACK: Google API
+            // FALLBACK: Bing scraping
             if (!$json || !$json['success'] || empty($json['results'])) {
-                writeLog("DataForSEO başarısız, Google API deneniyor...", "WARN");
-                $fallbackUrl = SERVER_URL . "?type=search&q=" . urlencode($query) . "&depth=30&gl=TR&apiKey=" . urlencode($googleApiKey) . "&cx=" . urlencode($searchEngineId);
+                writeLog("Google CSE başarısız, Bing deneniyor...", "WARN");
+                $fallbackUrl = SERVER_URL . "?type=search_bing&q=" . urlencode($query) . "&depth=30&gl=TR";
 
                 $ch = curl_init();
                 curl_setopt($ch, CURLOPT_URL, $fallbackUrl);
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+                $response = curl_exec($ch);
+                curl_close($ch);
+
+                $json = json_decode($response, true);
+            }
+
+            // FALLBACK 2: DuckDuckGo scraping
+            if (!$json || !$json['success'] || empty($json['results'])) {
+                writeLog("Bing başarısız, DuckDuckGo deneniyor...", "WARN");
+                $fallbackUrl2 = SERVER_URL . "?type=search_duckduckgo&q=" . urlencode($query) . "&depth=30&gl=TR";
+
+                $ch = curl_init();
+                curl_setopt($ch, CURLOPT_URL, $fallbackUrl2);
                 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
                 curl_setopt($ch, CURLOPT_TIMEOUT, 30);
                 $response = curl_exec($ch);
