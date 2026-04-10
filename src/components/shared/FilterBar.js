@@ -55,6 +55,8 @@ window.FilterBar = ({
             <option value="ALL">Veri Durumu: Tümü</option>
             <option value="GOOD">✅ Sadece Tam Veriler</option>
             <option value="MISSING">⚠️ Eksik Veriler (Mail/Trafik Yok)</option>
+            <option value="TRAFFIC_NO_EMAIL">📊 Trafik var, E-mail yok</option>
+            <option value="EMAIL_NO_TRAFFIC">📧 E-mail var, Trafik yok</option>
         </select>
 
         <select value={filters.language} onChange={(e) => setFilters(prev => ({ ...prev, language: e.target.value }))} className="px-3 py-2 bg-slate-50 rounded-lg border text-sm text-slate-600 font-medium outline-none cursor-pointer"><option value="ALL">Tüm Diller</option><option value="TR">TR (Türkçe)</option><option value="EN">EN (English)</option></select>

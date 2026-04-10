@@ -855,7 +855,11 @@ window.useLeadHunterServices = (
                 let json = JSON.parse(text);
 
                 if (json.success && Array.isArray(json.results)) {
-                    const filteredResults = json.results.filter(r => !existingDomains.has(window.cleanDomain(r.url)));
+                    const filteredResults = json.results.filter(r => {
+                        const d = window.cleanDomain(r.url);
+                        if (/\.(bel|gov)\.tr$/i.test(d)) return false;
+                        return !existingDomains.has(d);
+                    });
                     if (filteredResults.length > 0) {
                         const newLeads = filteredResults.map(r => ({
                             id: Math.random().toString(36).substr(2, 9),
@@ -1304,6 +1308,10 @@ window.useLeadHunterServices = (
                     
                     const newResults = searchResult.results.filter(r => {
                         const domain = window.cleanDomain(r.url);
+                        if (/\.(bel|gov)\.tr$/i.test(domain)) {
+                            console.log(`[AutoHunter] ⏭️ Devlet sitesi atlandı: ${domain}`);
+                            return false;
+                        }
                         return !existingDomains.has(domain);
                     });
                     
@@ -1472,6 +1480,7 @@ window.useLeadHunterServices = (
         let batchCount = 0;
         const allUpdates = {};
 
+        const todayIso = new Date().toISOString();
         for (const lead of crmData) {
             const updates = {};
             const sk = lead.statusKey || '';
@@ -1496,6 +1505,11 @@ window.useLeadHunterServices = (
                 updates.statusKey = 'NO_REPLY';
                 updates.statusLabel = window.LEAD_STATUSES['NO_REPLY']?.label || 'No reply yet';
                 if ((lead.stage || 0) === 0) updates.stage = 1;
+            }
+
+            // 4. addedDate yoksa: önce lastContactDate, yoksa bugün
+            if (!lead.addedDate) {
+                updates.addedDate = lead.lastContactDate || todayIso;
             }
 
             if (Object.keys(updates).length > 0) {

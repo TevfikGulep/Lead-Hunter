@@ -100,7 +100,12 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
         let data = [...crmData];
         if (activeTab === 'dashboard') {
             const terminalStatuses = ['DEAL_ON', 'DEAL_OFF', 'DENIED', 'NOT_VIABLE', 'NON_RESPONSIVE', 'NOT_POSSIBLE', 'MAIL_ERROR'];
-            data = data.filter(i => !terminalStatuses.includes(i.statusKey));
+            if (filters.status.length > 0) {
+                const excludeStatuses = terminalStatuses.filter(s => !filters.status.includes(s));
+                data = data.filter(i => !excludeStatuses.includes(i.statusKey));
+            } else {
+                data = data.filter(i => !terminalStatuses.includes(i.statusKey));
+            }
         }
         if (filters.search) {
             const searchLower = filters.search.toLowerCase();
@@ -130,6 +135,10 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
             data = data.filter(item => item.email && item.email.length > 5 && item.email !== '-' && item.trafficStatus && item.trafficStatus.viable);
         } else if (filters.quality === 'MISSING') {
             data = data.filter(item => (!item.email || item.email.length < 5 || item.email === '-') || (!item.trafficStatus || !item.trafficStatus.viable));
+        } else if (filters.quality === 'TRAFFIC_NO_EMAIL') {
+            data = data.filter(item => item.trafficStatus && item.trafficStatus.viable && (!item.email || item.email.length < 5 || item.email === '-'));
+        } else if (filters.quality === 'EMAIL_NO_TRAFFIC') {
+            data = data.filter(item => item.email && item.email.length > 5 && item.email !== '-' && (!item.trafficStatus || !item.trafficStatus.viable));
         }
         
         // YENİ: MAIL DURUM FİLTRESİ (MAVİ/YEŞİL/KIRMIZI NOKTA FİLTRESİ)
@@ -168,7 +177,8 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
         data.sort((a, b) => {
             let valA = a[sortConfig.key], valB = b[sortConfig.key];
             if (sortConfig.key === 'stage') { valA = a.stage || 0; valB = b.stage || 0; } 
-            else if (sortConfig.key === 'lastContactDate') { valA = valA ? new Date(valA).getTime() : 0; valB = valB ? new Date(valB).getTime() : 0; } 
+            else if (sortConfig.key === 'lastContactDate') { valA = valA ? new Date(valA).getTime() : 0; valB = valB ? new Date(valB).getTime() : 0; }
+            else if (sortConfig.key === 'addedDate') { valA = valA ? new Date(valA).getTime() : 0; valB = valB ? new Date(valB).getTime() : 0; }
             else if (sortConfig.key === 'potential') {
                 let numA = a.trafficStatus?.value || (a.trafficStatus?.label ? window.parseTrafficToNumber(a.trafficStatus.label) : 0);
                 let numB = b.trafficStatus?.value || (b.trafficStatus?.label ? window.parseTrafficToNumber(b.trafficStatus.label) : 0);

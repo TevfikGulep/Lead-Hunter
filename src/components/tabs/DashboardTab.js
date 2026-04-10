@@ -508,6 +508,9 @@ window.DashboardTab = ({
                                 <th className="p-4 cursor-pointer hover:text-indigo-600 transition-colors select-none" onClick={() => handleSort('lastContactDate')}>
                                     <div className="flex items-center gap-1">Son Temas <window.SortIcon column="lastContactDate" sortConfig={sortConfig}/></div>
                                 </th>
+                                <th className="p-4 cursor-pointer hover:text-indigo-600 transition-colors select-none" onClick={() => handleSort('addedDate')}>
+                                    <div className="flex items-center gap-1">Eklenme <window.SortIcon column="addedDate" sortConfig={sortConfig}/></div>
+                                </th>
                                 <th className="p-4 cursor-pointer hover:text-indigo-600 transition-colors select-none" onClick={() => handleSort('leadScore')}>
                                     <div className="flex items-center gap-1">Skor <window.SortIcon column="leadScore" sortConfig={sortConfig}/></div>
                                 </th>
@@ -593,6 +596,7 @@ window.DashboardTab = ({
                                             </div>
                                         </td>
                                         <td className="p-4 text-slate-500">{lead.lastContactDate ? new Date(lead.lastContactDate).toLocaleDateString('tr-TR') : '-'}</td>
+                                        <td className="p-4 text-slate-500 text-xs">{lead.addedDate ? new Date(lead.addedDate).toLocaleDateString('tr-TR') : '-'}</td>
 
                                         <td className="p-4 text-xs">
                                             {(() => {

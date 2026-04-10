@@ -85,6 +85,9 @@ window.CrmTab = ({
                             <th className="p-4 cursor-pointer hover:text-indigo-600 transition-colors select-none" onClick={() => handleSort('lastContactDate')}>
                                 <div className="flex items-center gap-1">Son Temas <window.SortIcon column="lastContactDate" sortConfig={sortConfig} /></div>
                             </th>
+                            <th className="p-4 cursor-pointer hover:text-indigo-600 transition-colors select-none" onClick={() => handleSort('addedDate')}>
+                                <div className="flex items-center gap-1">Eklenme <window.SortIcon column="addedDate" sortConfig={sortConfig} /></div>
+                            </th>
                             <th className="p-4 cursor-pointer hover:text-indigo-600 transition-colors select-none" onClick={() => handleSort('potential')}>
                                 <div className="flex items-center gap-1">Potansiyel <window.SortIcon column="potential" sortConfig={sortConfig} /></div>
                             </th>
@@ -155,6 +158,7 @@ window.CrmTab = ({
                                     </td>
                                     <td className="p-4 text-xs text-slate-500">{getStageInfo((item.stage || 0) - 1, item.language).label}</td>
                                     <td className="p-4 text-slate-500">{item.lastContactDate ? new Date(item.lastContactDate).toLocaleDateString('tr-TR') : '-'}</td>
+                                    <td className="p-4 text-slate-500 text-xs">{item.addedDate ? new Date(item.addedDate).toLocaleDateString('tr-TR') : '-'}</td>
                                     <td className="p-4 text-slate-600 font-mono text-xs flex items-center gap-1">
                                         {editingRowId === item.id ? <input value={editFormData.potential} onChange={e => handleEditChange('potential', e.target.value)} className="w-20 p-1 border rounded" /> : (
                                             item.trafficStatus && item.trafficStatus.label ? <span className={`flex items-center gap-1 ${item.trafficStatus.viable ? 'text-green-600 font-bold' : 'text-slate-400'}`}><window.Icon name={item.trafficStatus.viable ? "trending-up" : "minus"} className="w-3 h-3" /> {item.trafficStatus.label}</span> : <span className="text-slate-300">-</span>
