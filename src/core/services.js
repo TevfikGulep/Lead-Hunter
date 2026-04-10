@@ -1154,6 +1154,7 @@ window.useLeadHunterServices = (
             const ilce = ilceList[currentIlceIndex % ilceList.length];
 
             for (const kw of keywords) {
+                if (!autoHunterRef.current.isRunning) break;
                 if (foundViableCount >= targetCount) break;
                 if (totalSearches >= maxSearches) break;
 
@@ -1359,6 +1360,7 @@ window.useLeadHunterServices = (
                     console.log(`[AutoHunter] Yeni (tekrarlanmayan) sonuç: ${newResults.length}`);
 
                     for (const r of newResults) {
+                        if (!autoHunterRef.current.isRunning) break;
                         if (foundViableCount >= targetCount) break;
 
                         // SUBDOMAIN KONTROLÜ - Ana domain değilse atla
@@ -1493,11 +1495,15 @@ window.useLeadHunterServices = (
             console.error("[AutoHunter] Beklenmedik hata:", fatalErr);
         } finally {
             // Her çıkış yolunda progress'i kaydet (manuel stop, hata, hedef tamam)
+            const wasStopped = !autoHunterRef.current.isRunning && foundViableCount < targetCount;
             await saveProgress('final');
             autoHunterRef.current.isRunning = false;
             setIsHunterRunning(false);
             console.log(`[AutoHunter] Tamamlandı. Eklenen site: ${totalAdded}, Bulunan uygun: ${foundViableCount}`);
-            alert(`Tarama tamamlandı.\nEklenen: ${totalAdded} site\nUygun (trafikli): ${foundViableCount}`);
+            const reason = foundViableCount >= targetCount
+                ? `Hedefe ulaşıldı (${targetCount} uygun site).`
+                : (wasStopped ? 'Manuel olarak durduruldu.' : 'Tüm ilçeler tarandı.');
+            alert(`Tarama tamamlandı.\n\n${reason}\n\n✅ Toplam eklenen: ${totalAdded} site\n📊 Uygun (trafikli): ${foundViableCount} site\n📍 Son ilçe indeksi: ${currentIlceIndex % ilceList.length}`);
         }
     };
 
@@ -1505,7 +1511,7 @@ window.useLeadHunterServices = (
     const stopAutoHunterScan = () => {
         autoHunterRef.current.isRunning = false;
         setIsHunterRunning(false);
-        console.log("[AutoHunter] Durduruldu");
+        console.log("[AutoHunter] Durdurma komutu verildi, mevcut işlem bitince tamamen duracak.");
     };
     
     // Bittiğinde state'i güncelle
