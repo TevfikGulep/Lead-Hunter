@@ -680,11 +680,56 @@ window.useLeadHunterServices = (
         try { await batch.commit(); setCrmData(prev => prev.map(item => { if (selectedIds.has(item.id)) { return { ...item, statusKey: newStatusKey, statusLabel: statusLabel, activityLog: [...(item.activityLog || []), newLog] }; } return item; })); setSelectedIds(new Set()); alert("Durumlar başarıyla güncellendi."); } catch (e) { alert("Hata: " + e.message); }
     };
 
+    const bulkUpdateLanguage = async (newLang) => {
+        if (selectedIds.size === 0) return alert("Lütfen kayıt seçin.");
+        if (!isDbConnected) return alert("Veritabanı bağlı değil.");
+        if (!['TR', 'EN'].includes(newLang)) return alert("Geçersiz dil.");
+        if (!confirm(`Seçili ${selectedIds.size} kaydın dili '${newLang}' olarak güncellenecek. Onaylıyor musunuz?`)) return;
+        const batch = dbInstance.batch();
+        const timestamp = new Date().toISOString();
+        const newLog = { date: timestamp, type: 'SYSTEM', content: `Dil manuel olarak '${newLang}' yapıldı (Toplu İşlem).` };
+        selectedIds.forEach(id => {
+            const ref = dbInstance.collection("leads").doc(id);
+            batch.update(ref, { language: newLang, activityLog: firebase.firestore.FieldValue.arrayUnion(newLog) });
+        });
+        try {
+            await batch.commit();
+            setCrmData(prev => prev.map(item => selectedIds.has(item.id) ? { ...item, language: newLang, activityLog: [...(item.activityLog || []), newLog] } : item));
+            setSelectedIds(new Set());
+            alert("Diller başarıyla güncellendi.");
+        } catch (e) { alert("Hata: " + e.message); }
+    };
+
+    const bulkUpdateStage = async (newStage) => {
+        if (selectedIds.size === 0) return alert("Lütfen kayıt seçin.");
+        if (!isDbConnected) return alert("Veritabanı bağlı değil.");
+        const stageInt = parseInt(newStage);
+        if (isNaN(stageInt) || stageInt < 0) return alert("Geçersiz aşama.");
+        // stage değeri "son gönderilen + 1" şeklinde saklanıyor (workflow index + 1)
+        // Kullanıcıya gösterilen "son gönderilen" değerine karşılık DB'deki stage = value + 1
+        const workflow = settings.workflowTR || [];
+        const label = stageInt === 0 ? 'Henüz Gönderilmedi' : (workflow[stageInt - 1]?.label || `Aşama ${stageInt}`);
+        if (!confirm(`Seçili ${selectedIds.size} kaydın son gönderilen maili '${label}' olarak güncellenecek. Onaylıyor musunuz?`)) return;
+        const batch = dbInstance.batch();
+        const timestamp = new Date().toISOString();
+        const newLog = { date: timestamp, type: 'SYSTEM', content: `Son gönderilen mail manuel olarak '${label}' yapıldı (Toplu İşlem).` };
+        selectedIds.forEach(id => {
+            const ref = dbInstance.collection("leads").doc(id);
+            batch.update(ref, { stage: stageInt, activityLog: firebase.firestore.FieldValue.arrayUnion(newLog) });
+        });
+        try {
+            await batch.commit();
+            setCrmData(prev => prev.map(item => selectedIds.has(item.id) ? { ...item, stage: stageInt, activityLog: [...(item.activityLog || []), newLog] } : item));
+            setSelectedIds(new Set());
+            alert("Aşamalar başarıyla güncellendi.");
+        } catch (e) { alert("Hata: " + e.message); }
+    };
+
     const bulkAddNotViable = async () => {
         if (selectedIds.size === 0 || !isDbConnected) return;
         if (!confirm(`${selectedIds.size} adet site 'Not Viable' olarak eklenecek.`)) return;
         const batch = dbInstance.batch(); let count = 0;
-        selectedIds.forEach(id => { const lead = leads.find(l => l.id === id); if (lead && !crmData.some(c => window.cleanDomain(c.url) === window.cleanDomain(lead.url))) { batch.set(dbInstance.collection("leads").doc(), { url: lead.url, email: lead.email || '', statusKey: 'NOT_VIABLE', statusLabel: 'Not Viable', stage: 0, language: 'TR', trafficStatus: lead.trafficStatus || { viable: false }, addedDate: new Date().toISOString() }); count++; } });
+        selectedIds.forEach(id => { const lead = leads.find(l => l.id === id); if (lead && !crmData.some(c => window.cleanDomain(c.url) === window.cleanDomain(lead.url))) { batch.set(dbInstance.collection("leads").doc(), { url: window.cleanDomain(lead.url), email: lead.email || '', statusKey: 'NOT_VIABLE', statusLabel: 'Not Viable', stage: 0, language: 'TR', trafficStatus: lead.trafficStatus || { viable: false }, addedDate: new Date().toISOString() }); count++; } });
         if (count > 0) { await batch.commit(); setLeads(prev => prev.filter(l => !selectedIds.has(l.id))); setSelectedIds(new Set()); alert(`${count} site eklendi.`); }
     };
 
@@ -865,7 +910,7 @@ window.useLeadHunterServices = (
                     if (filteredResults.length > 0) {
                         const newLeads = filteredResults.map(r => ({
                             id: Math.random().toString(36).substr(2, 9),
-                            url: r.url,
+                            url: window.cleanDomain(r.url),
                             title: r.title,
                             description: r.snippet,
                             trafficStatus: { label: 'Analiz Ediliyor...', value: 0 },
@@ -1120,10 +1165,12 @@ window.useLeadHunterServices = (
             }
         };
         
-        // Fallback search engine system: Google CSE → Bing → DuckDuckGo
+        // Fallback search engine chain: Google CSE → Brave → Bing → DuckDuckGo → DataForSEO
         let googleFailed = false;
+        let braveFailed = false;
         let bingFailed = false;
         let duckduckgoFailed = false;
+        let dataforseoFailed = false;
 
         try {
         for (let i = 0; i < ilceList.length; i++) {
@@ -1140,7 +1187,7 @@ window.useLeadHunterServices = (
                 totalSearches++;
 
                 // FARKLI ARAMA MOTORLARINI DENE - FALLBACK SİSTEMİ
-                // Sıra: Google CSE (primary) → Bing → DuckDuckGo
+                // Sıra: Google CSE → Brave → Bing → DuckDuckGo → DataForSEO (son çare)
                 let searchResult = null;
 
                 // PRIMARY: Google Custom Search
@@ -1181,7 +1228,39 @@ window.useLeadHunterServices = (
                     }
                 }
                 
-                // Bing (sadece Google başarısız olmuşsa ve daha önce başarısız olmamışsa)
+                // Brave Search API (Google başarısızsa)
+                if (!searchResult && !braveFailed) {
+                    console.log(`[AutoHunter] Brave deneniyor: ${query}`);
+                    const url = `${serverUrl}?type=search_brave&q=${encodeURIComponent(query)}&depth=20&gl=tr`;
+                    try {
+                        const response = await fetch(url);
+                        const text = await response.text();
+                        console.log(`[AutoHunter] 🔍 Brave HTTP ${response.status}, length: ${text.length}`);
+                        let json;
+                        try {
+                            json = JSON.parse(text);
+                        } catch(e) {
+                            console.log(`[AutoHunter] ❌ Brave JSON parse hatası: ${e.message}`);
+                            braveFailed = true;
+                            continue;
+                        }
+                        if (json.rate_limited) {
+                            console.log(`[AutoHunter] ⚠️ Brave rate limit! Bu oturum için devre dışı.`);
+                            braveFailed = true;
+                        } else if (json.success && Array.isArray(json.results) && json.results.length > 0) {
+                            console.log(`[AutoHunter] ✅ Brave başarılı! ${json.results.length} sonuç`);
+                            searchResult = { results: json.results, engine: 'brave' };
+                        } else {
+                            console.log(`[AutoHunter] ⚠️ Brave sonuç yok`);
+                            braveFailed = true;
+                        }
+                    } catch (e) {
+                        console.log(`[AutoHunter] ❌ Brave hata: ${e.message}`);
+                        braveFailed = true;
+                    }
+                }
+
+                // Bing (Google ve Brave başarısızsa)
                 if (!searchResult && !bingFailed) {
                     console.log(`[AutoHunter] Bing deneniyor: ${query}`);
                     const url = `${serverUrl}?type=search_bing&q=${encodeURIComponent(query)}&depth=30&gl=TR`;
@@ -1251,10 +1330,41 @@ window.useLeadHunterServices = (
                     }
                 }
                 
+                // DataForSEO (SON ÇARE - hepsi başarısız olursa)
+                if (!searchResult && !dataforseoFailed) {
+                    console.log(`[AutoHunter] DataForSEO deneniyor (son çare): ${query}`);
+                    const url = `${serverUrl}?type=search_dataforseo&q=${encodeURIComponent(query)}&depth=10&gl=TR`;
+                    try {
+                        const response = await fetch(url);
+                        const text = await response.text();
+                        let json;
+                        try {
+                            json = JSON.parse(text);
+                        } catch(e) {
+                            console.log(`[AutoHunter] ❌ DataForSEO JSON parse hatası: ${e.message}`);
+                            dataforseoFailed = true;
+                            continue;
+                        }
+                        if (json.rate_limited) {
+                            console.log(`[AutoHunter] ⚠️ DataForSEO rate limit! Oturum için devre dışı.`);
+                            dataforseoFailed = true;
+                        } else if (json.success && Array.isArray(json.results) && json.results.length > 0) {
+                            console.log(`[AutoHunter] ✅ DataForSEO başarılı! ${json.results.length} sonuç`);
+                            searchResult = { results: json.results, engine: 'dataforseo' };
+                        } else {
+                            console.log(`[AutoHunter] ⚠️ DataForSEO sonuç yok`);
+                            dataforseoFailed = true;
+                        }
+                    } catch (e) {
+                        console.log(`[AutoHunter] ❌ DataForSEO hata: ${e.message}`);
+                        dataforseoFailed = true;
+                    }
+                }
+
                 // Eğer hiçbir arama motoru çalışmıyorsa taramayı durdur
-                if (!searchResult && googleFailed && bingFailed && duckduckgoFailed) {
+                if (!searchResult && googleFailed && braveFailed && bingFailed && duckduckgoFailed && dataforseoFailed) {
                     console.log(`[AutoHunter] 🚫 TÜM ARAMA MOTORLARI BAŞARISIZ! Tarama durduruluyor.`);
-                    alert(`Hiçbir arama motoru çalışmıyor! Google API'nizi kontrol edin.\n\nTarama durduruldu.\nO ana kadar eklenen: ${totalAdded} site.`);
+                    alert(`Hiçbir arama motoru çalışmıyor!\n\nTarama durduruldu.\nO ana kadar eklenen: ${totalAdded} site.`);
                     autoHunterRef.current.isRunning = false;
                     break;
                 }
@@ -1322,7 +1432,7 @@ window.useLeadHunterServices = (
                                 note: trafficCheck?.note || ''
                             };
                             const newLead = {
-                                url: r.url,
+                                url: domain,
                                 email: emailFound || '',
                                 statusKey: statusKey,
                                 statusLabel: statusLabel,
@@ -1362,7 +1472,7 @@ window.useLeadHunterServices = (
                                 const autoNote = `Site Avcısı Otomasyonu ile ${dateStr} tarihinde eklenmiştir (Trafik/Email kontrolü hata ile).`;
 
                                 const newLead = {
-                                    url: r.url,
+                                    url: domain,
                                     email: '',
                                     statusKey: 'New',
                                     statusLabel: 'New',
@@ -1494,7 +1604,7 @@ window.useLeadHunterServices = (
 
     // --- FINAL CHECK ---
     const servicesObj = {
-        selectedLead, setSelectedLead, isSending, openMailModal, openPromotionModal, handleSendMail, showBulkModal, setShowBulkModal, isBulkSending, bulkProgress, bulkConfig, setBulkConfig, executeBulkSend, executeBulkPromotion, isCheckingBulk, handleBulkReplyCheck, bulkUpdateStatus, bulkAddNotViable, isEnriching, showEnrichModal, setShowEnrichModal, enrichLogs, enrichProgress, enrichDatabase, stopEnrichBackground, isScanning, keywords, setKeywords, searchDepth, setSearchDepth, hunterLogs, hunterProgress, hunterLogsEndRef, startScan, stopScan, handleExportData, fixEncodedNames, startAutoFollowup, stopAutoFollowup, runAutoHunterScan, stopAutoHunterScan, isHunterRunning, fixLeadConsistency
+        selectedLead, setSelectedLead, isSending, openMailModal, openPromotionModal, handleSendMail, showBulkModal, setShowBulkModal, isBulkSending, bulkProgress, bulkConfig, setBulkConfig, executeBulkSend, executeBulkPromotion, isCheckingBulk, handleBulkReplyCheck, bulkUpdateStatus, bulkUpdateLanguage, bulkUpdateStage, bulkAddNotViable, isEnriching, showEnrichModal, setShowEnrichModal, enrichLogs, enrichProgress, enrichDatabase, stopEnrichBackground, isScanning, keywords, setKeywords, searchDepth, setSearchDepth, hunterLogs, hunterProgress, hunterLogsEndRef, startScan, stopScan, handleExportData, fixEncodedNames, startAutoFollowup, stopAutoFollowup, runAutoHunterScan, stopAutoHunterScan, isHunterRunning, fixLeadConsistency
     };
 
     return servicesObj;

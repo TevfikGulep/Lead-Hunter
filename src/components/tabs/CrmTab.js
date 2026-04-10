@@ -6,7 +6,7 @@ window.CrmTab = ({
     paginatedItems, selectedCount, toggleSelectAll, toggleSelection, handleSort, sortConfig,
     editingRowId, editFormData, handleEditChange, handleEditSave, handleEditCancel, handleEditClick,
     setHistoryModalLead, openMailModal, openPromotionModal, currentPage, totalPages, setCurrentPage, totalRecords, emailMap, getStageInfo,
-    enrichDatabase, isEnriching, setShowImportModal, bulkUpdateStatus,
+    enrichDatabase, isEnriching, setShowImportModal, bulkUpdateStatus, bulkUpdateLanguage, bulkUpdateStage,
     itemsPerPage, setItemsPerPage, selectAllFiltered, clearSelection, onExport, startAutoFollowup, stopAutoFollowup
 }) => {
 
@@ -47,7 +47,7 @@ window.CrmTab = ({
                         </div>
                     </div>
                 </div>
-                <window.FilterBar filters={filters} setFilters={setFilters} selectedCount={selectedCount} selectedIds={selectedIds} setShowBulkModal={setShowBulkModal} activeTab={activeTab} onBulkCheck={onBulkCheck} isCheckingBulk={isCheckingBulk} onBulkStatusChange={bulkUpdateStatus} onExport={onExport} startAutoFollowup={startAutoFollowup} stopAutoFollowup={stopAutoFollowup} />
+                <window.FilterBar filters={filters} setFilters={setFilters} selectedCount={selectedCount} selectedIds={selectedIds} setShowBulkModal={setShowBulkModal} activeTab={activeTab} onBulkCheck={onBulkCheck} isCheckingBulk={isCheckingBulk} onBulkStatusChange={bulkUpdateStatus} onBulkLanguageChange={bulkUpdateLanguage} onBulkStageChange={bulkUpdateStage} onExport={onExport} startAutoFollowup={startAutoFollowup} stopAutoFollowup={stopAutoFollowup} />
             </div>
 
             <div className="overflow-x-auto">

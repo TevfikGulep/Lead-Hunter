@@ -97,6 +97,8 @@ const LeadHunter = () => {
                             onStageChange={actions.handleManualStageUpdate}
                             workflow={auth.settings.workflowTR}
                             bulkUpdateStatus={services.bulkUpdateStatus}
+                            bulkUpdateLanguage={services.bulkUpdateLanguage}
+                            bulkUpdateStage={services.bulkUpdateStage}
                             onExport={() => services.handleExportData(data.selectedIds.size > 0 ? data.crmData.filter(l => data.selectedIds.has(l.id)) : data.processedData)}
                         />
                     )}
@@ -169,6 +171,8 @@ const LeadHunter = () => {
                             isEnriching={services.isEnriching}
                             setShowImportModal={setShowImportModal}
                             bulkUpdateStatus={services.bulkUpdateStatus}
+                            bulkUpdateLanguage={services.bulkUpdateLanguage}
+                            bulkUpdateStage={services.bulkUpdateStage}
                             onExport={() => services.handleExportData(data.selectedIds.size > 0 ? data.crmData.filter(l => data.selectedIds.has(l.id)) : data.processedData)}
                             startAutoFollowup={services.startAutoFollowup}
                             stopAutoFollowup={services.stopAutoFollowup}

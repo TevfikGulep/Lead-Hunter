@@ -13,6 +13,8 @@ window.FilterBar = ({
     onBulkCheck,
     isCheckingBulk,
     onBulkStatusChange,
+    onBulkLanguageChange,
+    onBulkStageChange,
     onExport,
     startAutoFollowup,
     stopAutoFollowup
@@ -104,6 +106,40 @@ window.FilterBar = ({
                             <option key={key} value={key}>{window.LEAD_STATUSES[key].label}</option>
                         ))}
                     </select>
+
+                    {onBulkLanguageChange && (
+                        <select
+                            onChange={(e) => {
+                                if (e.target.value) {
+                                    onBulkLanguageChange(e.target.value);
+                                    e.target.value = '';
+                                }
+                            }}
+                            className="bg-white text-slate-700 hover:bg-slate-50 px-3 py-2 rounded-lg text-xs font-bold border border-slate-300 shadow-sm transition-colors outline-none cursor-pointer"
+                        >
+                            <option value="">Dil Değiştir...</option>
+                            <option value="TR">TR (Türkçe)</option>
+                            <option value="EN">EN (English)</option>
+                        </select>
+                    )}
+
+                    {onBulkStageChange && (
+                        <select
+                            onChange={(e) => {
+                                if (e.target.value !== '') {
+                                    onBulkStageChange(e.target.value);
+                                    e.target.value = '';
+                                }
+                            }}
+                            className="bg-white text-slate-700 hover:bg-slate-50 px-3 py-2 rounded-lg text-xs font-bold border border-slate-300 shadow-sm transition-colors outline-none cursor-pointer"
+                        >
+                            <option value="">Son Gönderilen Değiştir...</option>
+                            <option value="0">Henüz Gönderilmedi</option>
+                            {window.DEFAULT_WORKFLOW_TR.map((step, index) => (
+                                <option key={index} value={index + 1}>{step.label}</option>
+                            ))}
+                        </select>
+                    )}
 
                     <button
                         onClick={onBulkCheck}

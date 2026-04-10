@@ -229,7 +229,7 @@ window.useLeadHunterActions = (dbInstance, isDbConnected, crmData, setCrmData, s
         if (!isDbConnected) return alert("Veritabanı bağlı değil.");
         try {
             const newLead = {
-                url: lead.url,
+                url: window.cleanDomain(lead.url),
                 email: lead.email || '',
                 statusKey: 'New',
                 statusLabel: 'New',

@@ -309,46 +309,42 @@ try {
             $totalSearches++;
             writeLog("[$totalSearches] Aranıyor: $query", "INFO");
 
-            // PRIMARY: Google Custom Search API
-            $searchUrl = SERVER_URL . "?type=search&q=" . urlencode($query) . "&depth=30&gl=TR&apiKey=" . urlencode($googleApiKey) . "&cx=" . urlencode($searchEngineId);
-
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, $searchUrl);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-            $response = curl_exec($ch);
-            curl_close($ch);
-
-            $json = json_decode($response, true);
-
-            // FALLBACK: Bing scraping
-            if (!$json || !$json['success'] || empty($json['results'])) {
-                writeLog("Google CSE başarısız, Bing deneniyor...", "WARN");
-                $fallbackUrl = SERVER_URL . "?type=search_bing&q=" . urlencode($query) . "&depth=30&gl=TR";
-
+            // Fallback chain: Google CSE → Brave → Bing → DuckDuckGo → DataForSEO
+            $tryUrl = function($url) {
                 $ch = curl_init();
-                curl_setopt($ch, CURLOPT_URL, $fallbackUrl);
+                curl_setopt($ch, CURLOPT_URL, $url);
                 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-                $response = curl_exec($ch);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 45);
+                $r = curl_exec($ch);
                 curl_close($ch);
+                return json_decode($r, true);
+            };
 
-                $json = json_decode($response, true);
+            // 1. PRIMARY: Google Custom Search API
+            $json = $tryUrl(SERVER_URL . "?type=search&q=" . urlencode($query) . "&depth=30&gl=TR&apiKey=" . urlencode($googleApiKey) . "&cx=" . urlencode($searchEngineId));
+
+            // 2. FALLBACK: Brave Search API
+            if (!$json || !$json['success'] || empty($json['results'])) {
+                writeLog("Google CSE başarısız, Brave deneniyor...", "WARN");
+                $json = $tryUrl(SERVER_URL . "?type=search_brave&q=" . urlencode($query) . "&depth=20&gl=tr");
             }
 
-            // FALLBACK 2: DuckDuckGo scraping
+            // 3. FALLBACK: Bing scraping
+            if (!$json || !$json['success'] || empty($json['results'])) {
+                writeLog("Brave başarısız, Bing deneniyor...", "WARN");
+                $json = $tryUrl(SERVER_URL . "?type=search_bing&q=" . urlencode($query) . "&depth=30&gl=TR");
+            }
+
+            // 4. FALLBACK: DuckDuckGo scraping
             if (!$json || !$json['success'] || empty($json['results'])) {
                 writeLog("Bing başarısız, DuckDuckGo deneniyor...", "WARN");
-                $fallbackUrl2 = SERVER_URL . "?type=search_duckduckgo&q=" . urlencode($query) . "&depth=30&gl=TR";
+                $json = $tryUrl(SERVER_URL . "?type=search_duckduckgo&q=" . urlencode($query) . "&depth=30&gl=TR");
+            }
 
-                $ch = curl_init();
-                curl_setopt($ch, CURLOPT_URL, $fallbackUrl2);
-                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-                $response = curl_exec($ch);
-                curl_close($ch);
-
-                $json = json_decode($response, true);
+            // 5. SON ÇARE: DataForSEO
+            if (!$json || !$json['success'] || empty($json['results'])) {
+                writeLog("DDG başarısız, DataForSEO (son çare) deneniyor...", "WARN");
+                $json = $tryUrl(SERVER_URL . "?type=search_dataforseo&q=" . urlencode($query) . "&depth=10&gl=TR");
             }
 
             if ($json && isset($json['success']) && $json['success'] && !empty($json['results'])) {

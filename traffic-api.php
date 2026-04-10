@@ -257,6 +257,174 @@ try {
         $response = ['success' => true, 'results' => $results, 'count' => count($results)];
     }
 
+    // === BRAVE SEARCH API ===
+    elseif ($type === 'search_brave') {
+        $query = isset($_GET['q']) ? $_GET['q'] : '';
+        $depth = isset($_GET['depth']) ? (int) $_GET['depth'] : 20;
+        $gl = isset($_GET['gl']) ? strtolower(trim($_GET['gl'])) : 'tr';
+
+        if (empty($query)) throw new Exception("Query required");
+
+        // Brave Search API max count = 20
+        if ($depth > 20) $depth = 20;
+
+        $braveApiKey = 'BSAtGBa3gMhwQvqeSimfwzK0f-b9yHK';
+        $braveUrl = 'https://api.search.brave.com/res/v1/web/search?'
+            . 'q=' . urlencode($query)
+            . '&count=' . $depth
+            . '&country=' . urlencode($gl)
+            . '&search_lang=' . ($gl === 'tr' ? 'tr' : 'en');
+
+        addLog("Brave Search: $query (gl=$gl, depth=$depth)");
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $braveUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'X-Subscription-Token: ' . $braveApiKey,
+            'Accept: application/json',
+            'Accept-Encoding: gzip'
+        ]);
+        curl_setopt($ch, CURLOPT_ENCODING, ''); // auto-decode gzip
+        $jsonResp = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        addLog("Brave HTTP: $httpCode, Length: " . strlen($jsonResp));
+
+        $results = [];
+        $braveRateLimited = false;
+
+        if ($httpCode === 429) {
+            addLog("Brave RATE LIMIT (429)");
+            $response = ['success' => false, 'results' => [], 'error' => 'rate_limited', 'rate_limited' => true];
+            $braveRateLimited = true;
+        } elseif ($httpCode === 401 || $httpCode === 403) {
+            addLog("Brave AUTH error: $httpCode");
+            $response = ['success' => false, 'results' => [], 'error' => 'auth_error', 'status_code' => $httpCode];
+        } else {
+            $data = json_decode($jsonResp, true);
+            if ($data && isset($data['web']['results']) && is_array($data['web']['results'])) {
+                $items = $data['web']['results'];
+                addLog("Brave: " . count($items) . " items returned");
+
+                $seen = [];
+                foreach ($items as $item) {
+                    if (count($results) >= $depth) break;
+                    $url = isset($item['url']) ? $item['url'] : '';
+                    $title = isset($item['title']) ? $item['title'] : '';
+                    $snippet = isset($item['description']) ? strip_tags($item['description']) : '';
+                    if (empty($url)) continue;
+
+                    $domKey = parse_url($url, PHP_URL_HOST);
+                    if ($domKey && isset($seen[$domKey])) continue;
+                    if ($domKey) $seen[$domKey] = true;
+
+                    $results[] = ['url' => $url, 'title' => $title, 'snippet' => $snippet];
+                    addLog("Brave found: $url");
+                }
+            } else {
+                $errMsg = 'No results';
+                if ($data && isset($data['error']['detail'])) $errMsg = $data['error']['detail'];
+                elseif ($data && isset($data['message'])) $errMsg = $data['message'];
+                addLog("Brave error: $errMsg");
+            }
+        }
+
+        if (!isset($response)) {
+            $response = ['success' => count($results) > 0, 'results' => $results, 'count' => count($results), 'engine' => 'brave'];
+        }
+    }
+
+    // === DATAFORSEO SEARCH (SON ÇARE) ===
+    elseif ($type === 'search_dataforseo') {
+        $query = isset($_GET['q']) ? $_GET['q'] : '';
+        $depth = isset($_GET['depth']) ? (int) $_GET['depth'] : 10;
+        $gl = isset($_GET['gl']) ? strtoupper(trim($_GET['gl'])) : 'TR';
+        $lang = isset($_GET['lang']) ? strtoupper(trim($_GET['lang'])) : '';
+
+        if (empty($query)) throw new Exception("Query required");
+
+        addLog("DataForSEO (last resort): $query (gl=$gl)");
+
+        $locationMap = [
+            'TR' => 2792, 'US' => 2840, 'UK' => 2826, 'GB' => 2826,
+            'DE' => 2276, 'FR' => 2250, 'IT' => 2380, 'ES' => 2724,
+            'NL' => 2528, 'PL' => 2616, 'RO' => 2642, 'GR' => 2300, 'BG' => 2100
+        ];
+        $langMap = [
+            'TR' => 'tr', 'US' => 'en', 'UK' => 'en', 'GB' => 'en',
+            'DE' => 'de', 'FR' => 'fr', 'IT' => 'it', 'ES' => 'es',
+            'NL' => 'nl', 'PL' => 'pl', 'RO' => 'ro', 'GR' => 'el', 'BG' => 'bg'
+        ];
+        $locationCode = isset($locationMap[$gl]) ? $locationMap[$gl] : 2792;
+        $languageCode = ($lang && isset($langMap[$lang])) ? $langMap[$lang] : (isset($langMap[$gl]) ? $langMap[$gl] : 'tr');
+
+        $postData = json_encode([[
+            "keyword" => $query,
+            "location_code" => $locationCode,
+            "language_code" => $languageCode,
+            "device" => "desktop",
+            "os" => "windows",
+            "depth" => $depth
+        ]]);
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, "https://api.dataforseo.com/v3/serp/google/organic/live");
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Authorization: Basic dGV2ZmlrZ3VsZXBAb3hpZ2VuLnRlYW06Njg5ODAzOTc2NTlkYWQ5Ng==',
+            'Content-Type: application/json'
+        ]);
+
+        $jsonResp = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        addLog("DataForSEO HTTP: $httpCode, Length: " . strlen($jsonResp));
+
+        $results = [];
+        $data = json_decode($jsonResp, true);
+        $dfRateLimited = false;
+
+        if ($data && isset($data['tasks'][0]['status_code'])) {
+            $dfStatusCode = (int)$data['tasks'][0]['status_code'];
+            if (in_array($dfStatusCode, [40202, 40301, 40302, 20100])) {
+                addLog("DataForSEO RATE LIMIT: status=$dfStatusCode");
+                $response = ['success' => false, 'results' => [], 'error' => 'rate_limited', 'rate_limited' => true, 'status_code' => $dfStatusCode];
+                $dfRateLimited = true;
+            }
+        }
+
+        if (!$dfRateLimited && $data && isset($data['tasks'][0]['result'][0]['items']) && is_array($data['tasks'][0]['result'][0]['items'])) {
+            $items = $data['tasks'][0]['result'][0]['items'];
+            $seen = [];
+            foreach ($items as $item) {
+                if (count($results) >= $depth) break;
+                if (!isset($item['type']) || $item['type'] !== 'organic') continue;
+                $url = isset($item['url']) ? $item['url'] : '';
+                $title = isset($item['title']) ? $item['title'] : '';
+                $snippet = isset($item['description']) ? $item['description'] : '';
+                $itemDomain = isset($item['domain']) ? $item['domain'] : '';
+                if (empty($url)) continue;
+                $domKey = $itemDomain ?: parse_url($url, PHP_URL_HOST);
+                if ($domKey && isset($seen[$domKey])) continue;
+                if ($domKey) $seen[$domKey] = true;
+                $results[] = ['url' => $url, 'title' => $title, 'snippet' => $snippet];
+            }
+        }
+
+        if (!$dfRateLimited) {
+            $response = ['success' => count($results) > 0, 'results' => $results, 'count' => count($results), 'engine' => 'dataforseo'];
+        }
+    }
+
     // === GOOGLE SEARCH (API or Scraping) ===
     elseif ($type === 'search') {
         $query = isset($_GET['q']) ? $_GET['q'] : '';
