@@ -857,7 +857,7 @@ window.useLeadHunterServices = (
                 if (json.success && Array.isArray(json.results)) {
                     const filteredResults = json.results.filter(r => {
                         const d = window.cleanDomain(r.url);
-                        if (/\.(bel|gov)\.tr$/i.test(d)) return false;
+                        if (/\.(bel|gov|edu|k12|pol|tsk|mil)\.tr$/i.test(d)) return false;
                         return !existingDomains.has(d);
                     });
                     if (filteredResults.length > 0) {
@@ -1092,16 +1092,31 @@ window.useLeadHunterServices = (
         const ilceList = settings.ilceListesi.split('\n').map(l => l.trim()).filter(l => l.length > 0);
         const targetCount = settings.hunterTargetCount || 100;
         const keywords = ['haberleri', 'son dakika', 'güncel', 'haber', 'gazete'];
-        
+
         const existingDomains = new Set(crmDataRef.current.map(c => window.cleanDomain(c.url)));
         const serverUrl = (window.APP_CONFIG && window.APP_CONFIG.SERVER_API_URL) || '';
-        
+
         console.log(`[AutoHunter] Hedef: ${targetCount} site, İlçe sayısı: ${ilceList.length}`);
 
         let currentIlceIndex = settings.lastHunterIlceIndex || 0;
         let foundViableCount = 0;
         let totalSearches = 0;
         let maxSearches = ilceList.length * keywords.length;
+        let totalAdded = 0;
+
+        // Progress'i her çıkış yolunda kaydet
+        const saveProgress = async (reason) => {
+            if (!isDbConnected) return;
+            try {
+                await dbInstance.collection('system').doc('config').update({
+                    lastHunterIlceIndex: currentIlceIndex % ilceList.length,
+                    lastHunterRunDate: new Date().toISOString()
+                });
+                console.log(`[AutoHunter] 💾 Progress kaydedildi (${reason}): ilçe=${currentIlceIndex % ilceList.length}, eklenen=${totalAdded}`);
+            } catch (e) {
+                console.error("[AutoHunter] Progress kaydetme hatası:", e);
+            }
+        };
         
         // Fallback search engine system
         let activeSearchEngine = 'google'; // google, bing, duckduckgo
@@ -1147,12 +1162,13 @@ window.useLeadHunterServices = (
             }
         };
 
+        try {
         for (let i = 0; i < ilceList.length; i++) {
             if (foundViableCount >= targetCount) break;
             if (autoHunterRef.current.isRunning === false) break;
 
             const ilce = ilceList[currentIlceIndex % ilceList.length];
-            
+
             for (const kw of keywords) {
                 if (foundViableCount >= targetCount) break;
                 if (totalSearches >= maxSearches) break;
@@ -1296,10 +1312,9 @@ window.useLeadHunterServices = (
                 // Eğer hiçbir arama motoru çalışmıyorsa taramayı durdur
                 if (!searchResult && googleFailed && bingFailed && duckduckgoFailed) {
                     console.log(`[AutoHunter] 🚫 TÜM ARAMA MOTORLARI BAŞARISIZ! Tarama durduruluyor.`);
-                    alert("Hiçbir arama motoru çalışmıyor! Google API'nizi kontrol edin.\n\nTarama durduruldu.");
+                    alert(`Hiçbir arama motoru çalışmıyor! Google API'nizi kontrol edin.\n\nTarama durduruldu.\nO ana kadar eklenen: ${totalAdded} site.`);
                     autoHunterRef.current.isRunning = false;
-                    setIsHunterRunning(false);
-                    return;
+                    break;
                 }
                 
                 // Sonuçları işle
@@ -1308,8 +1323,8 @@ window.useLeadHunterServices = (
                     
                     const newResults = searchResult.results.filter(r => {
                         const domain = window.cleanDomain(r.url);
-                        if (/\.(bel|gov)\.tr$/i.test(domain)) {
-                            console.log(`[AutoHunter] ⏭️ Devlet sitesi atlandı: ${domain}`);
+                        if (/\.(bel|gov|edu|k12|pol|tsk|mil)\.tr$/i.test(domain)) {
+                            console.log(`[AutoHunter] ⏭️ Devlet/eğitim sitesi atlandı: ${domain}`);
                             return false;
                         }
                         return !existingDomains.has(domain);
@@ -1359,6 +1374,12 @@ window.useLeadHunterServices = (
                             const dateStr = now.toLocaleDateString('tr-TR') + ' ' + now.toLocaleTimeString('tr-TR');
                             const autoNote = `Site Avcısı Otomasyonu ile ${dateStr} tarihinde eklenmiştir.`;
 
+                            const safeTraffic = {
+                                viable: trafficCheck?.viable === true,
+                                label: trafficCheck?.label || 'Veri Yok',
+                                value: Number(trafficCheck?.value) || 0,
+                                note: trafficCheck?.note || ''
+                            };
                             const newLead = {
                                 url: r.url,
                                 email: emailFound || '',
@@ -1366,7 +1387,7 @@ window.useLeadHunterServices = (
                                 statusLabel: statusLabel,
                                 stage: 0,
                                 language: 'TR',
-                                trafficStatus: trafficCheck || { viable: false, label: 'Veri Yok', value: 0 },
+                                trafficStatus: safeTraffic,
                                 addedDate: now.toISOString(),
                                 source: 'AutoHunter',
                                 sourceQuery: query,
@@ -1379,7 +1400,9 @@ window.useLeadHunterServices = (
                             };
 
                             if (isDbConnected) {
-                                await dbInstance.collection("leads").add(newLead);
+                                const docRef = await dbInstance.collection("leads").add(newLead);
+                                setCrmData(prev => [...prev, { ...newLead, id: docRef.id }]);
+                                totalAdded++;
                                 console.log(`[AutoHunter] ✅ CRM'e eklendi: ${domain}`);
                             }
 
@@ -1417,7 +1440,9 @@ window.useLeadHunterServices = (
                                 };
                                 
                                 if (isDbConnected) {
-                                    await dbInstance.collection("leads").add(newLead);
+                                    const docRef = await dbInstance.collection("leads").add(newLead);
+                                    setCrmData(prev => [...prev, { ...newLead, id: docRef.id }]);
+                                    totalAdded++;
                                 }
                                 existingDomains.add(domain);
                                 // foundViableCount++; // Hata durumunda sayma ki gerçek hedefe ulaşılsın
@@ -1439,21 +1464,16 @@ window.useLeadHunterServices = (
             await new Promise(r => setTimeout(r, 2000));
             currentIlceIndex++;
         }
-
-        // Durumu kaydet
-        if (isDbConnected) {
-            try {
-                await dbInstance.collection('system').doc('config').set({
-                    lastHunterIlceIndex: currentIlceIndex % ilceList.length,
-                    lastHunterRunDate: new Date().toISOString()
-                }, { merge: true });
-            } catch (e) {
-                console.error("[AutoHunter] Durum kaydetme hatası:", e);
-            }
+        } catch (fatalErr) {
+            console.error("[AutoHunter] Beklenmedik hata:", fatalErr);
+        } finally {
+            // Her çıkış yolunda progress'i kaydet (manuel stop, hata, hedef tamam)
+            await saveProgress('final');
+            autoHunterRef.current.isRunning = false;
+            setIsHunterRunning(false);
+            console.log(`[AutoHunter] Tamamlandı. Eklenen site: ${totalAdded}, Bulunan uygun: ${foundViableCount}`);
+            alert(`Tarama tamamlandı.\nEklenen: ${totalAdded} site\nUygun (trafikli): ${foundViableCount}`);
         }
-
-        autoHunterRef.current.isRunning = false;
-        console.log(`[AutoHunter] Tamamlandı. Bulunan uygun site: ${foundViableCount}`);
     };
 
     // Otomatik taramayı durdur

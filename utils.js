@@ -107,14 +107,14 @@ window.checkTraffic = async (siteUrl) => {
         // ---------------------
 
         if (data.success) {
-            const numVal = parseFloat(data.value);
+            const numVal = parseFloat(data.value) || 0;
             const isViable = numVal > 20000;
-            
+
             console.log(`%c✅ [Result] ${rootDomain}: ${data.raw} (${data.source})`, 'color: green; font-weight: bold;');
 
             return {
                 viable: isViable,
-                label: data.raw, 
+                label: data.raw || 'Veri Yok',
                 value: numVal,
                 note: isViable ? 'İyi Trafik' : 'Düşük Trafik'
             };
