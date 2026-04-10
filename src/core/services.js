@@ -1547,12 +1547,27 @@ window.useLeadHunterServices = (
         if (!confirm("Tutarsız lead verileri düzeltilecek (statusKey/stage uyumsuzlukları).\nDevam edilsin mi?")) return;
 
         let fixCount = 0;
+        let urlFixCount = 0;
         let batch = dbInstance.batch();
         let batchCount = 0;
         const allUpdates = {};
 
+        // Doğrudan Firestore'dan tüm leadleri çek (crmData filter edilmiş olabilir)
+        let allLeads = [];
+        try {
+            const snapshot = await dbInstance.collection('leads').get();
+            allLeads = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            console.log(`[fixLeadConsistency] Firestore'dan ${allLeads.length} lead çekildi`);
+        } catch (e) {
+            return alert("Lead'ler çekilemedi: " + e.message);
+        }
+
+        if (allLeads.length === 0) {
+            return alert("Düzeltilecek lead bulunamadı (DB boş?).");
+        }
+
         const todayIso = new Date().toISOString();
-        for (const lead of crmData) {
+        for (const lead of allLeads) {
             const updates = {};
             const sk = lead.statusKey || '';
             const isNewOrEmpty = !sk || sk === 'New';
@@ -1583,6 +1598,15 @@ window.useLeadHunterServices = (
                 updates.addedDate = lead.lastContactDate || todayIso;
             }
 
+            // 5. URL alanı yalın domain değilse (protokol, path, query, www vs.) normalize et
+            if (lead.url) {
+                const cleaned = window.cleanDomain(lead.url);
+                if (cleaned && cleaned !== lead.url) {
+                    updates.url = cleaned;
+                    urlFixCount++;
+                }
+            }
+
             if (Object.keys(updates).length > 0) {
                 batch.update(dbInstance.collection("leads").doc(lead.id), updates);
                 allUpdates[lead.id] = updates;
@@ -1599,7 +1623,7 @@ window.useLeadHunterServices = (
 
         if (batchCount > 0) await batch.commit();
         setCrmData(prev => prev.map(p => allUpdates[p.id] ? { ...p, ...allUpdates[p.id] } : p));
-        alert(`${fixCount} lead düzeltildi.`);
+        alert(`${allLeads.length} lead tarandı.\n${fixCount} tanesi düzeltildi.\n(${urlFixCount} tanesinin URL'si yalın domaine çevrildi.)`);
     };
 
     // --- FINAL CHECK ---
