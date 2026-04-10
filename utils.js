@@ -3,6 +3,21 @@
 // --- CONFIGURATION ---
 const SERVER_API_URL = (window.APP_CONFIG && window.APP_CONFIG.SERVER_API_URL) || 'https://varsayilan-url.com/traffic-api.php';
 
+// --- GOOGLE APPS SCRIPT CALLER (PHP Proxy - CORS bypass) ---
+// Apps Script doğrudan fetch edildiğinde CORS + 302 redirect sorunu çıkarıyor.
+// Bu wrapper tüm çağrıları traffic-api.php?type=gscript_proxy üzerinden geçirir.
+window.callGoogleScript = async (scriptUrl, payload) => {
+    if (!scriptUrl) throw new Error('Google Apps Script URL tanımlı değil');
+    const proxyUrl = `${SERVER_API_URL}?type=gscript_proxy`;
+    const response = await fetch(proxyUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: scriptUrl, payload: payload })
+    });
+    if (!response.ok) throw new Error(`Proxy HTTP ${response.status}`);
+    return await response.json();
+};
+
 // ... (Diğer yardımcı fonksiyonlar - cleanDomain vb. aynı kalacak) ...
 window.cleanDomain = (url) => { 
     if (!url) return '';

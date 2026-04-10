@@ -37,6 +37,69 @@ try {
         exit;
     }
 
+    // === GOOGLE APPS SCRIPT PROXY (CORS bypass) ===
+    // POST body: { "url": "https://script.google.com/...", "payload": {...} }
+    // Forwards request to Apps Script server-side, returning raw JSON response
+    if ($type === 'gscript_proxy') {
+        ob_clean();
+        header('Content-Type: application/json; charset=UTF-8');
+
+        $rawInput = file_get_contents('php://input');
+        $input = json_decode($rawInput, true);
+
+        if (!$input || empty($input['url']) || !isset($input['payload'])) {
+            echo json_encode(['status' => 'error', 'message' => 'url ve payload gerekli']);
+            exit;
+        }
+
+        $targetUrl = $input['url'];
+        if (strpos($targetUrl, 'https://script.google.com/') !== 0) {
+            echo json_encode(['status' => 'error', 'message' => 'Yalnızca script.google.com URL\'leri kabul edilir']);
+            exit;
+        }
+
+        $payloadJson = json_encode($input['payload']);
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $targetUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_MAXREDIRS, 5);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $payloadJson);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 120);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Content-Type: text/plain;charset=utf-8',
+            'Content-Length: ' . strlen($payloadJson)
+        ]);
+
+        $resp = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr = curl_error($ch);
+        curl_close($ch);
+
+        if ($curlErr) {
+            echo json_encode(['status' => 'error', 'message' => 'cURL: ' . $curlErr, 'http_code' => $httpCode]);
+            exit;
+        }
+
+        // Apps Script JSON döndürüyor — direkt geçir
+        if ($resp === false || $resp === '') {
+            echo json_encode(['status' => 'error', 'message' => 'Apps Script boş yanıt döndü', 'http_code' => $httpCode]);
+            exit;
+        }
+
+        // Response zaten JSON ise direkt geçir, değilse wrap et
+        $decoded = json_decode($resp, true);
+        if ($decoded === null) {
+            echo json_encode(['status' => 'error', 'message' => 'Apps Script JSON değil yanıt döndü', 'http_code' => $httpCode, 'raw' => substr($resp, 0, 500)]);
+            exit;
+        }
+        echo $resp;
+        exit;
+    }
+
     // === BING SEARCH ===
     if ($type === 'search_bing') {
         $query = isset($_GET['q']) ? $_GET['q'] : '';

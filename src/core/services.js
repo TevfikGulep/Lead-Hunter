@@ -195,12 +195,7 @@ window.useLeadHunterServices = (
             if (candidates.length === 0) return;
             const sortedCandidates = [...candidates].sort((a, b) => new Date(b.lastContactDate || 0) - new Date(a.lastContactDate || 0)).slice(0, 50);
             try {
-                const response = await fetch(settings.googleScriptUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({ action: 'check_replies_bulk', threadIds: sortedCandidates.map(c => c.threadId) })
-                });
-                const data = await response.json();
+                const data = await window.callGoogleScript(settings.googleScriptUrl, { action: 'check_replies_bulk', threadIds: sortedCandidates.map(c => c.threadId) });
                 if (data.status === 'success' && data.results) {
                     const batch = dbInstance.batch();
                     let updatesCount = 0;
@@ -417,8 +412,7 @@ window.useLeadHunterServices = (
             const trackingPixel = serverUrl ? `<img src="${serverUrl}?type=track&id=${selectedLead.id}" width="1" height="1" style="display:none;" alt="" />` : '';
             const htmlContent = `<div style="font-family: Arial; font-size: 14px;">${messageHtml}</div><br><br><div>${signatureHtml}</div>${trackingPixel}`;
             const plainBody = selectedLead.draft.body + (settings.signature ? `\n\n--\n${settings.signature.replace(/<[^>]+>/g, '')}` : '');
-            const response = await fetch(settings.googleScriptUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'send_mail', to: selectedLead.draft.to, subject: selectedLead.draft.subject, body: plainBody, htmlBody: htmlContent, threadId: selectedLead.threadId || null }) });
-            const result = await response.json();
+            const result = await window.callGoogleScript(settings.googleScriptUrl, { action: 'send_mail', to: selectedLead.draft.to, subject: selectedLead.draft.subject, body: plainBody, htmlBody: htmlContent, threadId: selectedLead.threadId || null });
             if (result.status === 'error') throw new Error(result.message);
             if (isDbConnected) {
                 const newLog = { date: new Date().toISOString(), type: 'MAIL', content: `Mail Gönderildi: ${selectedLead.currentLabel}` };
@@ -466,8 +460,7 @@ window.useLeadHunterServices = (
                 const trackingPixel = serverUrl ? `<img src="${serverUrl}?type=track&id=${mainLead.id}" width="1" height="1" style="display:none;" alt="" />` : '';
                 const htmlContent = `<div style="font-family: Arial; font-size: 14px;">${messageHtml}</div><br><br><div>${signatureHtml}</div>${trackingPixel}`;
                 const plainBody = body + (settings.signature ? `\n\n--\n${settings.signature.replace(/<[^>]+>/g, '')}` : '');
-                const response = await fetch(settings.googleScriptUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'send_mail', to: email, subject: subject, body: plainBody, htmlBody: htmlContent, threadId: mainLead.threadId || null }) });
-                const result = await response.json();
+                const result = await window.callGoogleScript(settings.googleScriptUrl, { action: 'send_mail', to: email, subject: subject, body: plainBody, htmlBody: htmlContent, threadId: mainLead.threadId || null });
                 if (result.status === 'error') throw new Error(result.message);
                 addBulkLog(`${email}: Gönderildi`, true);
                 if (isDbConnected) {
@@ -532,17 +525,9 @@ window.useLeadHunterServices = (
 
                 console.log("Promosyon maili gönderiliyor:", { to: email, subject: subject });
 
-                const response = await fetch(settings.googleScriptUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({ action: 'send_mail', to: email, subject: subject, body: plainBody, htmlBody: htmlContent, threadId: null })
-                });
-
-                console.log("Google Script yanıtı:", response);
-
-                const result = await response.json();
+                const result = await window.callGoogleScript(settings.googleScriptUrl, { action: 'send_mail', to: email, subject: subject, body: plainBody, htmlBody: htmlContent, threadId: null });
                 console.log("JSON yanıtı:", result);
-                
+
                 if (result.status === 'error') throw new Error(result.message || 'Bilinmeyen hata');
 
                 addBulkLog(`${email}: Promosyon gönderildi`, true);
@@ -584,12 +569,7 @@ window.useLeadHunterServices = (
             for (const lead of missingThreadLeads) {
                 try {
                     const email = lead.email.split(',')[0].trim();
-                    const res = await fetch(settings.googleScriptUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                        body: JSON.stringify({ action: 'check_thread_by_email', to: email })
-                    });
-                    const result = await res.json();
+                    const result = await window.callGoogleScript(settings.googleScriptUrl, { action: 'check_thread_by_email', to: email });
                     if (result.status === 'success' && result.threadId) {
                         await dbInstance.collection("leads").doc(lead.id).update({ threadId: result.threadId });
                         lead.threadId = result.threadId;
@@ -612,8 +592,7 @@ window.useLeadHunterServices = (
             return;
         }
         try {
-            const response = await fetch(settings.googleScriptUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'check_replies_bulk', threadIds: candidates.map(c => c.threadId) }) });
-            const data = await response.json();
+            const data = await window.callGoogleScript(settings.googleScriptUrl, { action: 'check_replies_bulk', threadIds: candidates.map(c => c.threadId) });
             if (data.status === 'success') {
                 const results = data.results; let updatedCount = 0; let bounceCount = 0; const batch = dbInstance.batch(); let hasUpdates = false;
                 candidates.forEach(lead => {
@@ -989,19 +968,14 @@ window.useLeadHunterServices = (
                     const htmlContent = `<div style="font-family: Arial; font-size: 14px;">${messageHtml}</div><br><br><div>${signatureHtml}</div>${trackingPixel}`;
                     const plainBody = body + (settings.signature ? `\n\n--\n${settings.signature.replace(/<[^>]+>/g, '')}` : '');
 
-                    const response = await fetch(settings.googleScriptUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                        body: JSON.stringify({
-                            action: 'send_mail',
-                            to: lead.email.split(',')[0].trim(),
-                            subject: subject,
-                            body: plainBody,
-                            htmlBody: htmlContent,
-                            threadId: lead.threadId || null
-                        })
+                    const result = await window.callGoogleScript(settings.googleScriptUrl, {
+                        action: 'send_mail',
+                        to: lead.email.split(',')[0].trim(),
+                        subject: subject,
+                        body: plainBody,
+                        htmlBody: htmlContent,
+                        threadId: lead.threadId || null
                     });
-                    const result = await response.json();
                     if (result.status === 'error') throw new Error(result.message);
                     if (result.threadId) {
                         lead.threadId = result.threadId;

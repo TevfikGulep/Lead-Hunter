@@ -77,12 +77,7 @@ window.useLeadHunterActions = (dbInstance, isDbConnected, crmData, setCrmData, s
         setReplyCheckResult(null);
 
         try {
-            const response = await fetch(settings.googleScriptUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ action: 'check_reply', threadId: lead.threadId })
-            });
-            const data = await response.json();
+            const data = await window.callGoogleScript(settings.googleScriptUrl, { action: 'check_reply', threadId: lead.threadId });
 
             if (data.status === 'success') {
                 console.log("--- DEBUG START: GMAIL CHECK ---");
