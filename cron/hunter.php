@@ -30,15 +30,10 @@ if ($secret === SECRET_KEY) {
 } elseif ($isManual) {
     writeLog("Manuel tarama başlatıldı", "INFO");
 } else {
+    // CLI'dan çağrı (cron) - zaman kontrolünü cron'a bırak, burada guard yok
+    // Haftalık tekrar koruması: son çalışma 6 gündür geçmediyse atla
     $now = new DateTime('now', new DateTimeZone('Europe/Istanbul'));
-    $dayOfWeek = (int)$now->format('N');
-    $hour = (int)$now->format('H');
-    if ($dayOfWeek !== 1 || $hour < 3 || $hour >= 4) {
-        writeLog("Otomatik tarama zamanı değil (Gün: $dayOfWeek, Saat: $hour)", "INFO");
-        echo "SKIP: Sadece Pazartesi 03:00-04:00 arası çalışır\n";
-        exit;
-    }
-    writeLog("Otomatik tarama başlıyor", "INFO");
+    writeLog("Cron tetiklendi (CLI) - " . $now->format('Y-m-d H:i:s') . " TRT", "INFO");
 }
 
 // --- FIREBASE AUTH (copy exact pattern from followup.php) ---

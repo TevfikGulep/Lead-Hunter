@@ -136,8 +136,13 @@ window.useLeadHunterServices = (
     const [hunterProgress, setHunterProgress] = useState(0);
     const [isHunterRunning, setIsHunterRunning] = useState(false);
 
+    // AutoHunter (otomatik tarama) canlı log ve istatistikleri
+    const [autoHunterLogs, setAutoHunterLogs] = useState([]);
+    const [autoHunterStats, setAutoHunterStats] = useState({ totalFound: 0, fullData: 0 });
+
     const scanIntervalRef = useRef(false);
     const hunterLogsEndRef = useRef(null);
+    const autoHunterLogsEndRef = useRef(null);
     const crmDataRef = useRef(crmData);
     useEffect(() => { crmDataRef.current = crmData; }, [crmData]);
 
@@ -1109,6 +1114,16 @@ window.useLeadHunterServices = (
 
         autoHunterRef.current.isRunning = true;
         setIsHunterRunning(true);
+        setAutoHunterLogs([]);
+        setAutoHunterStats({ totalFound: 0, fullData: 0 });
+
+        // Canlı log helper — hem console'a hem UI state'ine yazar
+        const addLog = (msg, type = 'info') => {
+            const time = new Date().toLocaleTimeString('tr-TR');
+            console.log(`[AutoHunter] ${msg}`);
+            setAutoHunterLogs(prev => [...prev.slice(-199), { time, message: msg, type }]);
+        };
+
         alert("Tarama başladı! Tarayıcıyı kapatmayın.");
         const ilceList = settings.ilceListesi.split('\n').map(l => l.trim()).filter(l => l.length > 0);
         const targetCount = settings.hunterTargetCount || 100;
@@ -1117,13 +1132,14 @@ window.useLeadHunterServices = (
         const existingDomains = new Set(crmDataRef.current.map(c => window.cleanDomain(c.url)));
         const serverUrl = (window.APP_CONFIG && window.APP_CONFIG.SERVER_API_URL) || '';
 
-        console.log(`[AutoHunter] Hedef: ${targetCount} site, İlçe sayısı: ${ilceList.length}`);
+        addLog(`🎯 Hedef: ${targetCount} site | İlçe sayısı: ${ilceList.length}`, 'info');
 
         let currentIlceIndex = settings.lastHunterIlceIndex || 0;
         let foundViableCount = 0;
         let totalSearches = 0;
         let maxSearches = ilceList.length * keywords.length;
         let totalAdded = 0;
+        let fullDataCount = 0;
 
         // Progress'i her çıkış yolunda kaydet
         const saveProgress = async (reason) => {
@@ -1152,6 +1168,7 @@ window.useLeadHunterServices = (
             if (autoHunterRef.current.isRunning === false) break;
 
             const ilce = ilceList[currentIlceIndex % ilceList.length];
+            addLog(`📍 İlçe #${currentIlceIndex % ilceList.length}: ${ilce}`, 'info');
 
             for (const kw of keywords) {
                 if (!autoHunterRef.current.isRunning) break;
@@ -1191,14 +1208,13 @@ window.useLeadHunterServices = (
                         console.log(`[AutoHunter] 📊 Google response: success=${json.success}, results=${json.results?.length || 0}, debug=`, json.debug);
                         
                         if (json.success && Array.isArray(json.results) && json.results.length > 0) {
-                            console.log(`[AutoHunter] ✅ Google başarılı! ${json.results.length} sonuç`);
                             searchResult = { results: json.results, engine: 'google' };
                         } else {
-                            console.log(`[AutoHunter] ⚠️ Google başarısız: success=${json.success}, results=${json.results?.length}, error=${json.error}`);
-                            googleFailed = true; // Artık Google'yi deneme
+                            addLog(`⚠️ Google CSE başarısız (oturum için devre dışı): ${json.error || 'kota veya yanıt yok'}`, 'warn');
+                            googleFailed = true;
                         }
                     } catch (e) {
-                        console.log(`[AutoHunter] ❌ Google hata: ${e.message}`);
+                        addLog(`❌ Google CSE hata: ${e.message}`, 'error');
                         googleFailed = true;
                     }
                 }
@@ -1220,17 +1236,16 @@ window.useLeadHunterServices = (
                             continue;
                         }
                         if (json.rate_limited) {
-                            console.log(`[AutoHunter] ⚠️ Brave rate limit! Bu oturum için devre dışı.`);
+                            addLog(`⚠️ Brave rate limit (oturum için devre dışı)`, 'warn');
                             braveFailed = true;
                         } else if (json.success && Array.isArray(json.results) && json.results.length > 0) {
-                            console.log(`[AutoHunter] ✅ Brave başarılı! ${json.results.length} sonuç`);
                             searchResult = { results: json.results, engine: 'brave' };
                         } else {
-                            console.log(`[AutoHunter] ⚠️ Brave sonuç yok`);
+                            addLog(`⚠️ Brave başarısız (oturum için devre dışı)`, 'warn');
                             braveFailed = true;
                         }
                     } catch (e) {
-                        console.log(`[AutoHunter] ❌ Brave hata: ${e.message}`);
+                        addLog(`❌ Brave hata: ${e.message}`, 'error');
                         braveFailed = true;
                     }
                 }
@@ -1258,14 +1273,13 @@ window.useLeadHunterServices = (
                         console.log(`[AutoHunter] 📊 Bing response: success=${json.success}, results=${json.results?.length || 0}, debug=`, json.debug);
                         
                         if (json.success && Array.isArray(json.results) && json.results.length > 0) {
-                            console.log(`[AutoHunter] ✅ Bing başarılı! ${json.results.length} sonuç`);
                             searchResult = { results: json.results, engine: 'bing' };
                         } else {
-                            console.log(`[AutoHunter] ⚠️ Bing başarısız: success=${json.success}, results=${json.results?.length}, debug=${JSON.stringify(json.debug)}`);
+                            addLog(`⚠️ Bing başarısız (oturum için devre dışı)`, 'warn');
                             bingFailed = true;
                         }
                     } catch (e) {
-                        console.log(`[AutoHunter] ❌ Bing hata: ${e.message}`);
+                        addLog(`❌ Bing hata: ${e.message}`, 'error');
                         bingFailed = true;
                     }
                 }
@@ -1293,14 +1307,13 @@ window.useLeadHunterServices = (
                         console.log(`[AutoHunter] 📊 DDG response: success=${json.success}, results=${json.results?.length || 0}, debug=`, json.debug);
                         
                         if (json.success && Array.isArray(json.results) && json.results.length > 0) {
-                            console.log(`[AutoHunter] ✅ DuckDuckGo başarılı! ${json.results.length} sonuç`);
                             searchResult = { results: json.results, engine: 'duckduckgo' };
                         } else {
-                            console.log(`[AutoHunter] ⚠️ DDG başarısız: success=${json.success}, results=${json.results?.length}, debug=${JSON.stringify(json.debug)}`);
+                            addLog(`⚠️ DuckDuckGo başarısız (oturum için devre dışı)`, 'warn');
                             duckduckgoFailed = true;
                         }
                     } catch (e) {
-                        console.log(`[AutoHunter] ❌ DuckDuckGo hata: ${e.message}`);
+                        addLog(`❌ DuckDuckGo hata: ${e.message}`, 'error');
                         duckduckgoFailed = true;
                     }
                 }
@@ -1321,17 +1334,16 @@ window.useLeadHunterServices = (
                             continue;
                         }
                         if (json.rate_limited) {
-                            console.log(`[AutoHunter] ⚠️ DataForSEO rate limit! Oturum için devre dışı.`);
+                            addLog(`⚠️ DataForSEO rate limit (oturum için devre dışı)`, 'warn');
                             dataforseoFailed = true;
                         } else if (json.success && Array.isArray(json.results) && json.results.length > 0) {
-                            console.log(`[AutoHunter] ✅ DataForSEO başarılı! ${json.results.length} sonuç`);
                             searchResult = { results: json.results, engine: 'dataforseo' };
                         } else {
-                            console.log(`[AutoHunter] ⚠️ DataForSEO sonuç yok`);
+                            addLog(`⚠️ DataForSEO başarısız (oturum için devre dışı)`, 'warn');
                             dataforseoFailed = true;
                         }
                     } catch (e) {
-                        console.log(`[AutoHunter] ❌ DataForSEO hata: ${e.message}`);
+                        addLog(`❌ DataForSEO hata: ${e.message}`, 'error');
                         dataforseoFailed = true;
                     }
                 }
@@ -1346,18 +1358,21 @@ window.useLeadHunterServices = (
                 
                 // Sonuçları işle
                 if (searchResult && searchResult.results.length > 0) {
-                    console.log(`[AutoHunter] Toplam ${searchResult.results.length} sonuç (${searchResult.engine})`);
-                    
+                    addLog(`🔎 "${ilce} ${kw}" (${searchResult.engine}): ${searchResult.results.length} sonuç`, 'info');
+
                     const newResults = searchResult.results.filter(r => {
                         const domain = window.cleanDomain(r.url);
                         if (/\.(bel|gov|edu|k12|pol|tsk|mil)\.tr$/i.test(domain)) {
-                            console.log(`[AutoHunter] ⏭️ Devlet/eğitim sitesi atlandı: ${domain}`);
                             return false;
                         }
                         return !existingDomains.has(domain);
                     });
-                    
-                    console.log(`[AutoHunter] Yeni (tekrarlanmayan) sonuç: ${newResults.length}`);
+
+                    if (newResults.length === 0) {
+                        addLog(`↩️ Yeni site yok (hepsi mevcut veya filtreli)`, 'info');
+                    } else {
+                        addLog(`➕ ${newResults.length} yeni site işleniyor...`, 'info');
+                    }
 
                     for (const r of newResults) {
                         if (!autoHunterRef.current.isRunning) break;
@@ -1430,14 +1445,17 @@ window.useLeadHunterServices = (
                                 const docRef = await dbInstance.collection("leads").add(newLead);
                                 setCrmData(prev => [...prev, { ...newLead, id: docRef.id }]);
                                 totalAdded++;
-                                console.log(`[AutoHunter] ✅ CRM'e eklendi: ${domain}`);
+                                // Tam veri = email var + trafik viable
+                                const hasFullData = isViable && emailFound && emailFound.length > 5;
+                                if (hasFullData) fullDataCount++;
+                                setAutoHunterStats({ totalFound: totalAdded, fullData: fullDataCount });
+                                addLog(`✅ ${domain} eklendi | Trafik: ${safeTraffic.label} | Email: ${emailFound ? 'var' : 'yok'}${hasFullData ? ' | TAM VERİ' : ''}`, hasFullData ? 'success' : 'info');
                             }
 
                             existingDomains.add(domain);
                             if (isViable) {
                                 foundViableCount++;
                             }
-                            console.log(`[AutoHunter] İşlem tamam: ${domain} (Trafik: ${trafficCheck?.label || 'Yok'}, Status: ${statusKey})`);
                         } catch (e) {
                             console.error(`[AutoHunter] Kontrol hatası: ${domain}`, e);
 
@@ -1470,11 +1488,13 @@ window.useLeadHunterServices = (
                                     const docRef = await dbInstance.collection("leads").add(newLead);
                                     setCrmData(prev => [...prev, { ...newLead, id: docRef.id }]);
                                     totalAdded++;
+                                    setAutoHunterStats({ totalFound: totalAdded, fullData: fullDataCount });
+                                    addLog(`⚠️ ${domain} hata ile eklendi: ${e.message}`, 'warn');
                                 }
                                 existingDomains.add(domain);
                                 // foundViableCount++; // Hata durumunda sayma ki gerçek hedefe ulaşılsın
                             } catch (addError) {
-                                console.error(`[AutoHunter] Ekleme hatası: ${domain}`, addError);
+                                addLog(`❌ Ekleme hatası: ${domain} — ${addError.message}`, 'error');
                             }
                         }
 
@@ -1492,6 +1512,7 @@ window.useLeadHunterServices = (
             currentIlceIndex++;
         }
         } catch (fatalErr) {
+            addLog(`❌ Beklenmedik hata: ${fatalErr.message}`, 'error');
             console.error("[AutoHunter] Beklenmedik hata:", fatalErr);
         } finally {
             // Her çıkış yolunda progress'i kaydet (manuel stop, hata, hedef tamam)
@@ -1499,11 +1520,11 @@ window.useLeadHunterServices = (
             await saveProgress('final');
             autoHunterRef.current.isRunning = false;
             setIsHunterRunning(false);
-            console.log(`[AutoHunter] Tamamlandı. Eklenen site: ${totalAdded}, Bulunan uygun: ${foundViableCount}`);
             const reason = foundViableCount >= targetCount
                 ? `Hedefe ulaşıldı (${targetCount} uygun site).`
                 : (wasStopped ? 'Manuel olarak durduruldu.' : 'Tüm ilçeler tarandı.');
-            alert(`Tarama tamamlandı.\n\n${reason}\n\n✅ Toplam eklenen: ${totalAdded} site\n📊 Uygun (trafikli): ${foundViableCount} site\n📍 Son ilçe indeksi: ${currentIlceIndex % ilceList.length}`);
+            addLog(`🏁 ${reason} | Eklenen: ${totalAdded} | Tam Veri: ${fullDataCount} | Uygun: ${foundViableCount}`, 'success');
+            alert(`Tarama tamamlandı.\n\n${reason}\n\n✅ Toplam eklenen: ${totalAdded} site\n⭐ Tam verili: ${fullDataCount} site\n📊 Uygun (trafikli): ${foundViableCount} site\n📍 Son ilçe indeksi: ${currentIlceIndex % ilceList.length}`);
         }
     };
 
@@ -1608,7 +1629,7 @@ window.useLeadHunterServices = (
 
     // --- FINAL CHECK ---
     const servicesObj = {
-        selectedLead, setSelectedLead, isSending, openMailModal, openPromotionModal, handleSendMail, showBulkModal, setShowBulkModal, isBulkSending, bulkProgress, bulkConfig, setBulkConfig, executeBulkSend, executeBulkPromotion, isCheckingBulk, handleBulkReplyCheck, bulkUpdateStatus, bulkUpdateLanguage, bulkUpdateStage, bulkAddNotViable, isEnriching, showEnrichModal, setShowEnrichModal, enrichLogs, enrichProgress, enrichDatabase, stopEnrichBackground, isScanning, keywords, setKeywords, searchDepth, setSearchDepth, hunterLogs, hunterProgress, hunterLogsEndRef, startScan, stopScan, handleExportData, fixEncodedNames, startAutoFollowup, stopAutoFollowup, runAutoHunterScan, stopAutoHunterScan, isHunterRunning, fixLeadConsistency
+        selectedLead, setSelectedLead, isSending, openMailModal, openPromotionModal, handleSendMail, showBulkModal, setShowBulkModal, isBulkSending, bulkProgress, bulkConfig, setBulkConfig, executeBulkSend, executeBulkPromotion, isCheckingBulk, handleBulkReplyCheck, bulkUpdateStatus, bulkUpdateLanguage, bulkUpdateStage, bulkAddNotViable, isEnriching, showEnrichModal, setShowEnrichModal, enrichLogs, enrichProgress, enrichDatabase, stopEnrichBackground, isScanning, keywords, setKeywords, searchDepth, setSearchDepth, hunterLogs, hunterProgress, hunterLogsEndRef, startScan, stopScan, handleExportData, fixEncodedNames, startAutoFollowup, stopAutoFollowup, runAutoHunterScan, stopAutoHunterScan, isHunterRunning, autoHunterLogs, autoHunterStats, autoHunterLogsEndRef, fixLeadConsistency
     };
 
     return servicesObj;

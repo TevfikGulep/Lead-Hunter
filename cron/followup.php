@@ -30,43 +30,40 @@ function writeLog($message, $type = 'INFO')
 }
 
 // CORS
-header('Content-Type: text/plain; charset=utf-8');
+if (php_sapi_name() !== 'cli') {
+    header('Content-Type: text/plain; charset=utf-8');
+}
 
 $isManual = isset($_GET['manual']);
 $secret = $_GET['secret'] ?? '';
+$isCli = (php_sapi_name() === 'cli');
 
-// Güvenlik kontrolü
-if ($secret !== SECRET_KEY && !$isManual) {
-    writeLog("Yetkisiz erişim denemesi", "ERROR");
+// Güvenlik kontrolü: CLI'dan (cron) çağrıysa bypass
+if (!$isCli && $secret !== SECRET_KEY && !$isManual) {
+    writeLog("Yetkisiz erişim denemesi (HTTP, secret yok)", "ERROR");
     http_response_code(403);
     echo "ERROR: Yetkisiz erişim\n";
     exit;
 }
 
-// Zaman kontrolü - sadece hafta içi ve saat 10:00
-if (!$isManual) {
-    $now = new DateTime('Europe/Istanbul');
-    $dayOfWeek = (int) $now->format('N'); // 1 = Pazartesi, 5 = Cuma
-    $hour = (int) $now->format('H');
-
-    // Hafta içi (1-5) ve saat 10:00
-    if ($dayOfWeek < 1 || $dayOfWeek > 5) {
-        writeLog("Hafta sonu çalışmaz (Bugün: $dayOfWeek)", "INFO");
-        echo "SKIP: Hafta sonu çalışmaz\n";
-        exit;
-    }
-
-    // Sadece 10:00'da çalışsın (9:55-10:05 arası tolerans)
-    if ($hour < 9 || $hour > 10) {
-        writeLog("Çalışma saati değil (Saat: $hour)", "INFO");
-        echo "SKIP: Çalışma saati değil\n";
-        exit;
-    }
-
-    writeLog("Otomatik takip başlıyor (Gün: $dayOfWeek, Saat: $hour)", "INFO");
+$now = new DateTime('now', new DateTimeZone('Europe/Istanbul'));
+if ($isCli) {
+    writeLog("=== Cron tetiklendi (CLI) @ " . $now->format('Y-m-d H:i:s') . " TRT ===", "INFO");
+} elseif ($isManual) {
+    writeLog("=== Manuel takip başlatıldı @ " . $now->format('Y-m-d H:i:s') . " TRT ===", "INFO");
 } else {
-    writeLog("Manuel takip başlatıldı", "INFO");
+    writeLog("=== Güvenli erişimle tarama @ " . $now->format('Y-m-d H:i:s') . " TRT ===", "INFO");
 }
+
+// Hafta sonu koruması (CLI'dan da uygulansın — yanlışlıkla Cumartesi/Pazar çalışmasın)
+$dayOfWeek = (int) $now->format('N');
+if (!$isManual && ($dayOfWeek < 1 || $dayOfWeek > 5)) {
+    writeLog("Hafta sonu — atlandı (Gün: $dayOfWeek)", "INFO");
+    echo "SKIP: Hafta sonu\n";
+    exit;
+}
+
+writeLog("Follow-up süreci başlıyor (Gün: $dayOfWeek, Saat TRT: " . $now->format('H:i') . ")", "INFO");
 
 // Firebase access token alma
 function getFirebaseAccessToken($serviceAccountFile)

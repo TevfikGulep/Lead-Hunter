@@ -63,15 +63,16 @@ try {
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $targetUrl);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true); // Apps Script 302 → googleusercontent.com takip et
         curl_setopt($ch, CURLOPT_MAXREDIRS, 5);
+        // NOT: POSTREDIR yok — Apps Script redirect sonrası GET bekliyor (standart davranış)
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, $payloadJson);
         curl_setopt($ch, CURLOPT_TIMEOUT, 120);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (compatible; LeadHunter-Proxy/1.0)');
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Content-Type: text/plain;charset=utf-8',
-            'Content-Length: ' . strlen($payloadJson)
+            'Content-Type: application/json'
         ]);
 
         $resp = curl_exec($ch);

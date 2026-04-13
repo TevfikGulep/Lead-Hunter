@@ -18,8 +18,17 @@ window.SettingsTab = ({
     runAutoHunterScan,
     stopAutoHunterScan,
     isHunterRunning,
+    autoHunterLogs,
+    autoHunterStats,
+    autoHunterLogsEndRef,
     fixLeadConsistency
 }) => {
+    // Otomatik tarama logları güncellendiğinde otomatik kaydır
+    React.useEffect(() => {
+        if (autoHunterLogsEndRef && autoHunterLogsEndRef.current) {
+            autoHunterLogsEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+    }, [autoHunterLogs]);
     const [saveMsg, setSaveMsg] = React.useState('');
 
     const handleSaveIlceIndex = async () => {
@@ -353,6 +362,47 @@ window.SettingsTab = ({
                             </p>
                         )}
                     </div>
+
+                    {/* CANLI TARAMA LOGU */}
+                    {(autoHunterLogs && autoHunterLogs.length > 0) && (
+                        <div className="md:col-span-2 mt-4">
+                            <div className="flex items-center justify-between mb-2">
+                                <label className="block text-xs font-bold text-slate-500">
+                                    📡 Canlı Tarama Logu {isHunterRunning && <span className="text-green-600">● Aktif</span>}
+                                </label>
+                                <span className="text-[10px] text-slate-400">{autoHunterLogs.length} satır</span>
+                            </div>
+                            <div className="bg-slate-900 text-slate-200 rounded-lg p-3 h-64 overflow-y-auto font-mono text-[11px] leading-relaxed border border-slate-700">
+                                {autoHunterLogs.map((log, idx) => {
+                                    const color =
+                                        log.type === 'success' ? 'text-emerald-400' :
+                                        log.type === 'warn' ? 'text-amber-400' :
+                                        log.type === 'error' ? 'text-red-400' :
+                                        'text-slate-300';
+                                    return (
+                                        <div key={idx} className={`${color} whitespace-pre-wrap break-words`}>
+                                            <span className="text-slate-500 mr-2">[{log.time}]</span>
+                                            {log.message}
+                                        </div>
+                                    );
+                                })}
+                                <div ref={autoHunterLogsEndRef} />
+                            </div>
+
+                            {/* CANLI İSTATİSTİK */}
+                            <div className="mt-2 grid grid-cols-2 gap-2">
+                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                                    <div className="text-[10px] text-blue-600 font-bold uppercase tracking-wider">Bulunan Site</div>
+                                    <div className="text-2xl font-bold text-blue-800 mt-1">{autoHunterStats?.totalFound || 0}</div>
+                                </div>
+                                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                                    <div className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">Tam Veriye Sahip</div>
+                                    <div className="text-2xl font-bold text-emerald-800 mt-1">{autoHunterStats?.fullData || 0}</div>
+                                    <div className="text-[9px] text-emerald-600 mt-0.5">(Trafik + Email var)</div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">

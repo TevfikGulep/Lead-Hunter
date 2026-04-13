@@ -15,7 +15,13 @@ window.callGoogleScript = async (scriptUrl, payload) => {
         body: JSON.stringify({ url: scriptUrl, payload: payload })
     });
     if (!response.ok) throw new Error(`Proxy HTTP ${response.status}`);
-    return await response.json();
+    const data = await response.json();
+    // Proxy başarısız oldu → detayları console'a bas
+    if (data && data.status === 'error' && data.raw) {
+        console.error('[GScript Proxy] Apps Script raw yanıtı (ilk 500 char):', data.raw);
+        console.error('[GScript Proxy] HTTP code:', data.http_code, '| Payload:', payload);
+    }
+    return data;
 };
 
 // ... (Diğer yardımcı fonksiyonlar - cleanDomain vb. aynı kalacak) ...
