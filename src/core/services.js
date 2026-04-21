@@ -569,6 +569,8 @@ window.useLeadHunterServices = (
         // 1. Thread ID'si olmayan ama emaili olan kayıtları bul ve Gmail'den thread'lerini kurtarmayı dene
         const missingThreadLeads = crmData.filter(lead => selectedIds.has(lead.id) && !lead.threadId && lead.email && lead.email.length > 5);
         let recoveredCount = 0;
+        let recoveryApiMissing = false;
+        let recoveryLastError = '';
 
         if (missingThreadLeads.length > 0) {
             for (const lead of missingThreadLeads) {
@@ -580,17 +582,29 @@ window.useLeadHunterServices = (
                         lead.threadId = result.threadId;
                         setCrmData(prev => prev.map(p => p.id === lead.id ? { ...p, threadId: result.threadId } : p));
                         recoveredCount++;
+                    } else if (result.status === 'error') {
+                        const msg = (result.message || '').toString();
+                        recoveryLastError = msg || 'Thread recovery error';
+                        if (msg.toLowerCase().includes('bilinmeyen') || msg.toLowerCase().includes('unknown')) {
+                            recoveryApiMissing = true;
+                        }
                     }
                 } catch (e) { console.warn(`Thread recovery failed for ${lead.id}:`, e); }
                 await new Promise(r => setTimeout(r, 500));
             }
         }
 
+        if (recoveryApiMissing) {
+            setIsCheckingBulk(false);
+            return alert("Google Script güncel değil: 'check_thread_by_email' action'ı bulunamadı. Apps Script'e son google-script.js kodunu deploy etmelisin.");
+        }
+
         // 2. Artık thread ID'si olan tüm kayıtları kontrol et
         const candidates = crmData.filter(lead => selectedIds.has(lead.id) && lead.threadId);
         if (candidates.length === 0) {
             setIsCheckingBulk(false);
-            return alert("Thread ID bulunamadı. Seçili kayıtlar için Gmail'de yazışma kaydı bulunamadı.");
+            const extra = recoveryLastError ? `\nDetay: ${recoveryLastError}` : '';
+            return alert("Thread ID bulunamadı. Seçili kayıtlar için Gmail'de yazışma kaydı bulunamadı." + extra);
         }
         if (!confirm(`${candidates.length} kayıt kontrol edilecek${recoveredCount > 0 ? ` (${recoveredCount} kayıt için thread kurtarıldı)` : ''}. Devam?`)) {
             setIsCheckingBulk(false);

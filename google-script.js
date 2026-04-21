@@ -269,19 +269,36 @@ function checkSingleThread(threadId, myEmail) {
 
 function findThreadIdByRecipient(toEmail, debugLogs) {
   try {
-    // Son 180 gunde aliciya gore ara, en yeni thread'i al
-    var query = 'to:' + toEmail + ' newer_than:180d';
-    var threads = GmailApp.search(query, 0, 10);
-    if (!threads || threads.length === 0) {
-      query = 'from:' + toEmail + ' newer_than:180d';
-      threads = GmailApp.search(query, 0, 10);
+    // Daha genis arama: tarih filtresi yok, birden fazla sorgu
+    var queries = [
+      'to:' + toEmail,
+      'from:' + toEmail,
+      'deliveredto:' + toEmail,
+      '"' + toEmail + '"'
+    ];
+    var threads = [];
+    for (var q = 0; q < queries.length; q++) {
+      var query = queries[q];
+      threads = GmailApp.search(query, 0, 25);
+      if (debugLogs) debugLogs.push('[THREAD_RECOVERY] Query: ' + query + ' -> ' + threads.length);
+      if (threads && threads.length > 0) break;
     }
+
     if (!threads || threads.length === 0) {
       if (debugLogs) debugLogs.push('[THREAD_RECOVERY] Thread yok: ' + toEmail);
       return null;
     }
 
+    // En guncel thread'i sec
     var latest = threads[0];
+    var latestTs = latest.getLastMessageDate ? latest.getLastMessageDate().getTime() : 0;
+    for (var i = 1; i < threads.length; i++) {
+      var ts = threads[i].getLastMessageDate ? threads[i].getLastMessageDate().getTime() : 0;
+      if (ts > latestTs) {
+        latest = threads[i];
+        latestTs = ts;
+      }
+    }
     var threadId = latest.getId();
     if (debugLogs) debugLogs.push('[THREAD_RECOVERY] Bulundu: ' + toEmail + ' -> ' + threadId);
     return threadId;

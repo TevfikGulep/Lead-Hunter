@@ -143,7 +143,7 @@ window.useLeadHunterData = (dbInstance, settings, activeTab) => {
         
         // YENİ: MAIL DURUM FİLTRESİ (MAVİ/YEŞİL/KIRMIZI NOKTA FİLTRESİ)
         if (filters.mailStatus !== 'ALL') {
-            const replyStatuses = ['ASKED_MORE', 'INTERESTED', 'IN_PROCESS', 'DEAL_ON', 'DEAL_OFF', 'DENIED', 'NOT_POSSIBLE'];
+            const replyStatuses = ['ASKED_MORE', 'INTERESTED', 'IN_PROCESS', 'DEAL_ON', 'DEAL_OFF', 'DENIED', 'NOT_POSSIBLE', 'NEEDS_REVIEW', 'READY_TO_SEND', 'FOLLOW_LATER'];
             data = data.filter(item => {
                 const isReplied = replyStatuses.includes(item.statusKey);
                 const isOpened = !!item.mailOpenedAt;
