@@ -43,7 +43,8 @@ window.SettingsTab = ({
     };
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pb-10">
+        <div className="pb-10">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             {/* API Settings */}
             <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
                 <h3 className="font-bold mb-6 flex items-center gap-2"><window.Icon name="globe" className="w-5 h-5 text-blue-600" /> API & İmza Ayarları</h3>
@@ -248,7 +249,7 @@ window.SettingsTab = ({
                 <h3 className="font-bold mb-6 flex items-center gap-2"><window.Icon name="radar" className="w-5 h-5 text-indigo-600" /> Site Avcısı Otomasyonu</h3>
 
                 <p className="text-xs text-slate-500 mb-4 bg-indigo-50 p-3 rounded-lg border border-indigo-100">
-                    <strong>Otomatik Tarama Sistemi:</strong> Her pazartesi saat 07:00'de Türkiye ilçelerinden haber siteleri arar.
+                    <strong>Otomatik Tarama Sistemi:</strong> Her cumartesi saat 00:00'de Türkiye ilçelerinden haber siteleri arar.
                     Her hafta en az {settings.hunterTargetCount || 100} uygun site buluncaya kadar tarar ve otomatik CRM'e ekler.
                 </p>
 
@@ -407,7 +408,7 @@ window.SettingsTab = ({
 
                 <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                     <p className="text-xs text-amber-800">
-                        <strong>Nasıl Çalışır:</strong> Her pazartesi 07:00'de otomatik başlar.
+                        <strong>Nasıl Çalışır:</strong> Her cumartesi 00:00'de otomatik başlar.
                         İlçe listesinden sırayla "haberleri", "son dakika", "güncel", "haber", "gazete" kelimeleriyle arama yapar.
                         Her arama sonucu trafiği kontrol edilir ve uygun siteler (trafik büyüktür 0) CRM'e "New" olarak eklenir.
                         {settings.hunterTargetCount || 100} site bulunduktan sonra o hafta durur, bir sonraki hafta kaldığı yerden devam eder.
@@ -428,6 +429,7 @@ window.SettingsTab = ({
                 >
                     <window.Icon name="refresh-cw" className="w-4 h-4" /> Veri Tutarlılığını Düzelt
                 </button>
+            </div>
             </div>
         </div >
     );

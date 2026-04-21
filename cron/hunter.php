@@ -21,6 +21,42 @@ function writeLog($message, $type = 'INFO') {
     echo $logMessage;
 }
 
+function base64url_encode($data) {
+    return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
+}
+
+function exchangeIdTokenForAccessToken($idToken) {
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, 'https://sts.googleapis.com/v1/token');
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
+        'grant_type' => 'urn:ietf:params:oauth:grant-type:token-exchange',
+        'subject_token_type' => 'urn:ietf:params:oauth:token-type:id_token',
+        'requested_token_type' => 'urn:ietf:params:oauth:token-type:access_token',
+        'subject_token' => $idToken,
+        'scope' => 'https://www.googleapis.com/auth/datastore'
+    ]));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/x-www-form-urlencoded']);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlErr = curl_error($ch);
+    curl_close($ch);
+
+    if ($response === false || !empty($curlErr)) {
+        writeLog("STS cURL hatası: " . $curlErr, "ERROR");
+        return null;
+    }
+    $data = json_decode($response, true);
+    if (!is_array($data) || empty($data['access_token'])) {
+        writeLog("STS access_token alınamadı (HTTP $httpCode)", "ERROR");
+        writeLog("STS ham yanıt (ilk 300): " . substr(trim($response), 0, 300), "ERROR");
+        return null;
+    }
+    return $data['access_token'];
+}
+
 // --- AUTH & ACCESS CONTROL ---
 $isManual = isset($_GET['manual']);
 $secret = $_GET['secret'] ?? '';
@@ -36,25 +72,49 @@ if ($secret === SECRET_KEY) {
     writeLog("Cron tetiklendi (CLI) - " . $now->format('Y-m-d H:i:s') . " TRT", "INFO");
 }
 
-// --- FIREBASE AUTH (copy exact pattern from followup.php) ---
+// --- FIREBASE AUTH ---
 function getFirebaseAccessToken($serviceAccountFile) {
-    if (!file_exists($serviceAccountFile)) return null;
-    $serviceAccount = json_decode(file_get_contents($serviceAccountFile), true);
+    if (!file_exists($serviceAccountFile)) {
+        writeLog("Service account dosyası bulunamadı: " . $serviceAccountFile, "ERROR");
+        return null;
+    }
+
+    $json = @file_get_contents($serviceAccountFile);
+    if ($json === false) {
+        writeLog("Service account dosyası okunamadı", "ERROR");
+        return null;
+    }
+
+    $serviceAccount = json_decode($json, true);
+    if (!is_array($serviceAccount)) {
+        writeLog("Service account JSON parse hatası", "ERROR");
+        return null;
+    }
+    if (empty($serviceAccount['client_email']) || empty($serviceAccount['private_key'])) {
+        writeLog("Service account içinde zorunlu alanlar eksik (client_email/private_key)", "ERROR");
+        return null;
+    }
 
     $header = base64url_encode(json_encode(['typ' => 'JWT', 'alg' => 'RS256']));
     $now = time();
     $payload = base64url_encode(json_encode([
         'iss' => $serviceAccount['client_email'],
-        'sub' => $serviceAccount['client_email'],
         'aud' => 'https://oauth2.googleapis.com/token',
         'iat' => $now,
         'exp' => $now + 3600,
-        'scope' => 'https://www.googleapis.com/auth/firestore https://www.googleapis.com/auth/datastore'
+        'scope' => 'https://www.googleapis.com/auth/datastore'
     ]));
 
     $privateKey = $serviceAccount['private_key'];
     $signature = '';
-    openssl_sign($header . '.' . $payload, $signature, $privateKey, OPENSSL_ALGO_SHA256);
+    $signed = openssl_sign($header . '.' . $payload, $signature, $privateKey, OPENSSL_ALGO_SHA256);
+    if (!$signed) {
+        while ($err = openssl_error_string()) {
+            writeLog("OpenSSL hata: " . $err, "ERROR");
+        }
+        writeLog("JWT imzalama başarısız", "ERROR");
+        return null;
+    }
     $signature = base64url_encode($signature);
 
     $jwt = $header . '.' . $payload . '.' . $signature;
@@ -67,15 +127,38 @@ function getFirebaseAccessToken($serviceAccountFile) {
         'assertion' => $jwt
     ]));
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlErr = curl_error($ch);
     curl_close($ch);
 
-    $result = json_decode($response, true);
-    return $result['access_token'] ?? null;
-}
+    if ($response === false || !empty($curlErr)) {
+        writeLog("OAuth cURL hatası: " . $curlErr, "ERROR");
+        return null;
+    }
 
-function base64url_encode($data) {
-    return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
+    $result = json_decode($response, true);
+    if (!is_array($result)) {
+        writeLog("OAuth yanıtı parse edilemedi (HTTP $httpCode)", "ERROR");
+        return null;
+    }
+    if (empty($result['access_token']) && empty($result['id_token'])) {
+        $err = $result['error'] ?? 'unknown_error';
+        $desc = $result['error_description'] ?? '';
+        writeLog("OAuth token alınamadı (HTTP $httpCode): $err $desc", "ERROR");
+        writeLog("OAuth ham yanıt (ilk 300): " . substr(trim($response), 0, 300), "ERROR");
+        return null;
+    }
+
+    if (!empty($result['access_token'])) {
+        return $result['access_token'];
+    }
+    if (!empty($result['id_token'])) {
+        writeLog("OAuth id_token döndü; STS ile access_token exchange deneniyor", "WARN");
+        return exchangeIdTokenForAccessToken($result['id_token']);
+    }
+    return null;
 }
 
 // --- FIRESTORE HELPERS ---
@@ -88,10 +171,23 @@ function getFirestoreSettings($accessToken, $projectId) {
     curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlErr = curl_error($ch);
     curl_close($ch);
 
-    if ($httpCode !== 200) return null;
+    if ($response === false || !empty($curlErr)) {
+        writeLog("Firestore settings cURL hatası: " . $curlErr, "ERROR");
+        return null;
+    }
+    if ($httpCode !== 200) {
+        writeLog("Firestore settings okunamadı (HTTP $httpCode)", "ERROR");
+        writeLog("Firestore settings yanıtı (ilk 400): " . substr(trim($response), 0, 400), "ERROR");
+        return null;
+    }
     $data = json_decode($response, true);
+    if (!isset($data['fields'])) {
+        writeLog("Firestore settings dokümanında 'fields' yok", "ERROR");
+        writeLog("Firestore settings ham veri (ilk 400): " . substr(trim($response), 0, 400), "ERROR");
+    }
     return $data['fields'] ?? null;
 }
 

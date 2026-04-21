@@ -63,7 +63,8 @@ const LeadHunter = () => {
                         <h2 className="text-3xl font-bold text-slate-800 tracking-tight">
                             {auth.activeTab === 'dashboard' ? 'Yönetim Paneli' :
                                 auth.activeTab === 'hunter' ? 'Site Avcısı' :
-                                    auth.activeTab === 'crm' ? 'Müşteri Listesi' : 'Ayarlar'}
+                                    auth.activeTab === 'crm' ? 'Müşteri Listesi' :
+                                        auth.activeTab === 'cron-reports' ? 'Cron Raporları' : 'Ayarlar'}
                         </h2>
                     </div>
 
@@ -204,6 +205,10 @@ const LeadHunter = () => {
                             autoHunterLogsEndRef={services.autoHunterLogsEndRef}
                             fixLeadConsistency={services.fixLeadConsistency}
                         />
+                    )}
+
+                    {auth.activeTab === 'cron-reports' && (
+                        <window.CronReportsTab />
                     )}
                 </div>
             </div>

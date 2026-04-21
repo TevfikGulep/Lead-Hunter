@@ -37,6 +37,151 @@ try {
         exit;
     }
 
+    // === CRON REPORT (Hunter / Follow-up) ===
+    if ($type === 'cron_report') {
+        ob_clean();
+        header('Content-Type: application/json; charset=UTF-8');
+
+        $job = isset($_GET['job']) ? strtolower(trim($_GET['job'])) : 'all';
+        $limit = isset($_GET['limit']) ? max(20, min(500, (int) $_GET['limit'])) : 200;
+        $logsDir = __DIR__ . '/logs';
+
+        $allowedJobs = ['hunter', 'followup'];
+        $requestedJobs = $job === 'all' ? $allowedJobs : [$job];
+
+        $parseLine = function ($line) {
+            $line = trim($line);
+            if ($line === '') return null;
+
+            if (preg_match('/^\[(.*?)\]\s+\[(.*?)\]\s+(.*)$/u', $line, $m)) {
+                return [
+                    'timestamp' => $m[1],
+                    'type' => strtoupper($m[2]),
+                    'message' => $m[3]
+                ];
+            }
+
+            return [
+                'timestamp' => null,
+                'type' => 'RAW',
+                'message' => $line
+            ];
+        };
+
+        $buildSummary = function ($entries, $jobName) {
+            $summary = [
+                'job' => $jobName,
+                'status' => 'unknown',
+                'lastRunAt' => null,
+                'lastSuccessAt' => null,
+                'lastErrorAt' => null,
+                'totalLines' => count($entries),
+                'errorCount' => 0,
+                'successCount' => 0,
+                'recentActions' => [],
+                'sites' => []
+            ];
+
+            $recentActions = [];
+            $sites = [];
+
+            foreach ($entries as $entry) {
+                $msg = $entry['message'] ?? '';
+                $type = strtoupper($entry['type'] ?? 'RAW');
+                $ts = $entry['timestamp'] ?? null;
+
+                if ($summary['lastRunAt'] === null && ($type === 'INFO' || $type === 'SUCCESS' || $type === 'ERROR')) {
+                    $summary['lastRunAt'] = $ts;
+                }
+                if ($type === 'ERROR' && $summary['lastErrorAt'] === null) {
+                    $summary['lastErrorAt'] = $ts;
+                }
+                if (($type === 'SUCCESS' || strpos($msg, 'tamamlandı') !== false) && $summary['lastSuccessAt'] === null) {
+                    $summary['lastSuccessAt'] = $ts;
+                }
+
+                if ($type === 'ERROR') $summary['errorCount']++;
+                if ($type === 'SUCCESS') $summary['successCount']++;
+
+                if (
+                    stripos($msg, 'Aranıyor:') !== false ||
+                    stripos($msg, 'Eklendi') !== false ||
+                    stripos($msg, 'Email gönderiliyor') !== false ||
+                    stripos($msg, 'Email gönderildi') !== false ||
+                    stripos($msg, 'Email gönderilemedi') !== false ||
+                    stripos($msg, 'Takip işlemi tamamlandı') !== false ||
+                    stripos($msg, 'Tarama tamamlandı') !== false
+                ) {
+                    if (count($recentActions) < 40) {
+                        $recentActions[] = $entry;
+                    }
+                }
+
+                if (preg_match('/([a-z0-9.-]+\.[a-z]{2,})/i', $msg, $dm)) {
+                    $domain = strtolower($dm[1]);
+                    if (!isset($sites[$domain])) {
+                        $sites[$domain] = 1;
+                    } else {
+                        $sites[$domain]++;
+                    }
+                }
+            }
+
+            if ($summary['lastErrorAt'] && (!$summary['lastSuccessAt'] || $summary['lastErrorAt'] >= $summary['lastSuccessAt'])) {
+                $summary['status'] = 'error';
+            } elseif ($summary['lastSuccessAt']) {
+                $summary['status'] = 'ok';
+            } elseif ($summary['lastRunAt']) {
+                $summary['status'] = 'running_or_info';
+            }
+
+            $summary['recentActions'] = $recentActions;
+            $summary['sites'] = array_slice(array_keys($sites), 0, 120);
+            return $summary;
+        };
+
+        $result = [];
+        foreach ($requestedJobs as $name) {
+            if (!in_array($name, $allowedJobs, true)) {
+                continue;
+            }
+
+            $filePath = $logsDir . '/' . $name . '.log';
+            if (!file_exists($filePath)) {
+                $result[$name] = [
+                    'job' => $name,
+                    'status' => 'missing_log',
+                    'entries' => [],
+                    'summary' => null
+                ];
+                continue;
+            }
+
+            $rawLines = @file($filePath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            if (!is_array($rawLines)) $rawLines = [];
+            $tail = array_slice($rawLines, -$limit);
+            $entries = [];
+            foreach ($tail as $line) {
+                $parsed = $parseLine($line);
+                if ($parsed) $entries[] = $parsed;
+            }
+
+            // En yeni kayıtlar üstte görünsün
+            $entries = array_reverse($entries);
+            $summary = $buildSummary($entries, $name);
+
+            $result[$name] = [
+                'job' => $name,
+                'status' => 'ok',
+                'entries' => $entries,
+                'summary' => $summary
+            ];
+        }
+
+        echo json_encode(['success' => true, 'data' => $result], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     // === GOOGLE APPS SCRIPT PROXY (CORS bypass) ===
     // POST body: { "url": "https://script.google.com/...", "payload": {...} }
     // Forwards request to Apps Script server-side, returning raw JSON response

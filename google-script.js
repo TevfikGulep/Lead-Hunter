@@ -50,6 +50,29 @@ function doPost(e) {
       return createJSON({ 'status': 'success', 'results': results, 'foundCount': foundCount, 'bounceCount': bounceCount, 'logs': debugLogs });
     }
 
+    // --- 2.1 EMAIL ILE THREAD BULMA ---
+    else if (data.action === 'check_thread_by_email') {
+      var to = (data.to || '').toString().trim().toLowerCase();
+      if (!to) {
+        return createJSON({ 'status': 'error', 'message': 'to gerekli', 'logs': debugLogs });
+      }
+
+      var foundThreadId = findThreadIdByRecipient(to, debugLogs);
+      if (foundThreadId) {
+        return createJSON({
+          'status': 'success',
+          'threadId': foundThreadId,
+          'logs': debugLogs
+        });
+      }
+      return createJSON({
+        'status': 'error',
+        'message': 'Thread bulunamadi',
+        'threadId': null,
+        'logs': debugLogs
+      });
+    }
+
     // --- 3. MAIL GÖNDERME (FOLLOW-UP FIX) ---
     else if (data.action === 'send_mail') {
       var rawTo = data.to;
@@ -241,5 +264,29 @@ function checkSingleThread(threadId, myEmail) {
       error: e.toString(),
       messages_inspected: debugMsgs
     };
+  }
+}
+
+function findThreadIdByRecipient(toEmail, debugLogs) {
+  try {
+    // Son 180 gunde aliciya gore ara, en yeni thread'i al
+    var query = 'to:' + toEmail + ' newer_than:180d';
+    var threads = GmailApp.search(query, 0, 10);
+    if (!threads || threads.length === 0) {
+      query = 'from:' + toEmail + ' newer_than:180d';
+      threads = GmailApp.search(query, 0, 10);
+    }
+    if (!threads || threads.length === 0) {
+      if (debugLogs) debugLogs.push('[THREAD_RECOVERY] Thread yok: ' + toEmail);
+      return null;
+    }
+
+    var latest = threads[0];
+    var threadId = latest.getId();
+    if (debugLogs) debugLogs.push('[THREAD_RECOVERY] Bulundu: ' + toEmail + ' -> ' + threadId);
+    return threadId;
+  } catch (e) {
+    if (debugLogs) debugLogs.push('[THREAD_RECOVERY] Hata: ' + e.toString());
+    return null;
   }
 }

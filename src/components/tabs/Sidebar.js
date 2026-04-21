@@ -16,7 +16,8 @@ window.Sidebar = ({ activeTab, setActiveTab, isDbConnected }) => (
                 { id: 'dashboard', icon: 'layout-dashboard', label: 'Genel Bakış' }, 
                 { id: 'hunter', icon: 'search', label: 'Site Avcısı' }, 
                 { id: 'crm', icon: 'users', label: 'Veritabanı' }, 
-                { id: 'settings', icon: 'settings', label: 'Ayarlar' } 
+                { id: 'settings', icon: 'settings', label: 'Ayarlar' },
+                { id: 'cron-reports', icon: 'activity', label: 'Cron Raporları' }
             ].map(item => (
                 <button 
                     key={item.id} 

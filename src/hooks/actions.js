@@ -71,13 +71,32 @@ window.useLeadHunterActions = (dbInstance, isDbConnected, crmData, setCrmData, s
 
     // 2. Gmail Cevap Kontrolü (Tekil)
     const checkGmailReply = async (lead) => {
-        if (!lead.threadId) return alert("Bu kayıtla ilişkili bir mail konuşması (Thread ID) bulunamadı.");
+        let workingLead = lead;
+        if (!workingLead.threadId) {
+            try {
+                const email = (workingLead.email || '').split(',')[0].trim();
+                if (!email) {
+                    return alert("Bu kayıtla ilişkili bir mail konuşması (Thread ID) bulunamadı.");
+                }
+                const recover = await window.callGoogleScript(settings.googleScriptUrl, { action: 'check_thread_by_email', to: email });
+                if (recover.status === 'success' && recover.threadId) {
+                    await dbInstance.collection("leads").doc(workingLead.id).update({ threadId: recover.threadId });
+                    const updatedLead = { ...workingLead, threadId: recover.threadId };
+                    setCrmData(prev => prev.map(p => p.id === workingLead.id ? updatedLead : p));
+                    workingLead = updatedLead;
+                } else {
+                    return alert("Bu kayıtla ilişkili bir mail konuşması (Thread ID) bulunamadı.");
+                }
+            } catch (recoverErr) {
+                return alert("Thread ID kurtarma hatası: " + recoverErr.message);
+            }
+        }
 
         setIsCheckingReply(true);
         setReplyCheckResult(null);
 
         try {
-            const data = await window.callGoogleScript(settings.googleScriptUrl, { action: 'check_reply', threadId: lead.threadId });
+            const data = await window.callGoogleScript(settings.googleScriptUrl, { action: 'check_reply', threadId: workingLead.threadId });
 
             if (data.status === 'success') {
                 console.log("--- DEBUG START: GMAIL CHECK ---");
@@ -100,14 +119,14 @@ window.useLeadHunterActions = (dbInstance, isDbConnected, crmData, setCrmData, s
                             statusLabel: 'Error in mail (Bounced)',
                             email: '',
                             lastContactDate: new Date().toISOString(),
-                            notes: (lead.notes || '') + ' [Sistem: Hatalı Mail Silindi]',
-                            activityLog: [...(lead.activityLog || []), newLog]
+                            notes: (workingLead.notes || '') + ' [Sistem: Hatalı Mail Silindi]',
+                            activityLog: [...(workingLead.activityLog || []), newLog]
                         };
 
-                        await dbInstance.collection("leads").doc(lead.id).update(updateData);
+                        await dbInstance.collection("leads").doc(workingLead.id).update(updateData);
 
-                        const updatedLead = { ...lead, ...updateData };
-                        setCrmData(prev => prev.map(p => p.id === lead.id ? updatedLead : p));
+                        const updatedLead = { ...workingLead, ...updateData };
+                        setCrmData(prev => prev.map(p => p.id === workingLead.id ? updatedLead : p));
 
                         if (setHistoryModalLead) setHistoryModalLead(updatedLead);
 

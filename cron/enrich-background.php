@@ -90,7 +90,7 @@ function acquireLock() {
         // 2 saatten eski lock dosyası varsa sil (stuck process)
         if ($elapsed > 7200) {
             @unlink(LOCK_FILE);
-            writeLog("Eski lock dosyası silindi (${elapsed}s)", "WARN");
+            writeLog("Eski lock dosyası silindi ({$elapsed}s)", "WARN");
         } else {
             return false;
         }
