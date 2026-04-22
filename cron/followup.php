@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Lead Hunter - Otomatik Takip (Follow-up) Cron Script
  * 
