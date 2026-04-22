@@ -23,7 +23,9 @@ window.SettingsTab = ({
     autoHunterLogsEndRef,
     fixLeadConsistency,
     fixConsistencyLogs,
-    isFixingConsistency
+    isFixingConsistency,
+    syncInboxReplies,
+    isCheckingBulk
 }) => {
     // Otomatik tarama logları güncellendiğinde otomatik kaydır
     React.useEffect(() => {
@@ -424,28 +426,47 @@ window.SettingsTab = ({
                 </div>
             </div>
 
-            {/* Veri Bakım */}
+            {/* Veri Bakım ve Senkronizasyon */}
             <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2">
-                <h3 className="font-bold mb-4 flex items-center gap-2"><window.Icon name="tool" className="w-5 h-5 text-slate-600" /> Veri Bakım</h3>
-                <p className="text-xs text-slate-500 mb-4 bg-slate-50 p-3 rounded-lg border border-slate-200">
-                    Tutarsız verileri düzeltir: Mail gönderilmiş/okunmuş ama hâlâ "New" durumunda olan lead'leri "No Reply" olarak günceller.
-                    Bounce kaydı olan ama "Error in Mail" olarak işaretlenmemiş lead'leri düzeltir.
-                </p>
-                <button
-                    onClick={fixLeadConsistency}
-                    disabled={isFixingConsistency}
-                    className={`px-4 py-2 text-white rounded-lg font-bold text-sm transition-colors flex items-center gap-2 ${isFixingConsistency ? 'bg-orange-300 cursor-wait' : 'bg-orange-500 hover:bg-orange-600'}`}
-                >
-                    <window.Icon name="refresh-cw" className="w-4 h-4" /> Veri Tutarlılığını Düzelt
-                </button>
-                <div className="mt-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div>
+                        <h3 className="font-bold mb-4 flex items-center gap-2"><window.Icon name="mail" className="w-5 h-5 text-indigo-600" /> Email Senkronizasyonu</h3>
+                        <p className="text-xs text-slate-500 mb-4 bg-indigo-50 p-3 rounded-lg border border-indigo-100">
+                            <strong>Hızlı Senkron (Yeni):</strong> Gmail gelen kutusundaki son cevapları toplu olarak tarar ve CRM kayıtlarıyla eşleştirir. Kota dostu ve çok hızlıdır.
+                        </p>
+                        <button
+                            onClick={() => syncInboxReplies()}
+                            disabled={isCheckingBulk}
+                            className={`w-full px-4 py-3 text-white rounded-lg font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-md ${isCheckingBulk ? 'bg-indigo-300 cursor-wait' : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95'}`}
+                        >
+                            <window.Icon name="refresh-ccw" className={`w-4 h-4 ${isCheckingBulk ? 'animate-spin' : ''}`} /> 
+                            {isCheckingBulk ? 'Senkronize Ediliyor...' : 'Gelen Kutusuyla Eşitle (Hızlı)'}
+                        </button>
+                    </div>
+
+                    <div>
+                        <h3 className="font-bold mb-4 flex items-center gap-2"><window.Icon name="tool" className="w-5 h-5 text-slate-600" /> Veri Bakım</h3>
+                        <p className="text-xs text-slate-500 mb-4 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                            Tutarsız verileri düzeltir: Mail gönderilmiş/okunmuş ama hâlâ "New" durumunda olan lead'leri "No Reply" olarak günceller.
+                        </p>
+                        <button
+                            onClick={fixLeadConsistency}
+                            disabled={isFixingConsistency}
+                            className={`w-full px-4 py-3 text-white rounded-lg font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-md ${isFixingConsistency ? 'bg-orange-300 cursor-wait' : 'bg-orange-500 hover:bg-orange-600 active:scale-95'}`}
+                        >
+                            <window.Icon name="refresh-cw" className="w-4 h-4" /> Veri Tutarlılığını Düzelt
+                        </button>
+                    </div>
+                </div>
+
+                <div className="mt-6">
                     <div className="flex items-center justify-between mb-2">
-                        <div className="text-xs font-bold text-slate-500">Veri Tutarliligi Logu {isFixingConsistency && <span className="text-orange-600">● Aktif</span>}</div>
+                        <div className="text-xs font-bold text-slate-500">İşlem Logları {(isFixingConsistency || isCheckingBulk) && <span className="text-orange-600 animate-pulse">● Aktif</span>}</div>
                         <div className="text-[10px] text-slate-400">{(fixConsistencyLogs || []).length} satir</div>
                     </div>
-                    <div className="bg-slate-900 text-slate-200 rounded-lg p-3 h-56 overflow-y-auto font-mono text-[11px] leading-relaxed border border-slate-700">
+                    <div className="bg-slate-900 text-slate-200 rounded-lg p-3 h-48 overflow-y-auto font-mono text-[11px] leading-relaxed border border-slate-700 shadow-inner">
                         {(!fixConsistencyLogs || fixConsistencyLogs.length === 0) && (
-                            <div className="text-slate-500">Henuz log yok.</div>
+                            <div className="text-slate-500 italic">Henuz log yok.</div>
                         )}
                         {(fixConsistencyLogs || []).map((log, idx) => {
                             const color =
@@ -454,7 +475,7 @@ window.SettingsTab = ({
                                 log.type === 'error' ? 'text-red-400' :
                                 'text-slate-300';
                             return (
-                                <div key={idx} className={`${color} whitespace-pre-wrap break-words`}>
+                                <div key={idx} className={`${color} whitespace-pre-wrap break-words border-b border-slate-800/50 py-1 last:border-0`}>
                                     <span className="text-slate-500 mr-2">[{log.time}]</span>
                                     {log.message}
                                 </div>
@@ -465,6 +486,6 @@ window.SettingsTab = ({
                 </div>
             </div>
             </div>
-        </div >
+        </div>
     );
 };

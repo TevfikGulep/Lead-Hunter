@@ -81,6 +81,7 @@ const LeadHunter = () => {
                             activeTab={auth.activeTab}
                             
                             onBulkCheck={services.handleBulkReplyCheck}
+                            onSyncInbox={services.syncInboxReplies}
                             isCheckingBulk={services.isCheckingBulk}
                             paginatedItems={data.getPaginatedData()}
                             currentPage={data.currentPage}
@@ -142,6 +143,7 @@ const LeadHunter = () => {
                             activeTab={auth.activeTab}
                             
                             onBulkCheck={services.handleBulkReplyCheck}
+                            onSyncInbox={services.syncInboxReplies}
                             isCheckingBulk={services.isCheckingBulk}
                             paginatedItems={data.getPaginatedData()}
                             selectedCount={data.selectedIds.size}
@@ -206,6 +208,8 @@ const LeadHunter = () => {
                             fixLeadConsistency={services.fixLeadConsistency}
                             fixConsistencyLogs={services.fixConsistencyLogs}
                             isFixingConsistency={services.isFixingConsistency}
+                            syncInboxReplies={services.syncInboxReplies}
+                            isCheckingBulk={services.isCheckingBulk}
                         />
                     )}
 

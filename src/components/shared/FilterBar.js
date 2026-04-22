@@ -11,6 +11,7 @@ window.FilterBar = ({
     setShowBulkModal,
     activeTab,
     onBulkCheck,
+    onSyncInbox,
     isCheckingBulk,
     onBulkStatusChange,
     onBulkLanguageChange,
@@ -82,6 +83,19 @@ window.FilterBar = ({
         <button onClick={() => setFilters({ search: '', language: 'ALL', status: [], lastSentStage: 'ALL', quality: 'ALL', mailStatus: 'ALL', autoFollowup: 'ALL', startDate: '', endDate: '' })} className="px-3 py-2 text-xs text-red-500 hover:bg-red-50 rounded-lg transition-colors">Temizle</button>
 
         <div className="ml-auto flex gap-2 animate-in fade-in items-center">
+            {/* Inbox Sync (Always visible if provided) */}
+            {onSyncInbox && (
+                <button
+                    onClick={onSyncInbox}
+                    disabled={isCheckingBulk}
+                    className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 shadow-sm transition-all active:scale-95 ${isCheckingBulk ? 'bg-indigo-100 text-indigo-400 cursor-wait' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 border border-indigo-200'}`}
+                    title="Gelen kutusundaki son cevapları hızlıca tara ve eşleştir"
+                >
+                    {isCheckingBulk ? <window.Icon name="loader-2" className="w-4 h-4 animate-spin" /> : <window.Icon name="refresh-ccw" className="w-4 h-4" />}
+                    Gelen Kutusuyla Eşitle
+                </button>
+            )}
+
             <button
                 onClick={onExport}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 shadow-md transition-colors"

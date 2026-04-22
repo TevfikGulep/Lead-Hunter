@@ -1,14 +1,14 @@
-// LeadHunter_Services.js
+﻿// LeadHunter_Services.js
 
 const { useState, useRef, useEffect } = React;
 
 
-// --- YARDIMCI FONKSİYON: KARAKTER DÜZELTME (TURKISH FIX) ---
+// --- YARDIMCI FONKSÄ°YON: KARAKTER DÃœZELTME (TURKISH FIX) ---
 window.fixEncoding = (str) => {
     if (!str) return '';
     let text = str;
 
-    // 1. MIME Encoded Word Çözümü
+    // 1. MIME Encoded Word Ã‡Ã¶zÃ¼mÃ¼
     if (text.includes('=?') && text.includes('?=')) {
         text = text.replace(/=\?([^?]+)\?([QBqb])\?([^?]*)\?=/g, (match, charset, encoding, content) => {
             try {
@@ -27,7 +27,7 @@ window.fixEncoding = (str) => {
 
     // 2. "SMART FIX" (UTF-8 in Latin1/Win1252)
     try {
-        if (/[ÃÄÅ]/.test(text)) {
+        if (/[ÃƒÃ„Ã…]/.test(text)) {
             const bytes = new Uint8Array(text.length);
             let possible = true;
             for (let i = 0; i < text.length; i++) {
@@ -42,21 +42,21 @@ window.fixEncoding = (str) => {
         }
     } catch (e) { }
 
-    // 3. GENİŞLETİLMİŞ MANUEL HARİTA (Manual Fallback)
+    // 3. GENÄ°ÅLETÄ°LMÄ°Å MANUEL HARÄ°TA (Manual Fallback)
     const replacements = {
-        'Ä°': 'İ', 'Ä±': 'ı', 'Ã–': 'Ö', 'Ã¶': 'ö', 'Ãœ': 'Ü', 'Ã¼': 'ü',
-        'Åž': 'Ş', 'ÅŸ': 'ş', 'Ã‡': 'Ç', 'Ã§': 'ç', 'ÄŸ': 'ğ', 'Äž': 'Ğ',
-        'Ã¢': 'â', 'Ã‚': 'Â', 'Ã®': 'î', 'Ã®': 'î',
-        'Ä\u00A0': 'Ğ', 'Ä\u009F': 'ğ', 'Ã\u0096': 'Ö', 'Ã\u00B6': 'ö',
-        'Ã\u009C': 'Ü', 'Ã\u00BC': 'ü', 'Ã\u0087': 'Ç', 'Ã\u00A7': 'ç',
-        'Å\u009E': 'Ş', 'Å\u009F': 'ş', 'â\u20AC\u201C': '-', 'Â': '',
-        '&#304;': 'İ', '&#305;': 'ı', '&#214;': 'Ö', '&#246;': 'ö',
-        '&#220;': 'Ü', '&#252;': 'ü', '&#199;': 'Ç', '&#231;': 'ç',
-        '&#286;': 'Ğ', '&#287;': 'ğ', '&#350;': 'Ş', '&#351;': 'ş',
+        'Ã„Â°': 'Ä°', 'Ã„Â±': 'Ä±', 'Ãƒâ€“': 'Ã–', 'ÃƒÂ¶': 'Ã¶', 'ÃƒÅ“': 'Ãœ', 'ÃƒÂ¼': 'Ã¼',
+        'Ã…Å¾': 'Å', 'Ã…Å¸': 'ÅŸ', 'Ãƒâ€¡': 'Ã‡', 'ÃƒÂ§': 'Ã§', 'Ã„Å¸': 'ÄŸ', 'Ã„Å¾': 'Ä',
+        'ÃƒÂ¢': 'Ã¢', 'Ãƒâ€š': 'Ã‚', 'ÃƒÂ®': 'Ã®', 'ÃƒÂ®': 'Ã®',
+        'Ã„\u00A0': 'Ä', 'Ã„\u009F': 'ÄŸ', 'Ãƒ\u0096': 'Ã–', 'Ãƒ\u00B6': 'Ã¶',
+        'Ãƒ\u009C': 'Ãœ', 'Ãƒ\u00BC': 'Ã¼', 'Ãƒ\u0087': 'Ã‡', 'Ãƒ\u00A7': 'Ã§',
+        'Ã…\u009E': 'Å', 'Ã…\u009F': 'ÅŸ', 'Ã¢\u20AC\u201C': '-', 'Ã‚': '',
+        '&#304;': 'Ä°', '&#305;': 'Ä±', '&#214;': 'Ã–', '&#246;': 'Ã¶',
+        '&#220;': 'Ãœ', '&#252;': 'Ã¼', '&#199;': 'Ã‡', '&#231;': 'Ã§',
+        '&#286;': 'Ä', '&#287;': 'ÄŸ', '&#350;': 'Å', '&#351;': 'ÅŸ',
         '&amp;': '&', '&quot;': '"', '&apos;': "'", '&gt;': '>', '&lt;': '<'
     };
 
-    // Önce en uzun anahtarları düzelt (Örn: Ã– yerine Ä° gibi spesifikleri öncele)
+    // Ã–nce en uzun anahtarlarÄ± dÃ¼zelt (Ã–rn: Ãƒâ€“ yerine Ã„Â° gibi spesifikleri Ã¶ncele)
     const sortedKeys = Object.keys(replacements).sort((a, b) => b.length - a.length);
     sortedKeys.forEach(key => {
         if (text.includes(key)) {
@@ -65,20 +65,20 @@ window.fixEncoding = (str) => {
         }
     });
 
-    // Son çare: Tekli Ã bozulması
-    if (text.includes('Ã') && !/[a-zA-Z0-9]/.test(text.charAt(text.indexOf('Ã') + 1))) {
-        text = text.replace(/Ã/g, 'İ');
+    // Son Ã§are: Tekli Ãƒ bozulmasÄ±
+    if (text.includes('Ãƒ') && !/[a-zA-Z0-9]/.test(text.charAt(text.indexOf('Ãƒ') + 1))) {
+        text = text.replace(/Ãƒ/g, 'Ä°');
     }
 
     return text.trim();
 };
 
 
-// --- YARDIMCI FONKSİYON: Email'den İsim Çıkarma ---
+// --- YARDIMCI FONKSÄ°YON: Email'den Ä°sim Ã‡Ä±karma ---
 window.extractNameFromEmail = (fromStr) => {
     if (!fromStr) return '';
 
-    // Önce karakterleri düzelt
+    // Ã–nce karakterleri dÃ¼zelt
     const cleanStr = window.fixEncoding(fromStr);
 
     // Format: "John Doe" <john@doe.com> veya John Doe <john@doe.com>
@@ -88,16 +88,16 @@ window.extractNameFromEmail = (fromStr) => {
     if (match && match[1]) {
         name = match[1].trim();
     } else {
-        // İsim formatı yoksa ve sadece mail varsa (örn: "info@site.com")
+        // Ä°sim formatÄ± yoksa ve sadece mail varsa (Ã¶rn: "info@site.com")
         const temp = cleanStr.replace(/<[^>]+>/g, '').trim();
         name = temp.includes('@') ? '' : temp.replace(/^"|"$/g, '');
     }
 
-    // --- KARA LİSTE KONTROLÜ (İsim çekilirken anlık kontrol) ---
-    const blackList = ['tevfik gülep', 'tevfik gulep', 'lead hunter', 'admin', 'info', 'iletisim', 'contact', 'support', 'destek', 'muhasebe', 'ik', 'hr', 'satis', 'sales'];
+    // --- KARA LÄ°STE KONTROLÃœ (Ä°sim Ã§ekilirken anlÄ±k kontrol) ---
+    const blackList = ['tevfik gÃ¼lep', 'tevfik gulep', 'lead hunter', 'admin', 'info', 'iletisim', 'contact', 'support', 'destek', 'muhasebe', 'ik', 'hr', 'satis', 'sales'];
 
     if (name && blackList.some(b => name.toLowerCase().includes(b))) {
-        return ''; // Yasaklı isimse boş döndür
+        return ''; // YasaklÄ± isimse boÅŸ dÃ¶ndÃ¼r
     }
 
     return name;
@@ -136,7 +136,7 @@ window.useLeadHunterServices = (
     const [hunterProgress, setHunterProgress] = useState(0);
     const [isHunterRunning, setIsHunterRunning] = useState(false);
 
-    // AutoHunter (otomatik tarama) canlı log ve istatistikleri
+    // AutoHunter (otomatik tarama) canlÄ± log ve istatistikleri
     const [autoHunterLogs, setAutoHunterLogs] = useState([]);
     const [autoHunterStats, setAutoHunterStats] = useState({ totalFound: 0, fullData: 0 });
     const [fixConsistencyLogs, setFixConsistencyLogs] = useState([]);
@@ -183,7 +183,7 @@ window.useLeadHunterServices = (
                     });
                     if (updateCount > 0) batch.commit();
                 }
-            } catch (e) { console.warn("Tracking Sync Hatası:", e); }
+            } catch (e) { console.warn("Tracking Sync HatasÄ±:", e); }
         };
         const intervalId = setInterval(checkOpens, 60000);
         const timeoutId = setTimeout(checkOpens, 5000);
@@ -219,10 +219,10 @@ window.useLeadHunterServices = (
                                     updates.statusLabel = 'Error in mail (Bounced)';
                                     updates.email = '';
                                     updates.lastContactDate = new Date().toISOString();
-                                    updates.activityLog = firebase.firestore.FieldValue.arrayUnion({ date: new Date().toISOString(), type: 'BOUNCE', content: `Sistem: Mail İletilemedi (Otomatik Tespit)` });
+                                    updates.activityLog = firebase.firestore.FieldValue.arrayUnion({ date: new Date().toISOString(), type: 'BOUNCE', content: `Sistem: Mail Ä°letilemedi (Otomatik Tespit)` });
                                 }
                             } else {
-                                // İSİM ÇEKME
+                                // Ä°SÄ°M Ã‡EKME
                                 if (result.from && !lead.contactName) {
                                     const extractedName = window.extractNameFromEmail(result.from);
                                     if (extractedName) updates.contactName = extractedName;
@@ -275,7 +275,7 @@ window.useLeadHunterServices = (
     // --- 3. EXPORT FUNCTION ---
     const handleExportData = (dataToExport) => {
         if (!dataToExport || dataToExport.length === 0) {
-            alert("Dışa aktarılacak veri bulunamadı.");
+            alert("DÄ±ÅŸa aktarÄ±lacak veri bulunamadÄ±.");
             return;
         }
         try {
@@ -314,23 +314,23 @@ window.useLeadHunterServices = (
             document.body.appendChild(link);
             link.click();
             setTimeout(() => { document.body.removeChild(link); window.URL.revokeObjectURL(url); }, 100);
-        } catch (error) { alert("Rapor hatası: " + error.message); }
+        } catch (error) { alert("Rapor hatasÄ±: " + error.message); }
     };
 
-    // --- 4. BAKIM ARACI: BOZUK İSİMLERİ VE KARA LİSTEYİ DÜZELTME ---
+    // --- 4. BAKIM ARACI: BOZUK Ä°SÄ°MLERÄ° VE KARA LÄ°STEYÄ° DÃœZELTME ---
     const fixEncodedNames = async () => {
-        if (!isDbConnected) return alert("Veritabanı bağlı değil.");
-        if (!confirm("Bozuk karakterli (Ã–, Ã¼ vb.) ve hatalı (Tevfik Gülep) isimler taranıp düzeltilecek. Bu işlem veritabanında kalıcı değişiklik yapar. Onaylıyor musunuz?")) return;
+        if (!isDbConnected) return alert("VeritabanÄ± baÄŸlÄ± deÄŸil.");
+        if (!confirm("Bozuk karakterli (Ãƒâ€“, ÃƒÂ¼ vb.) ve hatalÄ± (Tevfik GÃ¼lep) isimler taranÄ±p dÃ¼zeltilecek. Bu iÅŸlem veritabanÄ±nda kalÄ±cÄ± deÄŸiÅŸiklik yapar. OnaylÄ±yor musunuz?")) return;
 
         let count = 0;
         let deletedCount = 0;
         let processedCount = 0;
         const currentLeads = crmDataRef.current;
-        const blackList = ['tevfik gülep', 'tevfik gulep', 'lead hunter', 'admin', 'info', 'iletisim', 'sales', 'support'];
+        const blackList = ['tevfik gÃ¼lep', 'tevfik gulep', 'lead hunter', 'admin', 'info', 'iletisim', 'sales', 'support'];
 
-        // Firestore batch limiti 500'dür. Bu yüzden veriyi parçalara ayırıyoruz.
+        // Firestore batch limiti 500'dÃ¼r. Bu yÃ¼zden veriyi parÃ§alara ayÄ±rÄ±yoruz.
         const chunk = (arr, size) => Array.from({ length: Math.ceil(arr.length / size) }, (v, i) => arr.slice(i * size, i * size + size));
-        const leadChunks = chunk(currentLeads, 400); // Güvenli olması için 400'erli gruplar
+        const leadChunks = chunk(currentLeads, 400); // GÃ¼venli olmasÄ± iÃ§in 400'erli gruplar
 
         try {
             for (const leads of leadChunks) {
@@ -370,20 +370,20 @@ window.useLeadHunterServices = (
             }
 
             if (count > 0 || deletedCount > 0) {
-                alert(`İşlem Tamamlandı!\n\n${processedCount} kayıt tarandı.\n✅ ${count} isim karakterleri düzeltildi.\n🗑️ ${deletedCount} yasaklı isim silindi.`);
+                alert(`Ä°ÅŸlem TamamlandÄ±!\n\n${processedCount} kayÄ±t tarandÄ±.\nâœ… ${count} isim karakterleri dÃ¼zeltildi.\nğŸ—‘ï¸ ${deletedCount} yasaklÄ± isim silindi.`);
             } else {
-                alert(`${processedCount} kayıt tarandı. Düzeltilecek veya silinecek kayıt bulunamadı.`);
+                alert(`${processedCount} kayÄ±t tarandÄ±. DÃ¼zeltilecek veya silinecek kayÄ±t bulunamadÄ±.`);
             }
         } catch (error) {
             console.error("Fix Names Error:", error);
-            alert("İşlem sırasında bir hata oluştu: " + error.message);
+            alert("Ä°ÅŸlem sÄ±rasÄ±nda bir hata oluÅŸtu: " + error.message);
         }
     };
 
 
     const openMailModal = (lead) => {
         const info = getStageInfo(lead.stage || 0, lead.language);
-        if (info.isFinished) return alert("Süreç tamamlanmış.");
+        if (info.isFinished) return alert("SÃ¼reÃ§ tamamlanmÄ±ÅŸ.");
         const domain = window.cleanDomain(lead.url);
         setSelectedLead({ ...lead, currentLabel: info.label, draft: { to: lead.email ? lead.email.split(',')[0].trim() : '', subject: info.template.subject.replace(/{{Website}}/g, domain), body: info.template.body.replace(/{{Website}}/g, domain) }, allEmails: lead.email });
     };
@@ -394,7 +394,7 @@ window.useLeadHunterServices = (
             ? settings.promotionTemplateEN
             : settings.promotionTemplateTR;
 
-        if (!promoTemplate) return alert("Promosyon şablonu bulunamadı.");
+        if (!promoTemplate) return alert("Promosyon ÅŸablonu bulunamadÄ±.");
 
         setSelectedLead({
             ...lead,
@@ -422,20 +422,20 @@ window.useLeadHunterServices = (
             const result = await window.callGoogleScript(settings.googleScriptUrl, { action: 'send_mail', to: selectedLead.draft.to, subject: selectedLead.draft.subject, body: plainBody, htmlBody: htmlContent, threadId: selectedLead.threadId || null });
             if (result.status === 'error') throw new Error(result.message);
             if (isDbConnected) {
-                const newLog = { date: new Date().toISOString(), type: 'MAIL', content: `Mail Gönderildi: ${selectedLead.currentLabel}` };
+                const newLog = { date: new Date().toISOString(), type: 'MAIL', content: `Mail GÃ¶nderildi: ${selectedLead.currentLabel}` };
                 const updateData = { statusKey: 'NO_REPLY', statusLabel: window.LEAD_STATUSES['NO_REPLY'].label, stage: (selectedLead.stage || 0) + 1, lastContactDate: new Date().toISOString(), [`history.${selectedLead.stage === 0 ? 'initial' : `repeat${selectedLead.stage}`}`]: new Date().toISOString(), activityLog: firebase.firestore.FieldValue.arrayUnion(newLog) };
                 if (result.threadId) updateData.threadId = result.threadId;
                 await dbInstance.collection("leads").doc(selectedLead.id).update(updateData);
                 setCrmData(prev => prev.map(p => p.id === selectedLead.id ? { ...p, ...updateData, activityLog: [...(p.activityLog || []), newLog] } : p));
             }
-            alert("Mail gönderildi!");
+            alert("Mail gÃ¶nderildi!");
             setSelectedLead(null);
         } catch (e) { alert("Hata: " + e.message); }
         setIsSending(false);
     };
 
     const executeBulkSend = async () => {
-        if (!confirm(`${selectedIds.size} site için toplu gönderim yapılacak. Onaylıyor musunuz?`)) return;
+        if (!confirm(`${selectedIds.size} site iÃ§in toplu gÃ¶nderim yapÄ±lacak. OnaylÄ±yor musunuz?`)) return;
         setIsBulkSending(true);
         const selectedLeads = crmData.filter(l => selectedIds.has(l.id));
         const grouped = {};
@@ -455,8 +455,8 @@ window.useLeadHunterServices = (
             let template = null;
             let targetStage = mainLead.stage || 0;
             if (bulkConfig.templateType === 'SPECIFIC') { targetStage = parseInt(bulkConfig.specificStage); template = getStageInfo(targetStage, mainLead.language || bulkConfig.language).template; }
-            else { const info = getStageInfo(targetStage, mainLead.language || bulkConfig.language); if (info.isFinished) { addBulkLog(`${email}: Süreç bitmiş`, false); continue; } template = info.template; }
-            if (!template) { addBulkLog(`${email}: Şablon yok`, false); continue; }
+            else { const info = getStageInfo(targetStage, mainLead.language || bulkConfig.language); if (info.isFinished) { addBulkLog(`${email}: SÃ¼reÃ§ bitmiÅŸ`, false); continue; } template = info.template; }
+            if (!template) { addBulkLog(`${email}: Åablon yok`, false); continue; }
             // A/B Test: Assign variant if A/B test is active
             const abVariant = Math.random() < 0.5 ? 'A' : 'B';
             try {
@@ -469,11 +469,11 @@ window.useLeadHunterServices = (
                 const plainBody = body + (settings.signature ? `\n\n--\n${settings.signature.replace(/<[^>]+>/g, '')}` : '');
                 const result = await window.callGoogleScript(settings.googleScriptUrl, { action: 'send_mail', to: email, subject: subject, body: plainBody, htmlBody: htmlContent, threadId: mainLead.threadId || null });
                 if (result.status === 'error') throw new Error(result.message);
-                addBulkLog(`${email}: Gönderildi`, true);
+                addBulkLog(`${email}: GÃ¶nderildi`, true);
                 if (isDbConnected) {
                     const batch = dbInstance.batch();
                     group.forEach(l => {
-                        const newLog = { date: new Date().toISOString(), type: 'MAIL', content: `Toplu Gönderildi: ${targetStage}. Aşama` };
+                        const newLog = { date: new Date().toISOString(), type: 'MAIL', content: `Toplu GÃ¶nderildi: ${targetStage}. AÅŸama` };
                         const ref = dbInstance.collection("leads").doc(l.id);
                         const updateData = { statusKey: 'NO_REPLY', statusLabel: window.LEAD_STATUSES['NO_REPLY'].label, stage: targetStage + 1, lastContactDate: new Date().toISOString(), [`history.${targetStage === 0 ? 'initial' : `repeat${targetStage}`}`]: new Date().toISOString(), activityLog: firebase.firestore.FieldValue.arrayUnion(newLog) };
                         if (result.threadId) updateData.threadId = result.threadId;
@@ -485,14 +485,14 @@ window.useLeadHunterServices = (
             } catch (e) { addBulkLog(`${email}: Hata - ${e.message}`, false); }
             if (index < totalGroups) await new Promise(r => setTimeout(r, 2000));
         }
-        setIsBulkSending(false); setSelectedIds(new Set()); alert("Tamamlandı."); setShowBulkModal(false);
+        setIsBulkSending(false); setSelectedIds(new Set()); alert("TamamlandÄ±."); setShowBulkModal(false);
     };
 
     const executeBulkPromotion = async () => {
         if (!bulkConfig.promotionSubject || !bulkConfig.promotionBody) {
-            return alert("Lütfen promosyon konusunu ve içeriğini doldurun!");
+            return alert("LÃ¼tfen promosyon konusunu ve iÃ§eriÄŸini doldurun!");
         }
-        if (!confirm(`${selectedIds.size} site için promosyon maili gönderilecek. Onaylıyor musunuz?`)) return;
+        if (!confirm(`${selectedIds.size} site iÃ§in promosyon maili gÃ¶nderilecek. OnaylÄ±yor musunuz?`)) return;
 
         setIsBulkSending(true);
         const selectedLeads = crmData.filter(l => selectedIds.has(l.id));
@@ -504,11 +504,11 @@ window.useLeadHunterServices = (
         let index = 0;
         const serverUrl = (window.APP_CONFIG && window.APP_CONFIG.SERVER_API_URL) || '';
 
-        // Google Script URL kontrolü
+        // Google Script URL kontrolÃ¼
         if (!settings.googleScriptUrl) {
-            addBulkLog("Google Script URL ayarlanmamış!", false);
+            addBulkLog("Google Script URL ayarlanmamÄ±ÅŸ!", false);
             setIsBulkSending(false);
-            alert("Google Script URL ayarlanmamış! Lütfen ayarlardan Google Script URL'nizi girin.");
+            alert("Google Script URL ayarlanmamÄ±ÅŸ! LÃ¼tfen ayarlardan Google Script URL'nizi girin.");
             return;
         }
 
@@ -520,7 +520,7 @@ window.useLeadHunterServices = (
             const uniqueDomains = [...new Set(group.map(l => window.cleanDomain(l.url)))];
 
             try {
-                // Promosyon maili için subject ve body
+                // Promosyon maili iÃ§in subject ve body
                 const subject = (bulkConfig.promotionSubject || '').replace(/{{Website}}/g, uniqueDomains.join(', '));
                 const body = (bulkConfig.promotionBody || '').replace(/{{Website}}/g, uniqueDomains.join(', '));
 
@@ -530,19 +530,19 @@ window.useLeadHunterServices = (
                 const htmlContent = `<div style="font-family: Arial; font-size: 14px;">${messageHtml}</div><br><br><div>${signatureHtml}</div>${trackingPixel}`;
                 const plainBody = body + (settings.signature ? `\n\n--\n${settings.signature.replace(/<[^>]+>/g, '')}` : '');
 
-                console.log("Promosyon maili gönderiliyor:", { to: email, subject: subject });
+                console.log("Promosyon maili gÃ¶nderiliyor:", { to: email, subject: subject });
 
                 const result = await window.callGoogleScript(settings.googleScriptUrl, { action: 'send_mail', to: email, subject: subject, body: plainBody, htmlBody: htmlContent, threadId: null });
-                console.log("JSON yanıtı:", result);
+                console.log("JSON yanÄ±tÄ±:", result);
 
                 if (result.status === 'error') throw new Error(result.message || 'Bilinmeyen hata');
 
-                addBulkLog(`${email}: Promosyon gönderildi`, true);
+                addBulkLog(`${email}: Promosyon gÃ¶nderildi`, true);
 
                 if (isDbConnected) {
                     const batch = dbInstance.batch();
                     group.forEach(l => {
-                        const newLog = { date: new Date().toISOString(), type: 'MAIL', content: `Promosyon Mail Gönderildi` };
+                        const newLog = { date: new Date().toISOString(), type: 'MAIL', content: `Promosyon Mail GÃ¶nderildi` };
                         const ref = dbInstance.collection("leads").doc(l.id);
                         const updateData = {
                             statusKey: 'NO_REPLY',
@@ -556,19 +556,19 @@ window.useLeadHunterServices = (
                     await batch.commit();
                 }
             } catch (e) {
-                console.error("Promosyon gönderim hatası:", e);
+                console.error("Promosyon gÃ¶nderim hatasÄ±:", e);
                 addBulkLog(`${email}: Hata - ${e.message}`, false);
             }
             if (index < totalGroups) await new Promise(r => setTimeout(r, 2000));
         }
-        setIsBulkSending(false); setSelectedIds(new Set()); alert("Promosyon gönderimi tamamlandı!"); setShowBulkModal(false);
+        setIsBulkSending(false); setSelectedIds(new Set()); alert("Promosyon gÃ¶nderimi tamamlandÄ±!"); setShowBulkModal(false);
     };
 
     const handleBulkReplyCheck = async () => {
-        if (selectedIds.size === 0) return alert("Kayıt seçin.");
+        if (selectedIds.size === 0) return alert("KayÄ±t seÃ§in.");
         setIsCheckingBulk(true);
 
-        // 1. Thread ID'si olmayan ama emaili olan kayıtları bul ve Gmail'den thread'lerini kurtarmayı dene
+        // 1. Thread ID'si olmayan ama emaili olan kayÄ±tlarÄ± bul ve Gmail'den thread'lerini kurtarmayÄ± dene
         const missingThreadLeads = crmData.filter(lead => selectedIds.has(lead.id) && !lead.threadId && lead.email && lead.email.length > 5);
         let recoveredCount = 0;
         let recoveryApiMissing = false;
@@ -598,17 +598,17 @@ window.useLeadHunterServices = (
 
         if (recoveryApiMissing) {
             setIsCheckingBulk(false);
-            return alert("Google Script güncel değil: 'check_thread_by_email' action'ı bulunamadı. Apps Script'e son google-script.js kodunu deploy etmelisin.");
+            return alert("Google Script gÃ¼ncel deÄŸil: 'check_thread_by_email' action'Ä± bulunamadÄ±. Apps Script'e son google-script.js kodunu deploy etmelisin.");
         }
 
-        // 2. Artık thread ID'si olan tüm kayıtları kontrol et
+        // 2. ArtÄ±k thread ID'si olan tÃ¼m kayÄ±tlarÄ± kontrol et
         const candidates = crmData.filter(lead => selectedIds.has(lead.id) && lead.threadId);
         if (candidates.length === 0) {
             setIsCheckingBulk(false);
             const extra = recoveryLastError ? `\nDetay: ${recoveryLastError}` : '';
-            return alert("Thread ID bulunamadı. Seçili kayıtlar için Gmail'de yazışma kaydı bulunamadı." + extra);
+            return alert("Thread ID bulunamadÄ±. SeÃ§ili kayÄ±tlar iÃ§in Gmail'de yazÄ±ÅŸma kaydÄ± bulunamadÄ±." + extra);
         }
-        if (!confirm(`${candidates.length} kayıt kontrol edilecek${recoveredCount > 0 ? ` (${recoveredCount} kayıt için thread kurtarıldı)` : ''}. Devam?`)) {
+        if (!confirm(`${candidates.length} kayÄ±t kontrol edilecek${recoveredCount > 0 ? ` (${recoveredCount} kayÄ±t iÃ§in thread kurtarÄ±ldÄ±)` : ''}. Devam?`)) {
             setIsCheckingBulk(false);
             return;
         }
@@ -623,7 +623,7 @@ window.useLeadHunterServices = (
                         const updates = {};
                         if (result.isBounce) {
                             if (lead.statusKey !== 'MAIL_ERROR') {
-                                updates.statusKey = 'MAIL_ERROR'; updates.statusLabel = 'Error in mail (Bounced)'; updates.email = ''; updates.lastContactDate = new Date().toISOString(); updates.activityLog = firebase.firestore.FieldValue.arrayUnion({ date: new Date().toISOString(), type: 'BOUNCE', content: `Otomatik Tarama: Mail İletilemedi (Bounce)` }); bounceCount++;
+                                updates.statusKey = 'MAIL_ERROR'; updates.statusLabel = 'Error in mail (Bounced)'; updates.email = ''; updates.lastContactDate = new Date().toISOString(); updates.activityLog = firebase.firestore.FieldValue.arrayUnion({ date: new Date().toISOString(), type: 'BOUNCE', content: `Otomatik Tarama: Mail Ä°letilemedi (Bounce)` }); bounceCount++;
                             }
                         } else {
                             if (result.from && !lead.contactName) {
@@ -663,31 +663,88 @@ window.useLeadHunterServices = (
                         if (Object.keys(updates).length > 0) { batch.update(ref, updates); hasUpdates = true; }
                     }
                 });
-                if (hasUpdates) { await batch.commit(); alert(`Tarama Tamamlandı!\n✅ ${updatedCount} yeni cevap\n❌ ${bounceCount} bounce${recoveredCount > 0 ? `\n🔗 ${recoveredCount} eksik thread kurtarıldı` : ''}`); } else { alert(`Değişiklik yok.${recoveredCount > 0 ? ` (${recoveredCount} eksik thread kurtarıldı)` : ''}`); }
+                if (hasUpdates) { await batch.commit(); alert(`Tarama TamamlandÄ±!\nâœ… ${updatedCount} yeni cevap\nâŒ ${bounceCount} bounce${recoveredCount > 0 ? `\nğŸ”— ${recoveredCount} eksik thread kurtarÄ±ldÄ±` : ''}`); } else { alert(`DeÄŸiÅŸiklik yok.${recoveredCount > 0 ? ` (${recoveredCount} eksik thread kurtarÄ±ldÄ±)` : ''}`); }
             } else { alert("Hata: " + data.message); }
-        } catch (e) { alert("Bağlantı Hatası: " + e.message); }
+        } catch (e) { alert("BaÄŸlantÄ± HatasÄ±: " + e.message); }
         setIsCheckingBulk(false);
     };
 
+    // --- HIZLI INBOX SENKRONU (YENÄ° MODEL) ---
+    const syncInboxReplies = async (limit = 100) => {
+        if (!isDbConnected || !dbInstance) return alert("VeritabanÄ± baÄŸlÄ± deÄŸil!");
+        if (!settings.googleScriptUrl) return alert("Google Script URL ayarlÄ± deÄŸil!");
+
+        setIsCheckingBulk(true);
+        try {
+            const data = await window.callGoogleScript(settings.googleScriptUrl, { action: 'sync_inbox', limit: limit, query: 'label:inbox' });
+            if (data.status !== 'success') throw new Error(data.message || "Gmail baÄŸlantÄ± hatasÄ±");
+            const gmailReplies = data.results || [];
+            if (gmailReplies.length === 0) { alert("Inbox'ta yeni cevap bulunamadÄ±."); setIsCheckingBulk(false); return; }
+
+            let matchedCount = 0;
+            const batch = dbInstance.batch();
+            const localUpdates = {};
+            const emailMap = new Map();
+            const threadMap = new Map();
+            crmData.forEach(l => {
+                if (l.email) l.email.split(',').map(e => e.trim().toLowerCase()).filter(Boolean).forEach(e => emailMap.set(e, l));
+                if (l.threadId) threadMap.set(l.threadId, l);
+            });
+
+            gmailReplies.forEach(reply => {
+                let matchedLead = threadMap.get(reply.threadId);
+                if (!matchedLead) {
+                    const fromEmail = (reply.from.match(/<([^>]+)>/)?.[1] || reply.from).trim().toLowerCase();
+                    matchedLead = emailMap.get(fromEmail);
+                }
+                if (matchedLead) {
+                    const sk = matchedLead.statusKey || 'New';
+                    if (['New', 'NO_REPLY', 'READY_TO_SEND', 'MAIL_ERROR'].includes(sk)) {
+                        const ref = dbInstance.collection("leads").doc(matchedLead.id);
+                        const category = window.categorizeReply(reply.snippet, reply.from);
+                        const newStatus = ['INTERESTED', 'ASKED_MORE', 'DENIED', 'FOLLOW_LATER'].includes(category.category) ? category.category : 'NEEDS_REVIEW';
+                        const updates = {
+                            statusKey: newStatus,
+                            statusLabel: (window.LEAD_STATUSES[newStatus]?.label || newStatus) + ' (Fast Sync)',
+                            lastContactDate: new Date().toISOString(),
+                            threadId: reply.threadId,
+                            activityLog: firebase.firestore.FieldValue.arrayUnion({ date: new Date().toISOString(), type: 'REPLY', content: `Inbox Sync: ${reply.snippet.substring(0, 60)}...` })
+                        };
+                        if (newStatus === 'DENIED' || newStatus === 'FOLLOW_LATER') updates.autoFollowupEnabled = false;
+                        batch.update(ref, updates);
+                        localUpdates[matchedLead.id] = updates;
+                        matchedCount++;
+                    }
+                }
+            });
+
+            if (matchedCount > 0) {
+                await batch.commit();
+                setCrmData(prev => prev.map(l => localUpdates[l.id] ? { ...l, ...localUpdates[l.id], activityLog: [...(l.activityLog || []), { date: new Date().toISOString(), type: 'REPLY', content: 'HÄ±zlÄ± senkron ile gÃ¼ncellendi.' }] } : l));
+                alert(`${matchedCount} lead iÃ§in yeni cevap eÅŸleÅŸtirildi ve gÃ¼ncellendi!`);
+            } else { alert("Inbox'taki mesajlar mevcut lead'lerle eÅŸleÅŸmedi."); }
+        } catch (err) { alert("Hata: " + err.message); } finally { setIsCheckingBulk(false); }
+    };
+
     const bulkUpdateStatus = async (newStatusKey) => {
-        if (selectedIds.size === 0) return alert("Lütfen kayıt seçin.");
-        if (!isDbConnected) return alert("Veritabanı bağlı değil.");
+        if (selectedIds.size === 0) return alert("LÃ¼tfen kayÄ±t seÃ§in.");
+        if (!isDbConnected) return alert("VeritabanÄ± baÄŸlÄ± deÄŸil.");
         const statusLabel = window.LEAD_STATUSES[newStatusKey]?.label || newStatusKey;
-        if (!confirm(`Seçili ${selectedIds.size} kaydın durumu '${statusLabel}' olarak güncellenecek. Onaylıyor musunuz?`)) return;
+        if (!confirm(`SeÃ§ili ${selectedIds.size} kaydÄ±n durumu '${statusLabel}' olarak gÃ¼ncellenecek. OnaylÄ±yor musunuz?`)) return;
         const batch = dbInstance.batch(); const timestamp = new Date().toISOString();
-        const newLog = { date: timestamp, type: 'SYSTEM', content: `Durum manuel olarak '${statusLabel}' yapıldı (Toplu İşlem).` };
+        const newLog = { date: timestamp, type: 'SYSTEM', content: `Durum manuel olarak '${statusLabel}' yapÄ±ldÄ± (Toplu Ä°ÅŸlem).` };
         selectedIds.forEach(id => { const ref = dbInstance.collection("leads").doc(id); batch.update(ref, { statusKey: newStatusKey, statusLabel: statusLabel, activityLog: firebase.firestore.FieldValue.arrayUnion(newLog) }); });
-        try { await batch.commit(); setCrmData(prev => prev.map(item => { if (selectedIds.has(item.id)) { return { ...item, statusKey: newStatusKey, statusLabel: statusLabel, activityLog: [...(item.activityLog || []), newLog] }; } return item; })); setSelectedIds(new Set()); alert("Durumlar başarıyla güncellendi."); } catch (e) { alert("Hata: " + e.message); }
+        try { await batch.commit(); setCrmData(prev => prev.map(item => { if (selectedIds.has(item.id)) { return { ...item, statusKey: newStatusKey, statusLabel: statusLabel, activityLog: [...(item.activityLog || []), newLog] }; } return item; })); setSelectedIds(new Set()); alert("Durumlar baÅŸarÄ±yla gÃ¼ncellendi."); } catch (e) { alert("Hata: " + e.message); }
     };
 
     const bulkUpdateLanguage = async (newLang) => {
-        if (selectedIds.size === 0) return alert("Lütfen kayıt seçin.");
-        if (!isDbConnected) return alert("Veritabanı bağlı değil.");
-        if (!['TR', 'EN'].includes(newLang)) return alert("Geçersiz dil.");
-        if (!confirm(`Seçili ${selectedIds.size} kaydın dili '${newLang}' olarak güncellenecek. Onaylıyor musunuz?`)) return;
+        if (selectedIds.size === 0) return alert("LÃ¼tfen kayÄ±t seÃ§in.");
+        if (!isDbConnected) return alert("VeritabanÄ± baÄŸlÄ± deÄŸil.");
+        if (!['TR', 'EN'].includes(newLang)) return alert("GeÃ§ersiz dil.");
+        if (!confirm(`SeÃ§ili ${selectedIds.size} kaydÄ±n dili '${newLang}' olarak gÃ¼ncellenecek. OnaylÄ±yor musunuz?`)) return;
         const batch = dbInstance.batch();
         const timestamp = new Date().toISOString();
-        const newLog = { date: timestamp, type: 'SYSTEM', content: `Dil manuel olarak '${newLang}' yapıldı (Toplu İşlem).` };
+        const newLog = { date: timestamp, type: 'SYSTEM', content: `Dil manuel olarak '${newLang}' yapÄ±ldÄ± (Toplu Ä°ÅŸlem).` };
         selectedIds.forEach(id => {
             const ref = dbInstance.collection("leads").doc(id);
             batch.update(ref, { language: newLang, activityLog: firebase.firestore.FieldValue.arrayUnion(newLog) });
@@ -696,23 +753,23 @@ window.useLeadHunterServices = (
             await batch.commit();
             setCrmData(prev => prev.map(item => selectedIds.has(item.id) ? { ...item, language: newLang, activityLog: [...(item.activityLog || []), newLog] } : item));
             setSelectedIds(new Set());
-            alert("Diller başarıyla güncellendi.");
+            alert("Diller baÅŸarÄ±yla gÃ¼ncellendi.");
         } catch (e) { alert("Hata: " + e.message); }
     };
 
     const bulkUpdateStage = async (newStage) => {
-        if (selectedIds.size === 0) return alert("Lütfen kayıt seçin.");
-        if (!isDbConnected) return alert("Veritabanı bağlı değil.");
+        if (selectedIds.size === 0) return alert("LÃ¼tfen kayÄ±t seÃ§in.");
+        if (!isDbConnected) return alert("VeritabanÄ± baÄŸlÄ± deÄŸil.");
         const stageInt = parseInt(newStage);
-        if (isNaN(stageInt) || stageInt < 0) return alert("Geçersiz aşama.");
-        // stage değeri "son gönderilen + 1" şeklinde saklanıyor (workflow index + 1)
-        // Kullanıcıya gösterilen "son gönderilen" değerine karşılık DB'deki stage = value + 1
+        if (isNaN(stageInt) || stageInt < 0) return alert("GeÃ§ersiz aÅŸama.");
+        // stage deÄŸeri "son gÃ¶nderilen + 1" ÅŸeklinde saklanÄ±yor (workflow index + 1)
+        // KullanÄ±cÄ±ya gÃ¶sterilen "son gÃ¶nderilen" deÄŸerine karÅŸÄ±lÄ±k DB'deki stage = value + 1
         const workflow = settings.workflowTR || [];
-        const label = stageInt === 0 ? 'Henüz Gönderilmedi' : (workflow[stageInt - 1]?.label || `Aşama ${stageInt}`);
-        if (!confirm(`Seçili ${selectedIds.size} kaydın son gönderilen maili '${label}' olarak güncellenecek. Onaylıyor musunuz?`)) return;
+        const label = stageInt === 0 ? 'HenÃ¼z GÃ¶nderilmedi' : (workflow[stageInt - 1]?.label || `AÅŸama ${stageInt}`);
+        if (!confirm(`SeÃ§ili ${selectedIds.size} kaydÄ±n son gÃ¶nderilen maili '${label}' olarak gÃ¼ncellenecek. OnaylÄ±yor musunuz?`)) return;
         const batch = dbInstance.batch();
         const timestamp = new Date().toISOString();
-        const newLog = { date: timestamp, type: 'SYSTEM', content: `Son gönderilen mail manuel olarak '${label}' yapıldı (Toplu İşlem).` };
+        const newLog = { date: timestamp, type: 'SYSTEM', content: `Son gÃ¶nderilen mail manuel olarak '${label}' yapÄ±ldÄ± (Toplu Ä°ÅŸlem).` };
         selectedIds.forEach(id => {
             const ref = dbInstance.collection("leads").doc(id);
             batch.update(ref, { stage: stageInt, activityLog: firebase.firestore.FieldValue.arrayUnion(newLog) });
@@ -721,7 +778,7 @@ window.useLeadHunterServices = (
             await batch.commit();
             setCrmData(prev => prev.map(item => selectedIds.has(item.id) ? { ...item, stage: stageInt, activityLog: [...(item.activityLog || []), newLog] } : item));
             setSelectedIds(new Set());
-            alert("Aşamalar başarıyla güncellendi.");
+            alert("AÅŸamalar baÅŸarÄ±yla gÃ¼ncellendi.");
         } catch (e) { alert("Hata: " + e.message); }
     };
 
@@ -733,21 +790,21 @@ window.useLeadHunterServices = (
         if (count > 0) { await batch.commit(); setLeads(prev => prev.filter(l => !selectedIds.has(l.id))); setSelectedIds(new Set()); alert(`${count} site eklendi.`); }
     };
 
-    // --- ARKA PLAN VERİ ZENGİNLEŞTİRME (Sunucu Tarafında) ---
+    // --- ARKA PLAN VERÄ° ZENGÄ°NLEÅTÄ°RME (Sunucu TarafÄ±nda) ---
     const enrichDatabase = async (mode = 'BOTH') => {
         const serverUrl = (window.APP_CONFIG && window.APP_CONFIG.SERVER_API_URL) || '';
-        if (!serverUrl) return alert('Sunucu URL tanımlı değil!');
+        if (!serverUrl) return alert('Sunucu URL tanÄ±mlÄ± deÄŸil!');
 
-        // Enrich endpoint URL'si (traffic-api.php ile aynı dizinde)
+        // Enrich endpoint URL'si (traffic-api.php ile aynÄ± dizinde)
         const enrichApiUrl = serverUrl.replace('traffic-api.php', 'cron/enrich-background.php');
 
         setShowEnrichModal(true);
         setIsEnriching(true);
-        setEnrichLogs([{ time: new Date().toLocaleTimeString(), msg: 'Sunucuya istek gönderiliyor...', type: 'info' }]);
+        setEnrichLogs([{ time: new Date().toLocaleTimeString(), msg: 'Sunucuya istek gÃ¶nderiliyor...', type: 'info' }]);
         setEnrichProgress({ current: 0, total: 0 });
 
         try {
-            // Sunucuya başlatma isteği gönder
+            // Sunucuya baÅŸlatma isteÄŸi gÃ¶nder
             const startResp = await fetch(`${enrichApiUrl}?action=start&mode=${mode}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
@@ -756,17 +813,17 @@ window.useLeadHunterServices = (
 
             if (!startResult.success) {
                 if (startResult.status === 'already_running') {
-                    setEnrichLogs([{ time: new Date().toLocaleTimeString(), msg: 'Bir zenginleştirme işlemi zaten çalışıyor! Durumu takip ediliyor...', type: 'warning' }]);
+                    setEnrichLogs([{ time: new Date().toLocaleTimeString(), msg: 'Bir zenginleÅŸtirme iÅŸlemi zaten Ã§alÄ±ÅŸÄ±yor! Durumu takip ediliyor...', type: 'warning' }]);
                 } else {
                     setEnrichLogs([{ time: new Date().toLocaleTimeString(), msg: 'Hata: ' + startResult.message, type: 'error' }]);
                     setIsEnriching(false);
                     return;
                 }
             } else {
-                setEnrichLogs([{ time: new Date().toLocaleTimeString(), msg: 'İşlem sunucuda başlatıldı! Tarayıcıyı kapatabilirsiniz.', type: 'success' }]);
+                setEnrichLogs([{ time: new Date().toLocaleTimeString(), msg: 'Ä°ÅŸlem sunucuda baÅŸlatÄ±ldÄ±! TarayÄ±cÄ±yÄ± kapatabilirsiniz.', type: 'success' }]);
             }
 
-            // Polling başlat: Sunucudan progress bilgisini her 3 saniyede çek
+            // Polling baÅŸlat: Sunucudan progress bilgisini her 3 saniyede Ã§ek
             if (enrichPollRef.current) clearInterval(enrichPollRef.current);
 
             enrichPollRef.current = setInterval(async () => {
@@ -777,862 +834,266 @@ window.useLeadHunterServices = (
                     if (statusResult.success && statusResult.data) {
                         const d = statusResult.data;
 
-                        // Progress güncelle
+                        // Progress gÃ¼ncelle
                         setEnrichProgress({ current: d.current || 0, total: d.total || 0 });
 
-                        // Log'ları güncelle (sunucudan gelen tüm logları yansıt)
+                        // Log'larÄ± gÃ¼ncelle (sunucudan gelen tÃ¼m loglarÄ± yansÄ±t)
                         if (d.logs && Array.isArray(d.logs)) {
                             setEnrichLogs(d.logs);
                         }
 
-                        // İşlem tamamlandı / durduruldu / hata
+                        // Ä°ÅŸlem tamamlandÄ± / durduruldu / hata
                         if (d.status === 'completed' || d.status === 'error') {
                             clearInterval(enrichPollRef.current);
                             enrichPollRef.current = null;
                             setIsEnriching(false);
 
-                            // Firestore'dan güncel verileri tekrar yükle
+                            // Firestore'dan gÃ¼ncel verileri tekrar yÃ¼kle
                             if (isDbConnected) {
                                 try {
                                     const snapshot = await dbInstance.collection('leads').get();
                                     const freshData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                                     setCrmData(freshData);
-                                } catch (e) { console.warn('Veri yenileme hatası:', e); }
+                                } catch (e) { console.warn('Veri yenileme hatasÄ±:', e); }
                             }
                         }
                     }
                 } catch (pollErr) {
-                    console.warn('Enrich polling hatası:', pollErr);
+                    console.warn('Enrich polling hatasÄ±:', pollErr);
                 }
             }, 3000);
 
         } catch (err) {
-            setEnrichLogs([{ time: new Date().toLocaleTimeString(), msg: 'Sunucu bağlantı hatası: ' + err.message, type: 'error' }]);
+            setEnrichLogs([{ time: new Date().toLocaleTimeString(), msg: 'Sunucu baÄŸlantÄ± hatasÄ±: ' + err.message, type: 'error' }]);
             setIsEnriching(false);
         }
     };
 
-    // Arka plan zenginleştirmeyi durdur
+    // Arka plan zenginleÅŸtirmeyi durdur
     const stopEnrichBackground = async () => {
         const serverUrl = (window.APP_CONFIG && window.APP_CONFIG.SERVER_API_URL) || '';
         const enrichApiUrl = serverUrl.replace('traffic-api.php', 'cron/enrich-background.php');
         try {
             await fetch(`${enrichApiUrl}?action=stop`, { method: 'POST' });
-            setEnrichLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), msg: 'Durdurma isteği gönderildi...', type: 'warning' }]);
+            setEnrichLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), msg: 'Durdurma isteÄŸi gÃ¶nderildi...', type: 'warning' }]);
         } catch (e) {
-            alert('Durdurma hatası: ' + e.message);
+            alert('Durdurma hatasÄ±: ' + e.message);
         }
     };
-
-    // Sayfa açıldığında devam eden bir arka plan işlemi var mı kontrol et
-    useEffect(() => {
-        const checkRunningEnrichment = async () => {
-            const serverUrl = (window.APP_CONFIG && window.APP_CONFIG.SERVER_API_URL) || '';
-            if (!serverUrl) return;
-            const enrichApiUrl = serverUrl.replace('traffic-api.php', 'cron/enrich-background.php');
-            try {
-                const resp = await fetch(`${enrichApiUrl}?action=status`);
-                const result = await resp.json();
-                if (result.success && result.data && result.data.status === 'running') {
-                    // Devam eden işlem var - modal'ı aç ve polling başlat
-                    setShowEnrichModal(true);
-                    setIsEnriching(true);
-                    setEnrichProgress({ current: result.data.current || 0, total: result.data.total || 0 });
-                    if (result.data.logs) setEnrichLogs(result.data.logs);
-
-                    enrichPollRef.current = setInterval(async () => {
-                        try {
-                            const sr = await fetch(`${enrichApiUrl}?action=status`);
-                            const sd = await sr.json();
-                            if (sd.success && sd.data) {
-                                setEnrichProgress({ current: sd.data.current || 0, total: sd.data.total || 0 });
-                                if (sd.data.logs) setEnrichLogs(sd.data.logs);
-                                if (sd.data.status === 'completed' || sd.data.status === 'error') {
-                                    clearInterval(enrichPollRef.current);
-                                    enrichPollRef.current = null;
-                                    setIsEnriching(false);
-                                    if (isDbConnected) {
-                                        try {
-                                            const snapshot = await dbInstance.collection('leads').get();
-                                            const freshData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                                            setCrmData(freshData);
-                                        } catch (e) { console.warn('Veri yenileme hatası:', e); }
-                                    }
-                                }
-                            }
-                        } catch (e) { console.warn('Enrich resume polling hatası:', e); }
-                    }, 3000);
-                }
-            } catch (e) { /* suskunluk */ }
-        };
-        const t = setTimeout(checkRunningEnrichment, 2000);
-        return () => { clearTimeout(t); if (enrichPollRef.current) clearInterval(enrichPollRef.current); };
-    }, [isDbConnected]);
-
-    const startScan = async () => {
-        const keywordList = keywords.split(/[\n,]+/).map(k => k.trim()).filter(k => k.length > 0);
-        if (keywordList.length === 0) return alert("Kelime giriniz.");
-
-        scanIntervalRef.current = true;
-        setIsScanning(true);
-        setLeads([]);
-        setHunterLogs([]);
-        setHunterProgress(0);
-
-        const addLog = (msg, type = 'info') => setHunterLogs(p => [...p, { time: new Date().toLocaleTimeString(), message: msg, type }]);
-        const existingDomains = new Set(crmData.map(c => window.normalizeMainDomain(c.url)));
-        addLog(`Veritabanında ${existingDomains.size} kayıt var, bunlar filtrelenecek.`, 'warning');
-
-        for (let i = 0; i < keywordList.length; i++) {
-            if (!scanIntervalRef.current) break;
-            const kw = keywordList[i];
-            addLog(`Aranıyor: ${kw}`);
-
-            try {
-                const serverUrl = (window.APP_CONFIG && window.APP_CONFIG.SERVER_API_URL) || '';
-                if (!serverUrl) { addLog("HATA: Server API URL tanımlı değil.", 'error'); continue; }
-
-                const country = searchLocation || 'TR';
-                const apiKey = settings.googleApiKey || '';
-                const cx = settings.searchEngineId || '';
-                const url = `${serverUrl}?type=search&q=${encodeURIComponent(kw)}&depth=${searchDepth}&gl=${country}&apiKey=${encodeURIComponent(apiKey)}&cx=${encodeURIComponent(cx)}`;
-
-                const response = await fetch(url);
-                const text = await response.text();
-                let json = JSON.parse(text);
-
-                if (json.success && Array.isArray(json.results)) {
-                    const filteredResults = json.results.filter(r => {
-                        const d = window.normalizeMainDomain(r.url);
-                        if (!d) return false;
-                        if (/\.(bel|gov|edu|k12|pol|tsk|mil)\.tr$/i.test(d)) return false;
-                        return !existingDomains.has(d);
-                    });
-                    if (filteredResults.length > 0) {
-                        const newLeads = filteredResults.map(r => ({
-                            id: Math.random().toString(36).substr(2, 9),
-                            url: window.cleanDomain(r.url),
-                            title: r.title,
-                            description: r.snippet,
-                            trafficStatus: { label: 'Analiz Ediliyor...', value: 0 },
-                            email: 'Aranıyor...'
-                        }));
-                        setLeads(prev => [...prev, ...newLeads]);
-                        newLeads.forEach(async (lead) => {
-                            try {
-                                const tCheck = await window.checkTraffic(lead.url);
-                                setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, trafficStatus: tCheck } : l));
-                            } catch (e) { }
-                            try {
-                                const eCheck = await window.findEmailsOnSite(lead.url);
-                                setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, email: eCheck || null } : l));
-                            } catch (e) { }
-                        });
-                    }
-                }
-            } catch (err) { addLog(`Hata: ${err.message}`, 'error'); }
-            await new Promise(r => setTimeout(r, 1000));
-            setHunterProgress(((i + 1) / keywordList.length) * 100);
-        }
-        setIsScanning(false);
-        scanIntervalRef.current = false;
-        addLog("Bitti.", 'success');
-    };
-
-    const stopScan = () => { scanIntervalRef.current = false; setIsScanning(false); };
-
-    // --- AUTO FOLLOWUP SYSTEM ---
-    // Frontend executeFollowups removed to eliminate duplicate emails. Automated follow-ups are completely managed by cron/followup.php.
-
-    // --- START AUTO FOLLOWUP ---
-    const startAutoFollowup = async (leadIds) => {
-        if (!isDbConnected) return alert("Veritabanı bağlı değil.");
-        if (!leadIds || leadIds.size === 0) return alert("Kayıt seçin.");
-
-        const leadsToUpdate = crmDataRef.current.filter(l => leadIds.has(l.id));
-        const validLeads = leadsToUpdate.filter(l => l.email && l.email.length > 5);
-
-        if (validLeads.length === 0) return alert("Geçerli emaili olan kayıt bulunamadı.");
-
-        if (!confirm(`${validLeads.length} kayıt için otomatik takip başlatılacak. İlk takip maili hemen gönderilecek. Devam edilsin mi?`)) return;
-
-        const batch = dbInstance.batch();
-        const now = new Date();
-        const nextFollowupDate = new Date();
-        nextFollowupDate.setDate(nextFollowupDate.getDate() + 7);
-
-        for (const lead of validLeads) {
-            const domain = window.cleanDomain(lead.url);
-            const workflow = lead.language === 'EN' ? settings.workflowEN : settings.workflowTR;
-            const currentStage = lead.stage || 0;
-            
-            if (currentStage >= workflow.length) {
-                console.log(`[AutoFollowup] Tüm aşamalar tamamlanmış, atlanıyor: ${lead.id}`);
-                continue;
-            }
-            
-            const template = workflow[currentStage];
-
-            // İlk takip mailini hemen gönder
-            if (template && template.subject && template.body) {
-                try {
-                    const subject = template.subject.replace(/{{Website}}/g, domain);
-                    const body = template.body.replace(/{{Website}}/g, domain);
-                    const messageHtml = body.replace(/\n/g, '<br>');
-
-                    let signatureHtml = settings.signature
-                        ? window.decodeHtmlEntities(settings.signature).replace(/class="MsoNormal"/g, 'style="margin:0;"')
-                        : '';
-                    const serverUrl = (window.APP_CONFIG && window.APP_CONFIG.SERVER_API_URL) || '';
-                    const trackingPixel = serverUrl
-                        ? `<img src="${serverUrl}?type=track&id=${lead.id}" width="1" height="1" style="display:none;" alt="" />`
-                        : '';
-                    const htmlContent = `<div style="font-family: Arial; font-size: 14px;">${messageHtml}</div><br><br><div>${signatureHtml}</div>${trackingPixel}`;
-                    const plainBody = body + (settings.signature ? `\n\n--\n${settings.signature.replace(/<[^>]+>/g, '')}` : '');
-
-                    const result = await window.callGoogleScript(settings.googleScriptUrl, {
-                        action: 'send_mail',
-                        to: lead.email.split(',')[0].trim(),
-                        subject: subject,
-                        body: plainBody,
-                        htmlBody: htmlContent,
-                        threadId: lead.threadId || null
-                    });
-                    if (result.status === 'error') throw new Error(result.message);
-                    if (result.threadId) {
-                        lead.threadId = result.threadId;
-                    }
-                } catch (e) {
-                    console.error(`[AutoFollowup] İlk mail gönderim hatası: ${lead.id}`, e);
-                }
-            }
-
-            const ref = dbInstance.collection("leads").doc(lead.id);
-            const newLog = {
-                date: now.toISOString(),
-                type: 'MAIL',
-                content: `Otomatik Takip başlatıldı (${template.label} gönderildi, 7 gün ara ile)`
-            };
-
-            const updatePayload = {
-                stage: currentStage + 1,
-                statusKey: 'NO_REPLY',
-                statusLabel: window.LEAD_STATUSES['NO_REPLY']?.label || 'No Reply',
-                autoFollowupEnabled: true,
-                autoFollowupStartedAt: now.toISOString(),
-                nextFollowupDate: nextFollowupDate.toISOString(),
-                followupCount: (lead.followupCount || 0) + 1,
-                lastContactDate: now.toISOString(),
-                activityLog: firebase.firestore.FieldValue.arrayUnion(newLog),
-                [`history.${currentStage === 0 ? 'initial' : `repeat${currentStage}`}`]: now.toISOString()
-            };
-            if (lead.threadId) updatePayload.threadId = lead.threadId;
-
-            batch.update(ref, updatePayload);
-
-            // Her işlem arasında bekle
-            await new Promise(r => setTimeout(r, 2000));
-        }
-
-        await batch.commit();
-        alert(`${validLeads.length} kayıt için otomatik takip başlatıldı!`);
-    };
-
-    // --- STOP AUTO FOLLOWUP ---
-    const stopAutoFollowup = async (leadIds) => {
-        if (!isDbConnected) return alert("Veritabanı bağlı değil.");
-        if (!leadIds || leadIds.size === 0) return alert("Kayıt seçin.");
-
-        const leadsToUpdate = crmDataRef.current.filter(l => leadIds.has(l.id) && l.autoFollowupEnabled);
-
-        if (leadsToUpdate.length === 0) return alert("Otomatik takibi aktif olan kayıt bulunamadı.");
-
-        if (!confirm(`${leadsToUpdate.length} kaydın otomatik takibi durdurulacak. Devam edilsin mi?`)) return;
-
-        const batch = dbInstance.batch();
-
-        for (const lead of leadsToUpdate) {
-            const ref = dbInstance.collection("leads").doc(lead.id);
-            const newLog = {
-                date: new Date().toISOString(),
-                type: 'SYSTEM',
-                content: `Otomatik Takip durduruldu (${lead.followupCount || 0} takip yapıldı)`
-            };
-
-            batch.update(ref, {
-                autoFollowupEnabled: false,
-                activityLog: firebase.firestore.FieldValue.arrayUnion(newLog)
-            });
-        }
-
-        await batch.commit();
-        alert(`${leadsToUpdate.length} kaydın otomatik takibi durduruldu.`);
-    };
-
-    // --- AUTO HUNTER SCAN SYSTEM ---
-    // Her Pazartesi saat 7:00'de otomatik tarama yapar
-
-    const autoHunterRef = useRef({
-        isRunning: false,
-        currentIlceIndex: 0,
-        foundCount: 0,
-        addedCount: 0
-    });
-
-    // Haftalık otomatik tarama kontrolü
-    useEffect(() => {
-        if (!settings.autoHunterEnabled || !settings.ilceListesi) return;
-
-        const checkAndRunAutoHunter = () => {
-            const now = new Date();
-            const dayOfWeek = now.getDay(); // 0 = Pazar, 1 = Pazartesi
-            const hours = now.getHours();
-            
-            // Her Pazartesi saat 7:00'de kontrol et
-            if (dayOfWeek === 1 && hours >= 7 && hours < 8) {
-                const lastRun = settings.lastHunterRunDate ? new Date(settings.lastHunterRunDate) : null;
-                const daysSinceLastRun = lastRun ? Math.floor((now - lastRun) / (1000 * 60 * 60 * 24)) : 999;
-                
-                // Son çalışmadan en az 6 gün geçmişse (bir hafta)
-                if (!lastRun || daysSinceLastRun >= 6) {
-                    console.log("[AutoHunter] Haftalık tarama başlıyor...");
-                    runAutoHunterScan();
-                }
-            }
-        };
-
-        // Her saat başı kontrol et
-        const intervalId = setInterval(checkAndRunAutoHunter, 60 * 60 * 1000);
-        
-        // İlk yüklemede de kontrol et
-        const timeoutId = setTimeout(checkAndRunAutoHunter, 10000);
-
-        return () => { clearInterval(intervalId); clearTimeout(timeoutId); };
-    }, [settings.autoHunterEnabled, settings.ilceListesi, settings.lastHunterRunDate]);
-
-    // Manuel olarak otomatik taramayı başlat
-    const runAutoHunterScan = async () => {
-        if (!isDbConnected) {
-            console.warn("[AutoHunter] Veritabanı bağlı değil");
-            alert("Veritabanı bağlı değil!");
-            return;
-        }
-
-        if (!settings.ilceListesi || settings.ilceListesi.trim().length === 0) {
-            console.warn("[AutoHunter] İlçe listesi boş");
-            alert("Lütfen önce ilçe listesini doldurun!");
-            return;
-        }
-
-        if (autoHunterRef.current.isRunning) {
-            console.warn("[AutoHunter] Zaten çalışıyor");
-            return;
-        }
-
-        autoHunterRef.current.isRunning = true;
-        setIsHunterRunning(true);
-        setAutoHunterLogs([]);
-        setAutoHunterStats({ totalFound: 0, fullData: 0 });
-
-        // Canlı log helper — hem console'a hem UI state'ine yazar
-        const addLog = (msg, type = 'info') => {
-            const time = new Date().toLocaleTimeString('tr-TR');
-            console.log(`[AutoHunter] ${msg}`);
-            setAutoHunterLogs(prev => [...prev.slice(-199), { time, message: msg, type }]);
-        };
-
-        alert("Tarama başladı! Tarayıcıyı kapatmayın.");
-        const ilceList = settings.ilceListesi.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-        const targetCount = settings.hunterTargetCount || 100;
-        const keywords = ['haberleri', 'son dakika', 'güncel', 'haber', 'gazete'];
-
-        const existingDomains = new Set(crmDataRef.current.map(c => window.normalizeMainDomain(c.url)));
-        const serverUrl = (window.APP_CONFIG && window.APP_CONFIG.SERVER_API_URL) || '';
-
-        addLog(`🎯 Hedef: ${targetCount} site | İlçe sayısı: ${ilceList.length}`, 'info');
-
-        let currentIlceIndex = settings.lastHunterIlceIndex || 0;
-        let foundViableCount = 0;
-        let totalSearches = 0;
-        let maxSearches = ilceList.length * keywords.length;
-        let totalAdded = 0;
-        let fullDataCount = 0;
-
-        // Progress'i her çıkış yolunda kaydet
-        const saveProgress = async (reason) => {
-            if (!isDbConnected) return;
-            try {
-                await dbInstance.collection('system').doc('config').update({
-                    lastHunterIlceIndex: currentIlceIndex % ilceList.length,
-                    lastHunterRunDate: new Date().toISOString()
-                });
-                console.log(`[AutoHunter] 💾 Progress kaydedildi (${reason}): ilçe=${currentIlceIndex % ilceList.length}, eklenen=${totalAdded}`);
-            } catch (e) {
-                console.error("[AutoHunter] Progress kaydetme hatası:", e);
-            }
-        };
-        
-        // Fallback search engine chain: Google CSE → Brave → Bing → DuckDuckGo → DataForSEO
-        let googleFailed = false;
-        let braveFailed = false;
-        let bingFailed = false;
-        let duckduckgoFailed = false;
-        let dataforseoFailed = false;
-
-        try {
-        for (let i = 0; i < ilceList.length; i++) {
-            if (foundViableCount >= targetCount) break;
-            if (autoHunterRef.current.isRunning === false) break;
-
-            const ilce = ilceList[currentIlceIndex % ilceList.length];
-            addLog(`📍 İlçe #${currentIlceIndex % ilceList.length}: ${ilce}`, 'info');
-
-            for (const kw of keywords) {
-                if (!autoHunterRef.current.isRunning) break;
-                if (foundViableCount >= targetCount) break;
-                if (totalSearches >= maxSearches) break;
-
-                const query = `${ilce} ${kw}`;
-                totalSearches++;
-
-                // FARKLI ARAMA MOTORLARINI DENE - FALLBACK SİSTEMİ
-                // Sıra: Google CSE → Brave → Bing → DuckDuckGo → DataForSEO (son çare)
-                let searchResult = null;
-
-                // PRIMARY: Google Custom Search
-                if (!searchResult && !googleFailed) {
-                    console.log(`[AutoHunter] Google deneniyor: ${query}`);
-                    const apiKey = settings.googleApiKey || '';
-                    const cx = settings.searchEngineId || '';
-                    const url = `${serverUrl}?type=search&q=${encodeURIComponent(query)}&depth=30&gl=TR&apiKey=${encodeURIComponent(apiKey)}&cx=${encodeURIComponent(cx)}`;
-                    
-                    try {
-                        const response = await fetch(url);
-                        const text = await response.text();
-                        console.log(`[AutoHunter] 🔍 Google HTTP ${response.status}, length: ${text.length}`);
-                        
-                        let json;
-                        try {
-                            json = JSON.parse(text);
-                        } catch(e) {
-                            console.log(`[AutoHunter] ❌ Google JSON parse hatası: ${e.message}`);
-                            console.log(`[AutoHunter] 📄 Gelen veri: ${text.substring(0, 500)}`);
-                            googleFailed = true;
-                            continue;
+                        continue;
                         }
-                        
-                        // Detaylı debug
-                        console.log(`[AutoHunter] 📊 Google response: success=${json.success}, results=${json.results?.length || 0}, debug=`, json.debug);
-                        
                         if (json.success && Array.isArray(json.results) && json.results.length > 0) {
-                            searchResult = { results: json.results, engine: 'google' };
-                        } else {
-                            addLog(`⚠️ Google CSE başarısız (oturum için devre dışı): ${json.error || 'kota veya yanıt yok'}`, 'warn');
-                            googleFailed = true;
-                        }
-                    } catch (e) {
-                        addLog(`❌ Google CSE hata: ${e.message}`, 'error');
-                        googleFailed = true;
-                    }
-                }
-                
-                // Brave Search API (Google başarısızsa)
-                if (!searchResult && !braveFailed) {
-                    console.log(`[AutoHunter] Brave deneniyor: ${query}`);
-                    const url = `${serverUrl}?type=search_brave&q=${encodeURIComponent(query)}&depth=20&gl=tr`;
-                    try {
-                        const response = await fetch(url);
-                        const text = await response.text();
-                        console.log(`[AutoHunter] 🔍 Brave HTTP ${response.status}, length: ${text.length}`);
-                        let json;
-                        try {
-                            json = JSON.parse(text);
-                        } catch(e) {
-                            console.log(`[AutoHunter] ❌ Brave JSON parse hatası: ${e.message}`);
-                            braveFailed = true;
-                            continue;
-                        }
-                        if (json.rate_limited) {
-                            addLog(`⚠️ Brave rate limit (oturum için devre dışı)`, 'warn');
-                            braveFailed = true;
-                        } else if (json.success && Array.isArray(json.results) && json.results.length > 0) {
                             searchResult = { results: json.results, engine: 'brave' };
                         } else {
-                            addLog(`⚠️ Brave başarısız (oturum için devre dışı)`, 'warn');
                             braveFailed = true;
                         }
                     } catch (e) {
-                        addLog(`❌ Brave hata: ${e.message}`, 'error');
                         braveFailed = true;
                     }
                 }
-
-                // Bing (Google ve Brave başarısızsa)
+                
+                // Bing Search API (Brave baÃ…Å¸arÃ„Â±sÃ„Â±zsa)
                 if (!searchResult && !bingFailed) {
                     console.log(`[AutoHunter] Bing deneniyor: ${query}`);
-                    const url = `${serverUrl}?type=search_bing&q=${encodeURIComponent(query)}&depth=30&gl=TR`;
-                    
+                    const url = `${serverUrl}?type=search_bing&q=${encodeURIComponent(query)}&depth=20&gl=tr`;
                     try {
                         const response = await fetch(url);
                         const text = await response.text();
-                        console.log(`[AutoHunter] 🔍 Bing HTTP ${response.status}, length: ${text.length}`);
-                        
-                        let json;
-                        try {
-                            json = JSON.parse(text);
-                        } catch(e) {
-                            console.log(`[AutoHunter] ❌ Bing JSON parse hatası: ${e.message}`);
-                            console.log(`[AutoHunter] 📄 Bing ham veri: ${text.substring(0, 500)}`);
-                            bingFailed = true;
-                            continue;
-                        }
-                        
-                        console.log(`[AutoHunter] 📊 Bing response: success=${json.success}, results=${json.results?.length || 0}, debug=`, json.debug);
-                        
+                        let json = JSON.parse(text);
                         if (json.success && Array.isArray(json.results) && json.results.length > 0) {
                             searchResult = { results: json.results, engine: 'bing' };
                         } else {
-                            addLog(`⚠️ Bing başarısız (oturum için devre dışı)`, 'warn');
                             bingFailed = true;
                         }
                     } catch (e) {
-                        addLog(`❌ Bing hata: ${e.message}`, 'error');
                         bingFailed = true;
                     }
                 }
                 
-                // DuckDuckGo (sadece Google ve Bing başarısız olmuşsa ve daha önce başarısız olmamışsa)
+                // DuckDuckGo (Scraper) (Bing baÃ…Å¸arÃ„Â±sÃ„Â±zsa)
                 if (!searchResult && !duckduckgoFailed) {
-                    console.log(`[AutoHunter] DuckDuckGo deneniyor: ${query}`);
-                    const url = `${serverUrl}?type=search_duckduckgo&q=${encodeURIComponent(query)}&depth=30&gl=TR`;
-                    
+                    console.log(`[AutoHunter] DDG deneniyor: ${query}`);
+                    const url = `${serverUrl}?type=search_ddg&q=${encodeURIComponent(query)}&depth=20`;
                     try {
                         const response = await fetch(url);
                         const text = await response.text();
-                        console.log(`[AutoHunter] 🔍 DDG HTTP ${response.status}, length: ${text.length}`);
-                        
-                        let json;
-                        try {
-                            json = JSON.parse(text);
-                        } catch(e) {
-                            console.log(`[AutoHunter] ❌ DDG JSON parse hatası: ${e.message}`);
-                            console.log(`[AutoHunter] 📄 DDG ham veri: ${text.substring(0, 500)}`);
-                            duckduckgoFailed = true;
-                            continue;
-                        }
-                        
-                        console.log(`[AutoHunter] 📊 DDG response: success=${json.success}, results=${json.results?.length || 0}, debug=`, json.debug);
-                        
+                        let json = JSON.parse(text);
                         if (json.success && Array.isArray(json.results) && json.results.length > 0) {
-                            searchResult = { results: json.results, engine: 'duckduckgo' };
+                            searchResult = { results: json.results, engine: 'ddg' };
                         } else {
-                            addLog(`⚠️ DuckDuckGo başarısız (oturum için devre dışı)`, 'warn');
                             duckduckgoFailed = true;
                         }
                     } catch (e) {
-                        addLog(`❌ DuckDuckGo hata: ${e.message}`, 'error');
                         duckduckgoFailed = true;
                     }
                 }
                 
-                // DataForSEO (SON ÇARE - hepsi başarısız olursa)
+                // DataForSEO API (DuckDuckGo baÃ…Å¸arÃ„Â±sÃ„Â±zsa - SON Ãƒâ€¡ARE)
                 if (!searchResult && !dataforseoFailed) {
-                    console.log(`[AutoHunter] DataForSEO deneniyor (son çare): ${query}`);
-                    const url = `${serverUrl}?type=search_dataforseo&q=${encodeURIComponent(query)}&depth=10&gl=TR`;
+                    console.log(`[AutoHunter] DataForSEO deneniyor: ${query}`);
+                    const url = `${serverUrl}?type=search_dataforseo&q=${encodeURIComponent(query)}&depth=20`;
                     try {
                         const response = await fetch(url);
                         const text = await response.text();
-                        let json;
-                        try {
-                            json = JSON.parse(text);
-                        } catch(e) {
-                            console.log(`[AutoHunter] ❌ DataForSEO JSON parse hatası: ${e.message}`);
-                            dataforseoFailed = true;
-                            continue;
-                        }
-                        if (json.rate_limited) {
-                            addLog(`⚠️ DataForSEO rate limit (oturum için devre dışı)`, 'warn');
-                            dataforseoFailed = true;
-                        } else if (json.success && Array.isArray(json.results) && json.results.length > 0) {
+                        let json = JSON.parse(text);
+                        if (json.success && Array.isArray(json.results) && json.results.length > 0) {
                             searchResult = { results: json.results, engine: 'dataforseo' };
                         } else {
-                            addLog(`⚠️ DataForSEO başarısız (oturum için devre dışı)`, 'warn');
                             dataforseoFailed = true;
                         }
                     } catch (e) {
-                        addLog(`❌ DataForSEO hata: ${e.message}`, 'error');
                         dataforseoFailed = true;
                     }
                 }
 
-                // Eğer hiçbir arama motoru çalışmıyorsa taramayı durdur
-                if (!searchResult && googleFailed && braveFailed && bingFailed && duckduckgoFailed && dataforseoFailed) {
-                    console.log(`[AutoHunter] 🚫 TÜM ARAMA MOTORLARI BAŞARISIZ! Tarama durduruluyor.`);
-                    alert(`Hiçbir arama motoru çalışmıyor!\n\nTarama durduruldu.\nO ana kadar eklenen: ${totalAdded} site.`);
-                    autoHunterRef.current.isRunning = false;
-                    break;
-                }
-                
-                // Sonuçları işle
-                if (searchResult && searchResult.results.length > 0) {
-                    addLog(`🔎 "${ilce} ${kw}" (${searchResult.engine}): ${searchResult.results.length} sonuç`, 'info');
+                if (searchResult) {
+                    const engineEmoji = { google: 'ÄŸÅ¸â€Â¬', brave: 'ÄŸÅ¸Â¦\u0081', bing: 'ÄŸÅ¸â€™Â¶', ddg: 'ÄŸÅ¸Â¦â€ ', dataforseo: 'ÄŸÅ¸â€™Â°' }[searchResult.engine] || 'ÄŸÅ¸â€\u008D';
+                    addLog(`${engineEmoji} ${query} iÃƒÂ§in ${searchResult.results.length} site bulundu.`, 'info');
 
-                    const newResults = searchResult.results.filter(r => {
-                        const domain = window.normalizeMainDomain(r.url);
-                        if (!domain) return false;
-                        if (/\.(bel|gov|edu|k12|pol|tsk|mil)\.tr$/i.test(domain)) {
-                            return false;
-                        }
-                        return !existingDomains.has(domain);
-                    });
-
-                    if (newResults.length === 0) {
-                        addLog(`↩️ Yeni site yok (hepsi mevcut veya filtreli)`, 'info');
-                    } else {
-                        addLog(`➕ ${newResults.length} yeni site işleniyor...`, 'info');
-                    }
-
-                    for (const r of newResults) {
+                    for (const r of searchResult.results) {
                         if (!autoHunterRef.current.isRunning) break;
                         if (foundViableCount >= targetCount) break;
 
-                        // SUBDOMAIN KONTROLÜ - Ana domain değilse atla
                         const domain = window.normalizeMainDomain(r.url);
-                        if (!domain) continue;
-                        if (existingDomains.has(domain)) continue;
-                        
-                        // Eğer domain root domain değilse (subdomain ise) atla
-                        
-                        
-                        console.log(`[AutoHunter] Kontrol ediliyor: ${domain}`);
-                        
-                        // ANINDA EKLEME - Önce siteyi hemen ekle, sonra trafik/email kontrol et
-                        // Trafik kontrolü başlat (beklemeden)
-                        const trafficCheckPromise = window.checkTraffic(r.url);
-                        // Email kontrolü başlat (beklemeden)  
-                        const emailCheckPromise = window.findEmailsOnSite(r.url);
-                        
-                        try {
-                            // Her ikisini de bekle
-                            const trafficCheck = await trafficCheckPromise;
-                            const emailFound = await emailCheckPromise;
-                            
-                            console.log(`[AutoHunter] Trafik sonucu: ${JSON.stringify(trafficCheck)}`);
-                            console.log(`[AutoHunter] Email sonucu: ${emailFound || 'bulunamadı'}`);
-                            
-                            // YENİ MANTIK: Tüm siteler "New" olarak eklenir (trafik/email olsa da olmasa da)
-                            // Kullanıcı mail gönderirken filtrelerle ayırıyor.
-                            const isViable = trafficCheck && trafficCheck.viable && trafficCheck.value > 0;
-                            const statusKey = 'New';
-                            const statusLabel = 'New';
-                            
-                            console.log(`[AutoHunter] ✅ Site eklendi! ${domain} - Trafik: ${trafficCheck?.label || 'Yok'}, Email: ${emailFound || 'Yok'}, Status: ${statusKey}`);
-                            
-                            const now = new Date();
-                            const dateStr = now.toLocaleDateString('tr-TR') + ' ' + now.toLocaleTimeString('tr-TR');
-                            const autoNote = `Site Avcısı Otomasyonu ile ${dateStr} tarihinde eklenmiştir.`;
+                        if (!domain || existingDomains.has(domain)) continue;
 
-                            const safeTraffic = {
-                                viable: trafficCheck?.viable === true,
-                                label: trafficCheck?.label || 'Veri Yok',
-                                value: Number(trafficCheck?.value) || 0,
-                                note: trafficCheck?.note || ''
-                            };
-                            const newLead = {
-                                url: domain,
-                                email: emailFound || '',
-                                statusKey: statusKey,
-                                statusLabel: statusLabel,
-                                stage: 0,
-                                language: 'TR',
-                                trafficStatus: safeTraffic,
-                                addedDate: now.toISOString(),
-                                source: 'AutoHunter',
-                                sourceQuery: query,
-                                notes: autoNote,
-                                activityLog: [{
-                                    date: now.toISOString(),
-                                    type: 'INFO',
-                                    content: `Otomatik Tarama ile eklendi (${query}). Trafik: ${trafficCheck?.label || 'Yok'}. Email: ${emailFound || 'Yok'}.`
-                                }]
-                            };
-
-                            if (isDbConnected) {
-                                const docRef = await dbInstance.collection("leads").add(newLead);
-                                setCrmData(prev => [...prev, { ...newLead, id: docRef.id }]);
-                                totalAdded++;
-                                // Tam veri = email var + trafik viable
-                                const hasFullData = isViable && emailFound && emailFound.length > 5;
-                                if (hasFullData) fullDataCount++;
-                                setAutoHunterStats({ totalFound: totalAdded, fullData: fullDataCount });
-                                addLog(`✅ ${domain} eklendi | Trafik: ${safeTraffic.label} | Email: ${emailFound ? 'var' : 'yok'}${hasFullData ? ' | TAM VERİ' : ''}`, hasFullData ? 'success' : 'info');
-                            }
-
+                        // Belirgin haber portalÃ„Â± deÃ„Å¸ilse atla
+                        if (!/\.(bel|gov|edu|k12|pol|tsk|mil)\.tr$/i.test(domain)) {
                             existingDomains.add(domain);
-                            if (isViable) {
+                            
+                            // Traffic Check
+                            const traffic = await window.checkTraffic(domain);
+                            if (traffic && traffic.viable) {
                                 foundViableCount++;
-                            }
-                        } catch (e) {
-                            console.error(`[AutoHunter] Kontrol hatası: ${domain}`, e);
-
-                            // Hata olsa bile siteyi New olarak ekle
-                            try {
-                                const now = new Date();
-                                const dateStr = now.toLocaleDateString('tr-TR') + ' ' + now.toLocaleTimeString('tr-TR');
-                                const autoNote = `Site Avcısı Otomasyonu ile ${dateStr} tarihinde eklenmiştir (Trafik/Email kontrolü hata ile).`;
-
-                                const newLead = {
-                                    url: domain,
-                                    email: '',
-                                    statusKey: 'New',
-                                    statusLabel: 'New',
-                                    stage: 0,
-                                    language: 'TR',
-                                    trafficStatus: { viable: false, label: 'Veri Yok', value: 0, note: '' },
-                                    addedDate: now.toISOString(),
-                                    source: 'AutoHunter',
-                                    sourceQuery: query,
-                                    notes: autoNote,
-                                    activityLog: [{
-                                        date: now.toISOString(),
-                                        type: 'INFO',
-                                        content: `Otomatik Tarama ile eklendi (Hata nedeniyle): ${e.message}`
-                                    }]
-                                };
+                                setAutoHunterStats(prev => ({ ...prev, totalFound: foundViableCount }));
                                 
-                                if (isDbConnected) {
-                                    const docRef = await dbInstance.collection("leads").add(newLead);
-                                    setCrmData(prev => [...prev, { ...newLead, id: docRef.id }]);
-                                    totalAdded++;
-                                    setAutoHunterStats({ totalFound: totalAdded, fullData: fullDataCount });
-                                    addLog(`⚠️ ${domain} hata ile eklendi: ${e.message}`, 'warn');
+                                // Email Check
+                                const email = await window.findEmailsOnSite(domain);
+                                let hasFullData = email && email.length > 5;
+                                
+                                if (hasFullData) {
+                                    fullDataCount++;
+                                    setAutoHunterStats(prev => ({ ...prev, fullData: fullDataCount }));
                                 }
-                                existingDomains.add(domain);
-                                // foundViableCount++; // Hata durumunda sayma ki gerçek hedefe ulaşılsın
-                            } catch (addError) {
-                                addLog(`❌ Ekleme hatası: ${domain} — ${addError.message}`, 'error');
+
+                                // Firestore Save
+                                try {
+                                    const leadId = Math.random().toString(36).substr(2, 9);
+                                    const leadData = {
+                                        url: domain,
+                                        email: email || '',
+                                        statusKey: 'New',
+                                        statusLabel: 'New',
+                                        stage: 0,
+                                        language: 'TR',
+                                        trafficStatus: traffic,
+                                        addedDate: new Date().toISOString(),
+                                        source: `AutoHunter (${ilce})`
+                                    };
+                                    
+                                    await dbInstance.collection('leads').add(leadData);
+                                    totalAdded++;
+                                    addLog(`Ã¢Å“â€¦ Eklendi: ${domain} (${hasFullData ? 'E-posta OK' : 'E-posta yok'})`, 'success');
+                                    
+                                    // Local state gÃƒÂ¼ncelle
+                                    setCrmData(prev => [...prev, { id: leadId, ...leadData }]);
+                                    
+                                } catch (e) {
+                                    addLog(`Ã¢ Å’ Firestore kayÃ„Â±t hatasÃ„Â±: ${domain} - ${e.message}`, 'error');
+                                }
                             }
                         }
-
+                        // API'yi yormamak iÃƒÂ§in kÃ„Â±sa bekleme
                         await new Promise(r => setTimeout(r, 500));
                     }
+                } else {
+                    addLog(`Ã¢Å¡Â Ã¯Â¸  TÃƒÂ¼m arama motorlarÃ„Â± kota veya hata verdi: ${query}`, 'warn');
+                    // TÃƒÂ¼m arama motorlarÃ„Â± patladÃ„Â±ysa bir sÃƒÂ¼re bekle
+                    await new Promise(r => setTimeout(r, 10000));
+                    
+                    // EÃ„Å¸er tÃƒÂ¼m motorlar baÃ…Å¸arÃ„Â±sÃ„Â±zsa ve henÃƒÂ¼z hiÃƒÂ§bir Ã…Å¸ey bulamadÃ„Â±ysak durdurabiliriz
+                    if (googleFailed && braveFailed && bingFailed && duckduckgoFailed && dataforseoFailed) {
+                        addLog(`Ã¢â‚¬Â¼Ã¯Â¸  KRÃ„Â°TÃ„Â°K: TÃƒÂ¼m arama API'larÃ„Â± devre dÃ„Â±Ã…Å¸Ã„Â±! Tarama durduruluyor.`, 'error');
+                        autoHunterRef.current.isRunning = false;
+                        break;
+                    }
                 }
-
-                // Her arama arasında BEKLEME (Rate Limiting önleme)
-                // DuckDuckGo hızlı aramalarda bloke olur, bu yüzden uzun bekleme şart
-                await new Promise(r => setTimeout(r, 3000));
+                
+                // Sorgular arasÃ„Â± bekleme
+                await new Promise(r => setTimeout(r, 1500));
             }
-
-            // Her ilçe arasında ekstra bekleme
-            await new Promise(r => setTimeout(r, 2000));
+            
             currentIlceIndex++;
+            // Her ilÃƒÂ§e bitiminde progress kaydet
+            await saveProgress('ilÃƒÂ§e geÃƒÂ§iÃ…Å¸i');
+            
+            // Kota dostu bekleme
+            await new Promise(r => setTimeout(r, 3000));
         }
         } catch (fatalErr) {
-            addLog(`❌ Beklenmedik hata: ${fatalErr.message}`, 'error');
-            console.error("[AutoHunter] Beklenmedik hata:", fatalErr);
-        } finally {
-            // Her çıkış yolunda progress'i kaydet (manuel stop, hata, hedef tamam)
-            const wasStopped = !autoHunterRef.current.isRunning && foundViableCount < targetCount;
-            await saveProgress('final');
-            autoHunterRef.current.isRunning = false;
-            setIsHunterRunning(false);
-            const reason = foundViableCount >= targetCount
-                ? `Hedefe ulaşıldı (${targetCount} uygun site).`
-                : (wasStopped ? 'Manuel olarak durduruldu.' : 'Tüm ilçeler tarandı.');
-            addLog(`🏁 ${reason} | Eklenen: ${totalAdded} | Tam Veri: ${fullDataCount} | Uygun: ${foundViableCount}`, 'success');
-            alert(`Tarama tamamlandı.\n\n${reason}\n\n✅ Toplam eklenen: ${totalAdded} site\n⭐ Tam verili: ${fullDataCount} site\n📊 Uygun (trafikli): ${foundViableCount} site\n📍 Son ilçe indeksi: ${currentIlceIndex % ilceList.length}`);
+            addLog(`ÄŸÅ¸â€™Â¥ Kritik Tarama HatasÃ„Â±: ${fatalErr.message}`, 'error');
+            console.error("[AutoHunter] FATAL ERROR:", fatalErr);
         }
+
+        autoHunterRef.current.isRunning = false;
+        setIsHunterRunning(false);
+        addLog(`ÄŸÅ¸\u008F\u0081 Tarama Bitti. Toplam: ${totalSearches} arama, ${totalAdded} yeni site, ${fullDataCount} tam verili.`, 'success');
+        
+        await saveProgress('final');
+        alert(`Otomatik tarama tamamlandÃ„Â±!\nEklenen: ${totalAdded}\nTam Verili: ${fullDataCount}`);
     };
 
-    // Otomatik taramayı durdur
     const stopAutoHunterScan = () => {
         autoHunterRef.current.isRunning = false;
         setIsHunterRunning(false);
-        console.log("[AutoHunter] Durdurma komutu verildi, mevcut işlem bitince tamamen duracak.");
+        const time = new Date().toLocaleTimeString('tr-TR');
+        setAutoHunterLogs(prev => [...prev, { time, message: "ÄŸÅ¸â€ºâ€˜ KullanÃ„Â±cÃ„Â± tarafÃ„Â±ndan durduruldu.", type: 'warning' }]);
     };
-    
-    // Bittiğinde state'i güncelle
-    useEffect(() => {
-        if (!autoHunterRef.current.isRunning && isHunterRunning) {
-            setIsHunterRunning(false);
-        }
-    }, [isHunterRunning]);
 
-    // --- TEK SEFERLİK VERİ TUTARLILIK DÜZELTMESİ ---
     const fixLeadConsistency = async () => {
-        if (!isDbConnected || !dbInstance) return alert("Veritabanı bağlı değil!");
-        if (!confirm("Tutarsız lead verileri düzeltilecek (statusKey/stage uyumsuzlukları).\nDevam edilsin mi?")) return;
-
+        if (!isDbConnected) return alert("VeritabanÃ„Â± baÃ„Å¸lÃ„Â± deÃ„Å¸il.");
+        if (!confirm("TÃƒÂ¼m lead verileri taranacak ve dÃƒÂ¼zeltilecek (Bozuk URL'ler, YanlÃ„Â±Ã…Å¸ Statusler vb.). Devam edilsin mi?")) return;
+        
         let fixCount = 0;
         let urlFixCount = 0;
-        let batch = dbInstance.batch();
+        const allLeads = crmData;
+        const batch = dbInstance.batch();
         let batchCount = 0;
         const allUpdates = {};
 
-        // Doğrudan Firestore'dan tüm leadleri çek (crmData filter edilmiş olabilir)
-        let allLeads = [];
-        try {
-            const snapshot = await dbInstance.collection('leads').get();
-            allLeads = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-            console.log(`[fixLeadConsistency] Firestore'dan ${allLeads.length} lead çekildi`);
-        } catch (e) {
-            return alert("Lead'ler çekilemedi: " + e.message);
-        }
-
-        if (allLeads.length === 0) {
-            return alert("Düzeltilecek lead bulunamadı (DB boş?).");
-        }
-
-        const todayIso = new Date().toISOString();
         for (const lead of allLeads) {
             const updates = {};
-            const sk = lead.statusKey || '';
-            const isNewOrEmpty = !sk || sk === 'New';
-            const hasBounce = Array.isArray(lead.activityLog) && lead.activityLog.some(a => a.type === 'BOUNCE');
-            const hasBeenContacted = !!lead.lastContactDate;
-            const hasBeenOpened = !!lead.mailOpenedAt;
-            const hasNoEmail = !lead.email || lead.email.length < 5 || lead.email === '-';
+            
+            // 1. URL DÃƒÅ“ZELTME (YanlÃ„Â±Ã…Å¸ formatlarÃ„Â± ciplak domaine cevir)
+            const cleanUrl = window.normalizeMainDomain(lead.url);
+            if (cleanUrl && cleanUrl !== lead.url) {
+                updates.url = cleanUrl;
+                urlFixCount++;
+            }
 
-            // 1. Bounce kaydı var ama statusKey MAIL_ERROR değil → düzelt
-            if (hasBounce && sk !== 'MAIL_ERROR') {
+            // 2. STATUS TUTARLILIÃ„\u009EI
+            // Eger statusKey yoksa veya New ise ama stage > 0 ise NO_REPLY yap
+            if ((!lead.statusKey || lead.statusKey === 'New') && (lead.stage || 0) > 0) {
+                updates.statusKey = 'NO_REPLY';
+                updates.statusLabel = window.LEAD_STATUSES['NO_REPLY'].label;
+            }
+
+            // 3. BOUNCE KONTROLÃƒÅ“ (Activity logda BOUNCE varsa statusu MAIL_ERROR yap)
+            const hasBounce = Array.isArray(lead.activityLog) && lead.activityLog.some(a => a.type === 'BOUNCE');
+            if (hasBounce && lead.statusKey !== 'MAIL_ERROR') {
                 updates.statusKey = 'MAIL_ERROR';
                 updates.statusLabel = 'Error in mail (Bounced)';
             }
-            // 2. Email yok/geçersiz + mail gönderilmiş + hâlâ New → MAIL_ERROR
-            else if (hasNoEmail && hasBeenContacted && isNewOrEmpty) {
-                updates.statusKey = 'MAIL_ERROR';
-                updates.statusLabel = 'Error in mail';
-            }
-            // 3. Mail gönderilmiş veya okunmuş ama hâlâ New → NO_REPLY + stage düzelt
-            else if ((hasBeenContacted || hasBeenOpened) && isNewOrEmpty) {
-                updates.statusKey = 'NO_REPLY';
-                updates.statusLabel = window.LEAD_STATUSES['NO_REPLY']?.label || 'No reply yet';
-                if ((lead.stage || 0) === 0) updates.stage = 1;
-            }
-
-            // 4. addedDate yoksa: önce lastContactDate, yoksa bugün
-            if (!lead.addedDate) {
-                updates.addedDate = lead.lastContactDate || todayIso;
-            }
-
-            // 5. URL alanı yalın domain değilse (protokol, path, query, www vs.) normalize et
-            if (lead.url) {
-                const cleaned = window.cleanDomain(lead.url);
-                if (cleaned && cleaned !== lead.url) {
-                    updates.url = cleaned;
-                    urlFixCount++;
-                }
-            }
 
             if (Object.keys(updates).length > 0) {
-                batch.update(dbInstance.collection("leads").doc(lead.id), updates);
+                const ref = dbInstance.collection("leads").doc(lead.id);
+                batch.update(ref, updates);
                 allUpdates[lead.id] = updates;
                 batchCount++;
                 fixCount++;
-
-                if (batchCount >= 490) {
+                
+                if (batchCount >= 450) {
                     await batch.commit();
-                    batch = dbInstance.batch();
                     batchCount = 0;
                 }
             }
@@ -1640,7 +1101,7 @@ window.useLeadHunterServices = (
 
         if (batchCount > 0) await batch.commit();
         setCrmData(prev => prev.map(p => allUpdates[p.id] ? { ...p, ...allUpdates[p.id] } : p));
-        alert(`${allLeads.length} lead tarandı.\n${fixCount} tanesi düzeltildi.\n(${urlFixCount} tanesinin URL'si yalın domaine çevrildi.)`);
+        alert(`${allLeads.length} lead tarandÃ„Â±.\n${fixCount} tanesi dÃƒÂ¼zeltildi.\n(${urlFixCount} tanesinin URL'si yalÃ„Â±n domaine ÃƒÂ§evrildi.)`);
     };
 
     // --- VERI TUTARLILIGI V2 (CIplak domain + merge) ---
@@ -1728,11 +1189,35 @@ window.useLeadHunterServices = (
         let recoveredThreadCount = 0;
         let mailScanErrorCount = 0;
         let mailScanApiMissing = false;
+        let mailScanTimeoutCount = 0;
 
         if (settings?.googleScriptUrl) {
-            const scanCandidates = allLeads.filter(l => (l.email || '').length > 5);
-            addFixLog(`Gmail gecmisi taramasi basladi. Aday kayit: ${scanCandidates.length}`);
+            // Tum kayitlari degil, gecmis senkronuna ihtiyaci olma ihtimali yuksek olanlari tara.
+            const scanCandidates = allLeads.filter(l => {
+                if ((l.email || '').length <= 5) return false;
+                const sk = (l.statusKey || '').toUpperCase();
+                const needsStatusFix = !sk || sk === 'NEW' || sk === 'READY_TO_SEND';
+                const missingHistory = !l.lastContactDate || !l.threadId || !(l.history && l.history.initial);
+                return needsStatusFix || missingHistory;
+            });
+            addFixLog(`Gmail gecmisi taramasi basladi. Aday kayit: ${scanCandidates.length} (toplam: ${allLeads.length})`);
             let scannedProgress = 0;
+
+            const callGoogleScriptWithTimeout = async (payload, timeoutMs = 15000) => {
+                let timeoutId;
+                try {
+                    const timeoutPromise = new Promise((_, reject) => {
+                        timeoutId = setTimeout(() => reject(new Error(`Google Script timeout (${timeoutMs}ms)`)), timeoutMs);
+                    });
+                    return await Promise.race([
+                        window.callGoogleScript(settings.googleScriptUrl, payload),
+                        timeoutPromise
+                    ]);
+                } finally {
+                    if (timeoutId) clearTimeout(timeoutId);
+                }
+            };
+
             for (const lead of scanCandidates) {
                 try {
                     const email = (lead.email || '').split(',')[0].trim();
@@ -1740,7 +1225,7 @@ window.useLeadHunterServices = (
 
                     let threadId = lead.threadId || '';
                     if (!threadId) {
-                        const recover = await window.callGoogleScript(settings.googleScriptUrl, { action: 'check_thread_by_email', to: email });
+                        const recover = await callGoogleScriptWithTimeout({ action: 'check_thread_by_email', to: email }, 12000);
                         if (recover?.status === 'success' && recover.threadId) {
                             threadId = recover.threadId;
                             recoveredThreadCount++;
@@ -1749,7 +1234,7 @@ window.useLeadHunterServices = (
                     if (!threadId) continue;
 
                     scannedMailCount++;
-                    const sentInfo = await window.callGoogleScript(settings.googleScriptUrl, { action: 'check_thread_sent', threadId });
+                    const sentInfo = await callGoogleScriptWithTimeout({ action: 'check_thread_sent', threadId }, 12000);
                     if (sentInfo?.status === 'error') {
                         const msg = (sentInfo.message || '').toString().toLowerCase();
                         if (msg.includes('bilinmeyen') || msg.includes('unknown')) {
@@ -1784,12 +1269,14 @@ window.useLeadHunterServices = (
                     }
                 } catch (e) {
                     mailScanErrorCount++;
+                    if ((e.message || '').toLowerCase().includes('timeout')) mailScanTimeoutCount++;
                 }
                 scannedProgress++;
-                if (scannedProgress % 100 === 0) addFixLog(`Gmail tarama ilerleme: ${scannedProgress}/${scanCandidates.length}`);
-                await new Promise(r => setTimeout(r, 250));
+                if (scannedProgress % 25 === 0) addFixLog(`Gmail tarama ilerleme: ${scannedProgress}/${scanCandidates.length}`);
+                await new Promise(r => setTimeout(r, 100));
             }
             addFixLog(`Gmail taramasi bitti. Taranan: ${scannedMailCount}, bulunan gonderim: ${foundSentHistoryCount}`);
+            if (mailScanTimeoutCount > 0) addFixLog(`Gmail timeout: ${mailScanTimeoutCount}`, 'warn');
         } else {
             addFixLog('Google Script URL bos oldugu icin Gmail gecmis taramasi atlandi.', 'warn');
         }
@@ -1963,8 +1450,9 @@ window.useLeadHunterServices = (
             `${mergedRowDeleteCount} mukerrer satir silindi.\n` +
             `${statusFixCount} status/stage tutarsizligi duzeltildi.\n` +
             `${scannedMailCount} kayitta Gmail gecmisi tarandi, ${foundSentHistoryCount} kayitta gonderilmis mail history'ye islendi` +
-            (recoveredThreadCount > 0 ? ` (${recoveredThreadCount} thread kurtarildi)` : '') +
+            (recoveredThreadCount > 0 ? ` (${recoveredCount} thread kurtarildi)` : '') +
             (mailScanErrorCount > 0 ? `\nMail tarama hatasi: ${mailScanErrorCount}` : '') +
+            (mailScanTimeoutCount > 0 ? `\nMail tarama timeout: ${mailScanTimeoutCount}` : '') +
             (mailScanApiMissing ? `\nUYARI: Apps Script'te 'check_thread_sent' action'i yok. google-script.js'i yeniden deploy et.` : '')
         );
         } catch (e) {
@@ -1978,9 +1466,8 @@ window.useLeadHunterServices = (
 
     // --- FINAL CHECK ---
     const servicesObj = {
-        selectedLead, setSelectedLead, isSending, openMailModal, openPromotionModal, handleSendMail, showBulkModal, setShowBulkModal, isBulkSending, bulkProgress, bulkConfig, setBulkConfig, executeBulkSend, executeBulkPromotion, isCheckingBulk, handleBulkReplyCheck, bulkUpdateStatus, bulkUpdateLanguage, bulkUpdateStage, bulkAddNotViable, isEnriching, showEnrichModal, setShowEnrichModal, enrichLogs, enrichProgress, enrichDatabase, stopEnrichBackground, isScanning, keywords, setKeywords, searchDepth, setSearchDepth, hunterLogs, hunterProgress, hunterLogsEndRef, startScan, stopScan, handleExportData, fixEncodedNames, startAutoFollowup, stopAutoFollowup, runAutoHunterScan, stopAutoHunterScan, isHunterRunning, autoHunterLogs, autoHunterStats, autoHunterLogsEndRef, fixLeadConsistency: fixLeadConsistencyV2, fixConsistencyLogs, isFixingConsistency
+        selectedLead, setSelectedLead, isSending, openMailModal, openPromotionModal, handleSendMail, showBulkModal, setShowBulkModal, isBulkSending, bulkProgress, bulkConfig, setBulkConfig, executeBulkSend, executeBulkPromotion, isCheckingBulk, handleBulkReplyCheck, syncInboxReplies, bulkUpdateStatus, bulkUpdateLanguage, bulkUpdateStage, bulkAddNotViable, isEnriching, showEnrichModal, setShowEnrichModal, enrichLogs, enrichProgress, enrichDatabase, stopEnrichBackground, isScanning, keywords, setKeywords, searchDepth, setSearchDepth, hunterLogs, hunterProgress, hunterLogsEndRef, startScan, stopScan, handleExportData, fixEncodedNames, startAutoFollowup, stopAutoFollowup, runAutoHunterScan, stopAutoHunterScan, isHunterRunning, autoHunterLogs, autoHunterStats, autoHunterLogsEndRef, fixLeadConsistency: fixLeadConsistencyV2, fixConsistencyLogs, isFixingConsistency
     };
 
     return servicesObj;
 };
-

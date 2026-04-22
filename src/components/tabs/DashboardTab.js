@@ -53,7 +53,7 @@ window.DashboardTab = ({
     setShowBulkModal, activeTab, onBulkCheck, isCheckingBulk, paginatedItems,
     currentPage, totalPages, setCurrentPage, totalRecords, setHistoryModalLead, getStageInfo,
     handleSort, sortConfig, onStageChange, workflow, bulkUpdateStatus, bulkUpdateLanguage, bulkUpdateStage,
-    itemsPerPage, setItemsPerPage, selectAllFiltered, clearSelection, onExport
+    itemsPerPage, setItemsPerPage, selectAllFiltered, clearSelection, onExport, onSyncInbox
 }) => {
 
     // --- Kapsamlı Analitik Hesaplamaları ---
@@ -460,7 +460,7 @@ window.DashboardTab = ({
             </div>
 
             {/* ===== MEVCUT: FILTER BAR ===== */}
-            <window.FilterBar filters={filters} setFilters={setFilters} selectedCount={selectedCount} selectedIds={selectedIds} setShowBulkModal={setShowBulkModal} activeTab={activeTab} onBulkCheck={onBulkCheck} isCheckingBulk={isCheckingBulk} onBulkStatusChange={bulkUpdateStatus} onBulkLanguageChange={bulkUpdateLanguage} onBulkStageChange={bulkUpdateStage} onExport={onExport} />
+            <window.FilterBar filters={filters} setFilters={setFilters} selectedCount={selectedCount} selectedIds={selectedIds} setShowBulkModal={setShowBulkModal} activeTab={activeTab} onBulkCheck={onBulkCheck} onSyncInbox={onSyncInbox} isCheckingBulk={isCheckingBulk} onBulkStatusChange={bulkUpdateStatus} onBulkLanguageChange={bulkUpdateLanguage} onBulkStageChange={bulkUpdateStage} onExport={onExport} />
 
             {/* ===== MEVCUT: AKTİF SÜREÇ TABLOSU ===== */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">

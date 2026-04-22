@@ -1,4 +1,4 @@
-//google script dosyası - FOLLOW-UP FIX v3.2 (Bounce Priority Fix)
+//google script dosyası - FOLLOW-UP FIX v4.0 (Inbox Sync Support)
 
 function doPost(e) {
   var debugLogs = []; // Olay günlüğü
@@ -15,16 +15,16 @@ function doPost(e) {
     var myEmail = Session.getActiveUser().getEmail();
     if (!myEmail) myEmail = Session.getEffectiveUser().getEmail();
     
-    // Debug için maili loglara ekle (güvenlik için maskelenebilir ama debugda lazım)
+    // Debug için maili loglara ekle
     log("System User: " + myEmail);
 
-    // --- 1. CEVAP KONTROL ---
+    // --- 1. CEVAP KONTROL (Tekil) ---
     if (data.action === 'check_reply') {
       if (!data.threadId) return createJSON({ 'status': 'error', 'message': 'Thread ID yok', 'logs': debugLogs });
       return createJSON({ 'status': 'success', 'logs': debugLogs, ...checkSingleThread(data.threadId, myEmail) });
     }
 
-    // --- 2. TOPLU KONTROL ---
+    // --- 2. TOPLU KONTROL (Eski Model) ---
     else if (data.action === 'check_replies_bulk') {
       var results = {};
       var foundCount = 0;
@@ -32,14 +32,11 @@ function doPost(e) {
       var ids = data.threadIds || [];
 
       log("BULK CHECK STARTED. IDs received: " + ids.length);
-      if (ids.length > 0) log("First ID: " + ids[0]);
 
       for (var i = 0; i < ids.length; i++) {
         try {
           var check = checkSingleThread(ids[i], myEmail);
-
-          results[ids[i]] = check; // Her sonucu kaydet (Debug icin)
-
+          results[ids[i]] = check;
           if (check.hasReply) {
             check.isBounce ? bounceCount++ : foundCount++;
           }
@@ -50,127 +47,120 @@ function doPost(e) {
       return createJSON({ 'status': 'success', 'results': results, 'foundCount': foundCount, 'bounceCount': bounceCount, 'logs': debugLogs });
     }
 
-    // --- 2.1 EMAIL ILE THREAD BULMA ---
-    else if (data.action === 'check_thread_by_email') {
-      var to = (data.to || '').toString().trim().toLowerCase();
-      if (!to) {
-        return createJSON({ 'status': 'error', 'message': 'to gerekli', 'logs': debugLogs });
+    // --- 2.3 INBOX SYNC (YENİ MODEL - VERİMLİ) ---
+    else if (data.action === 'sync_inbox') {
+      var limit = data.limit || 100;
+      var query = data.query || 'label:inbox'; 
+      
+      log("INBOX SYNC STARTED. Query: " + query + " Limit: " + limit);
+      
+      var threads = GmailApp.search(query, 0, limit);
+      var inboxResults = [];
+      
+      for (var i = 0; i < threads.length; i++) {
+        var thread = threads[i];
+        var msgs = thread.getMessages();
+        if (msgs.length === 0) continue;
+        
+        var lastMsg = msgs[msgs.length - 1];
+        var from = lastMsg.getFrom();
+        var fromLower = from.toLowerCase();
+        
+        // Eğer son mesaj benden değilse bu bir cevaptır
+        var isMe = false;
+        if (myEmail && fromLower.indexOf(myEmail.toLowerCase()) !== -1) {
+          isMe = true;
+        }
+        
+        if (!isMe) {
+          inboxResults.push({
+            threadId: thread.getId(),
+            from: from,
+            subject: thread.getFirstMessageSubject(),
+            snippet: lastMsg.getPlainBody().substring(0, 300),
+            date: lastMsg.getDate().toISOString(),
+            unread: thread.isUnread()
+          });
+        }
       }
-
-      var foundThreadId = findThreadIdByRecipient(to, debugLogs);
-      if (foundThreadId) {
-        return createJSON({
-          'status': 'success',
-          'threadId': foundThreadId,
-          'logs': debugLogs
-        });
-      }
-      return createJSON({
-        'status': 'error',
-        'message': 'Thread bulunamadi',
-        'threadId': null,
-        'logs': debugLogs
+      
+      return createJSON({ 
+        'status': 'success', 
+        'count': inboxResults.length, 
+        'results': inboxResults,
+        'logs': debugLogs 
       });
     }
 
-    // --- 2.2 THREAD ICINDE BIZDEN GONDERILMIS MAIL VAR MI ---
-    else if (data.action === 'check_thread_sent') {
-      if (!data.threadId) return createJSON({ 'status': 'error', 'message': 'threadId gerekli', 'logs': debugLogs });
-      var sentInfo = checkThreadSentInfo(data.threadId, myEmail);
-      return createJSON({ 'status': 'success', ...sentInfo, 'logs': debugLogs });
+    // --- 2.4 ARCHIVE THREADS ---
+    else if (data.action === 'archive_threads') {
+      var ids = data.threadIds || [];
+      log("ARCHIVING THREADS: " + ids.length);
+      
+      for (var i = 0; i < ids.length; i++) {
+        try {
+          var thread = GmailApp.getThreadById(ids[i]);
+          if (thread) {
+            thread.moveToArchive();
+            if (data.markRead) thread.markRead();
+          }
+        } catch (err) {
+          log("Archive error (" + ids[i] + "): " + err.toString());
+        }
+      }
+      return createJSON({ 'status': 'success', 'logs': debugLogs });
     }
 
-    // --- 3. MAIL GÖNDERME (FOLLOW-UP FIX) ---
+    // --- 3. MAIL GÖNDERME ---
     else if (data.action === 'send_mail') {
-      var rawTo = data.to;
-      var cleanTo = rawTo ? rawTo.trim() : "";
-
-      if (cleanTo === "") {
-        return createJSON({ 'status': 'error', 'message': 'Alıcı adresi boş.', 'logs': debugLogs });
-      }
+      var cleanTo = (data.to || "").trim();
+      if (cleanTo === "") return createJSON({ 'status': 'error', 'message': 'Alıcı adresi boş.', 'logs': debugLogs });
 
       var subject = data.subject || "(Konu Yok)";
       var body = data.body || " ";
       var htmlBody = data.htmlBody || body;
       var threadId = data.threadId;
       var resultThreadId = null;
-      var methodUsed = "Bilinmiyor";
+      var methodUsed = "New Thread";
 
-      log("Mail Gönderimi: " + cleanTo);
-
-      // THREAD KONTROLÜ
       if (threadId) {
         try {
           var thread = GmailApp.getThreadById(threadId);
-
           if (thread) {
             var messages = thread.getMessages();
             var lastMsg = messages[messages.length - 1];
-            var lastSender = lastMsg.getFrom();
-
+            var lastSender = lastMsg.getFrom().toLowerCase();
             var myEmailNorm = myEmail.toLowerCase();
-            var lastSenderNorm = lastSender.toLowerCase();
             
-            // Eğer myEmail boşsa eşleştirme yapma (false)
-            var senderMatch = false;
-            if (myEmailNorm && lastSenderNorm.indexOf(myEmailNorm) !== -1) {
-                senderMatch = true;
-            }
-
-            log("Son gönderen ben miyim? " + (senderMatch ? "EVET" : "HAYIR"));
-
-            var commonOptions = {
-              htmlBody: htmlBody
-            };
+            var senderMatch = (myEmailNorm && lastSender.indexOf(myEmailNorm) !== -1);
 
             if (!senderMatch) {
-              // Müşteriden gelmiş -> Normal Cevap (Reply)
-              log("Yöntem: lastMsg.reply() (Müşteriye Cevap)");
-              lastMsg.reply(body, commonOptions);
+              lastMsg.reply(body, { htmlBody: htmlBody });
               resultThreadId = threadId;
-              methodUsed = "lastMsg.reply";
+              methodUsed = "Reply";
             } else {
-              // Benden gelmiş -> Takip Maili (Follow-up) (Forward kullan)
-              log("Yöntem: lastMsg.forward() (Takip Maili -> " + cleanTo + ")");
-              var fwdOptions = {
-                htmlBody: htmlBody,
-                subject: subject
-              };
-              lastMsg.forward(cleanTo, fwdOptions);
+              lastMsg.forward(cleanTo, { htmlBody: htmlBody, subject: subject });
               resultThreadId = threadId;
-              methodUsed = "lastMsg.forward";
+              methodUsed = "Forward";
             }
-          } else {
-            log("HATA: Thread ID Gmail'de bulunamadı (Null).");
           }
-        } catch (err) {
-          log("Thread İşlem Hatası: " + err.toString());
-          threadId = null;
-        }
+        } catch (err) { log("Thread Error: " + err.toString()); }
       }
 
-      // Thread başarısızsa veya yoksa yeni mail at
       if (!resultThreadId) {
-        log("Fallback: Yeni Draft/Mail oluşturuluyor.");
-        try {
-          var draft = GmailApp.createDraft(cleanTo, subject, body, { htmlBody: htmlBody });
-          var message = draft.send();
-          resultThreadId = message.getThread().getId();
-          methodUsed = "createDraft (New)";
-        } catch (sendErr) {
-          log("KRİTİK HATA (Draft): " + sendErr.toString());
-          return createJSON({ 'status': 'error', 'message': sendErr.toString(), 'logs': debugLogs });
-        }
+        var draft = GmailApp.createDraft(cleanTo, subject, body, { htmlBody: htmlBody });
+        var message = draft.send();
+        resultThreadId = message.getThread().getId();
       }
 
-      log("Başarılı. Thread ID: " + resultThreadId);
+      return createJSON({ 'status': 'success', 'threadId': resultThreadId, 'method_used': methodUsed, 'logs': debugLogs });
+    }
 
-      return createJSON({
-        'status': 'success',
-        'threadId': resultThreadId,
-        'debug_logs': debugLogs,
-        'method_used': methodUsed
-      });
+    // --- 4. YARDIMCI İŞLEMLER ---
+    else if (data.action === 'check_thread_by_email') {
+      var to = (data.to || '').toString().trim().toLowerCase();
+      var foundThreadId = findThreadIdByRecipient(to, debugLogs);
+      return createJSON({ 'status': foundThreadId ? 'success' : 'error', 'threadId': foundThreadId, 'logs': debugLogs });
     }
 
     return createJSON({ 'status': 'error', 'message': 'Bilinmeyen işlem', 'logs': debugLogs });
@@ -192,160 +182,55 @@ function checkSingleThread(threadId, myEmail) {
 
     var msgs = thread.getMessages();
     var myEmailLower = myEmail ? myEmail.toLowerCase() : "";
-
-    // Debug: Son 5 mesajı inceleyelim
     var scanLimit = Math.max(0, msgs.length - 5);
 
     for (var i = msgs.length - 1; i >= scanLimit; i--) {
       var msg = msgs[i];
       var from = msg.getFrom().toLowerCase();
-      
       var plainBody = msg.getPlainBody();
-      var snippet = plainBody.length > 100 ? plainBody.substring(0, 100) + "..." : plainBody;
+      var snippet = plainBody.length > 150 ? plainBody.substring(0, 150) + "..." : plainBody;
 
-      // Her mesajı debug listesine ekle
-      debugMsgs.push({
-        index: i,
-        from: from,
-        snippet: snippet,
-        date: msg.getDate()
-      });
-
-      // 1. ÖNCE BOUNCE KONTROLÜ (Kimden geldiğine bakmaksızın)
-      var isBounce = from.includes('mailer-daemon') ||
-          from.includes('postmaster') ||
-          from.includes('delivery-status') ||
-          from.includes('notification') ||
-          from.includes('notify') ||
-          from.includes('google') ||
-          from.includes('bounce') ||
-          from.includes('failed') ||
-          from.includes('failure') ||
-          from.includes('rejected') ||
-          from.includes('undeliverable') ||
-          from.includes('returned') ||
-          from.includes('blocked') ||
-          from.includes('spam');
+      var isBounce = from.includes('mailer-daemon') || from.includes('postmaster') || from.includes('delivery-status') || 
+                     from.includes('bounce') || from.includes('failed') || from.includes('undeliverable');
 
       if (isBounce) {
-          return {
-            hasReply: true,
-            isBounce: true,
-            snippet: "BOUNCE DETECTED: " + snippet,
-            from: msg.getFrom(),
-            debug_last_from: from,
-            messages_inspected: debugMsgs
-          };
+          return { hasReply: true, isBounce: true, snippet: snippet, from: msg.getFrom() };
       }
 
-      // 2. SONRA "BEN MİYİM?" KONTROLÜ
-      // Eğer myEmailLower boşsa, kimseyi "ben" olarak işaretleme (false), böylece loop devam eder veya cevap sayılır.
-      var isMe = false;
-      if (myEmailLower && from.indexOf(myEmailLower) !== -1) {
-          isMe = true;
-      }
-
-      // Eğer gönderen ben değilsem (ve bounce değilse - yukarıda yakalanmadıysa) -> Normal Cevaptır
+      var isMe = (myEmailLower && from.indexOf(myEmailLower) !== -1);
       if (!isMe) {
-        return {
-          hasReply: true,
-          isBounce: false,
-          snippet: snippet,
-          from: msg.getFrom(),
-          debug_last_from: from,
-          messages_inspected: debugMsgs
-        };
+        return { hasReply: true, isBounce: false, snippet: snippet, from: msg.getFrom() };
       }
     }
-
-    // Döngü bitti, cevap bulunamadı
-    return {
-      hasReply: false,
-      debug_last_from: msgs.length > 0 ? msgs[msgs.length - 1].getFrom() : "Empty",
-      messages_inspected: debugMsgs
-    };
-
-  } catch (e) {
-    return {
-      hasReply: false,
-      error: e.toString(),
-      messages_inspected: debugMsgs
-    };
-  }
+    return { hasReply: false };
+  } catch (e) { return { hasReply: false, error: e.toString() }; }
 }
 
 function findThreadIdByRecipient(toEmail, debugLogs) {
   try {
-    // Daha genis arama: tarih filtresi yok, birden fazla sorgu
-    var queries = [
-      'to:' + toEmail,
-      'from:' + toEmail,
-      'deliveredto:' + toEmail,
-      '"' + toEmail + '"'
-    ];
-    var threads = [];
+    var queries = ['to:' + toEmail, 'from:' + toEmail, '"' + toEmail + '"'];
     for (var q = 0; q < queries.length; q++) {
-      var query = queries[q];
-      threads = GmailApp.search(query, 0, 25);
-      if (debugLogs) debugLogs.push('[THREAD_RECOVERY] Query: ' + query + ' -> ' + threads.length);
-      if (threads && threads.length > 0) break;
+      var threads = GmailApp.search(queries[q], 0, 10);
+      if (threads && threads.length > 0) return threads[0].getId();
     }
-
-    if (!threads || threads.length === 0) {
-      if (debugLogs) debugLogs.push('[THREAD_RECOVERY] Thread yok: ' + toEmail);
-      return null;
-    }
-
-    // En guncel thread'i sec
-    var latest = threads[0];
-    var latestTs = latest.getLastMessageDate ? latest.getLastMessageDate().getTime() : 0;
-    for (var i = 1; i < threads.length; i++) {
-      var ts = threads[i].getLastMessageDate ? threads[i].getLastMessageDate().getTime() : 0;
-      if (ts > latestTs) {
-        latest = threads[i];
-        latestTs = ts;
-      }
-    }
-    var threadId = latest.getId();
-    if (debugLogs) debugLogs.push('[THREAD_RECOVERY] Bulundu: ' + toEmail + ' -> ' + threadId);
-    return threadId;
-  } catch (e) {
-    if (debugLogs) debugLogs.push('[THREAD_RECOVERY] Hata: ' + e.toString());
     return null;
-  }
+  } catch (e) { return null; }
 }
 
 function checkThreadSentInfo(threadId, myEmail) {
   try {
     var thread = GmailApp.getThreadById(threadId);
-    if (!thread) return { hasSent: false, lastSentAt: null, error: 'Thread not found' };
-
+    if (!thread) return { hasSent: false };
     var msgs = thread.getMessages();
     var myEmailLower = (myEmail || '').toLowerCase();
-    var hasSent = false;
     var lastSentDate = null;
-
     for (var i = 0; i < msgs.length; i++) {
-      var msg = msgs[i];
-      var from = (msg.getFrom() || '').toLowerCase();
-      var isMe = false;
+      var from = (msgs[i].getFrom() || '').toLowerCase();
       if (myEmailLower && from.indexOf(myEmailLower) !== -1) {
-        isMe = true;
-      }
-      if (isMe) {
-        hasSent = true;
-        var d = msg.getDate ? msg.getDate() : null;
-        if (d && (!lastSentDate || d.getTime() > lastSentDate.getTime())) {
-          lastSentDate = d;
-        }
+        var d = msgs[i].getDate();
+        if (!lastSentDate || d.getTime() > lastSentDate.getTime()) lastSentDate = d;
       }
     }
-
-    return {
-      hasSent: hasSent,
-      lastSentAt: lastSentDate ? lastSentDate.toISOString() : null
-    };
-  } catch (e) {
-    return { hasSent: false, lastSentAt: null, error: e.toString() };
-  }
+    return { hasSent: !!lastSentDate, lastSentAt: lastSentDate ? lastSentDate.toISOString() : null };
+  } catch (e) { return { hasSent: false }; }
 }
