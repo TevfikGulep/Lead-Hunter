@@ -179,7 +179,7 @@ window.DashboardTab = ({
     const isAllPageSelected = paginatedItems.length > 0 && paginatedItems.every(i => selectedIds.has(i.id));
     const isGlobalSelectionActive = selectedIds.size > paginatedItems.length && selectedIds.size >= totalRecords;
     const canSelectAllGlobal = isAllPageSelected && totalRecords > paginatedItems.length && !isGlobalSelectionActive;
-    const replyStatuses = ['ASKED_MORE', 'INTERESTED', 'IN_PROCESS', 'DEAL_ON', 'DEAL_OFF', 'DENIED', 'NOT_POSSIBLE', 'NEEDS_REVIEW', 'READY_TO_SEND', 'FOLLOW_LATER'];
+    const replyStatuses = ['ASKED_MORE', 'INTERESTED', 'IN_PROCESS', 'DEAL_ON', 'DEAL_OFF', 'DENIED', 'NOT_POSSIBLE', 'NEEDS_REVIEW', 'FOLLOW_LATER'];
 
     // Status renk haritası (badge için)
     const statusColorMap = {

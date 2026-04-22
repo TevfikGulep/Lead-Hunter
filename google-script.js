@@ -73,6 +73,13 @@ function doPost(e) {
       });
     }
 
+    // --- 2.2 THREAD ICINDE BIZDEN GONDERILMIS MAIL VAR MI ---
+    else if (data.action === 'check_thread_sent') {
+      if (!data.threadId) return createJSON({ 'status': 'error', 'message': 'threadId gerekli', 'logs': debugLogs });
+      var sentInfo = checkThreadSentInfo(data.threadId, myEmail);
+      return createJSON({ 'status': 'success', ...sentInfo, 'logs': debugLogs });
+    }
+
     // --- 3. MAIL GÖNDERME (FOLLOW-UP FIX) ---
     else if (data.action === 'send_mail') {
       var rawTo = data.to;
@@ -305,5 +312,40 @@ function findThreadIdByRecipient(toEmail, debugLogs) {
   } catch (e) {
     if (debugLogs) debugLogs.push('[THREAD_RECOVERY] Hata: ' + e.toString());
     return null;
+  }
+}
+
+function checkThreadSentInfo(threadId, myEmail) {
+  try {
+    var thread = GmailApp.getThreadById(threadId);
+    if (!thread) return { hasSent: false, lastSentAt: null, error: 'Thread not found' };
+
+    var msgs = thread.getMessages();
+    var myEmailLower = (myEmail || '').toLowerCase();
+    var hasSent = false;
+    var lastSentDate = null;
+
+    for (var i = 0; i < msgs.length; i++) {
+      var msg = msgs[i];
+      var from = (msg.getFrom() || '').toLowerCase();
+      var isMe = false;
+      if (myEmailLower && from.indexOf(myEmailLower) !== -1) {
+        isMe = true;
+      }
+      if (isMe) {
+        hasSent = true;
+        var d = msg.getDate ? msg.getDate() : null;
+        if (d && (!lastSentDate || d.getTime() > lastSentDate.getTime())) {
+          lastSentDate = d;
+        }
+      }
+    }
+
+    return {
+      hasSent: hasSent,
+      lastSentAt: lastSentDate ? lastSentDate.toISOString() : null
+    };
+  } catch (e) {
+    return { hasSent: false, lastSentAt: null, error: e.toString() };
   }
 }

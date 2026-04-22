@@ -204,6 +204,8 @@ const LeadHunter = () => {
                             autoHunterStats={services.autoHunterStats}
                             autoHunterLogsEndRef={services.autoHunterLogsEndRef}
                             fixLeadConsistency={services.fixLeadConsistency}
+                            fixConsistencyLogs={services.fixConsistencyLogs}
+                            isFixingConsistency={services.isFixingConsistency}
                         />
                     )}
 

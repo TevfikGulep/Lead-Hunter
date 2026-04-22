@@ -21,7 +21,9 @@ window.SettingsTab = ({
     autoHunterLogs,
     autoHunterStats,
     autoHunterLogsEndRef,
-    fixLeadConsistency
+    fixLeadConsistency,
+    fixConsistencyLogs,
+    isFixingConsistency
 }) => {
     // Otomatik tarama logları güncellendiğinde otomatik kaydır
     React.useEffect(() => {
@@ -29,6 +31,12 @@ window.SettingsTab = ({
             autoHunterLogsEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
         }
     }, [autoHunterLogs]);
+    const fixLogsEndRef = React.useRef(null);
+    React.useEffect(() => {
+        if (fixLogsEndRef.current) {
+            fixLogsEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+    }, [fixConsistencyLogs]);
     const [saveMsg, setSaveMsg] = React.useState('');
 
     const handleSaveIlceIndex = async () => {
@@ -425,10 +433,36 @@ window.SettingsTab = ({
                 </p>
                 <button
                     onClick={fixLeadConsistency}
-                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-bold text-sm transition-colors flex items-center gap-2"
+                    disabled={isFixingConsistency}
+                    className={`px-4 py-2 text-white rounded-lg font-bold text-sm transition-colors flex items-center gap-2 ${isFixingConsistency ? 'bg-orange-300 cursor-wait' : 'bg-orange-500 hover:bg-orange-600'}`}
                 >
                     <window.Icon name="refresh-cw" className="w-4 h-4" /> Veri Tutarlılığını Düzelt
                 </button>
+                <div className="mt-4">
+                    <div className="flex items-center justify-between mb-2">
+                        <div className="text-xs font-bold text-slate-500">Veri Tutarliligi Logu {isFixingConsistency && <span className="text-orange-600">● Aktif</span>}</div>
+                        <div className="text-[10px] text-slate-400">{(fixConsistencyLogs || []).length} satir</div>
+                    </div>
+                    <div className="bg-slate-900 text-slate-200 rounded-lg p-3 h-56 overflow-y-auto font-mono text-[11px] leading-relaxed border border-slate-700">
+                        {(!fixConsistencyLogs || fixConsistencyLogs.length === 0) && (
+                            <div className="text-slate-500">Henuz log yok.</div>
+                        )}
+                        {(fixConsistencyLogs || []).map((log, idx) => {
+                            const color =
+                                log.type === 'success' ? 'text-emerald-400' :
+                                log.type === 'warn' ? 'text-amber-400' :
+                                log.type === 'error' ? 'text-red-400' :
+                                'text-slate-300';
+                            return (
+                                <div key={idx} className={`${color} whitespace-pre-wrap break-words`}>
+                                    <span className="text-slate-500 mr-2">[{log.time}]</span>
+                                    {log.message}
+                                </div>
+                            );
+                        })}
+                        <div ref={fixLogsEndRef} />
+                    </div>
+                </div>
             </div>
             </div>
         </div >
