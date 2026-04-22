@@ -727,7 +727,7 @@ window.useLeadHunterServices = (
         if (selectedIds.size === 0 || !isDbConnected) return;
         if (!confirm(`${selectedIds.size} adet site 'Not Viable' olarak eklenecek.`)) return;
         const batch = dbInstance.batch(); let count = 0;
-        selectedIds.forEach(id => { const lead = leads.find(l => l.id === id); if (lead && !crmData.some(c => window.cleanDomain(c.url) === window.cleanDomain(lead.url))) { batch.set(dbInstance.collection("leads").doc(), { url: window.cleanDomain(lead.url), email: lead.email || '', statusKey: 'NOT_VIABLE', statusLabel: 'Not Viable', stage: 0, language: 'TR', trafficStatus: lead.trafficStatus || { viable: false }, addedDate: new Date().toISOString() }); count++; } });
+        selectedIds.forEach(id => { const lead = leads.find(l => l.id === id); if (lead && !crmData.some(c => window.normalizeMainDomain(c.url) === window.normalizeMainDomain(lead.url))) { batch.set(dbInstance.collection("leads").doc(), { url: window.normalizeMainDomain(lead.url), email: lead.email || '', statusKey: 'NOT_VIABLE', statusLabel: 'Not Viable', stage: 0, language: 'TR', trafficStatus: lead.trafficStatus || { viable: false }, addedDate: new Date().toISOString() }); count++; } });
         if (count > 0) { await batch.commit(); setLeads(prev => prev.filter(l => !selectedIds.has(l.id))); setSelectedIds(new Set()); alert(`${count} site eklendi.`); }
     };
 
@@ -878,7 +878,7 @@ window.useLeadHunterServices = (
         setHunterProgress(0);
 
         const addLog = (msg, type = 'info') => setHunterLogs(p => [...p, { time: new Date().toLocaleTimeString(), message: msg, type }]);
-        const existingDomains = new Set(crmData.map(c => window.cleanDomain(c.url)));
+        const existingDomains = new Set(crmData.map(c => window.normalizeMainDomain(c.url)));
         addLog(`Veritabanında ${existingDomains.size} kayıt var, bunlar filtrelenecek.`, 'warning');
 
         for (let i = 0; i < keywordList.length; i++) {
@@ -901,7 +901,8 @@ window.useLeadHunterServices = (
 
                 if (json.success && Array.isArray(json.results)) {
                     const filteredResults = json.results.filter(r => {
-                        const d = window.cleanDomain(r.url);
+                        const d = window.normalizeMainDomain(r.url);
+                        if (!d) return false;
                         if (/\.(bel|gov|edu|k12|pol|tsk|mil)\.tr$/i.test(d)) return false;
                         return !existingDomains.has(d);
                     });
@@ -1143,7 +1144,7 @@ window.useLeadHunterServices = (
         const targetCount = settings.hunterTargetCount || 100;
         const keywords = ['haberleri', 'son dakika', 'güncel', 'haber', 'gazete'];
 
-        const existingDomains = new Set(crmDataRef.current.map(c => window.cleanDomain(c.url)));
+        const existingDomains = new Set(crmDataRef.current.map(c => window.normalizeMainDomain(c.url)));
         const serverUrl = (window.APP_CONFIG && window.APP_CONFIG.SERVER_API_URL) || '';
 
         addLog(`🎯 Hedef: ${targetCount} site | İlçe sayısı: ${ilceList.length}`, 'info');
@@ -1375,7 +1376,8 @@ window.useLeadHunterServices = (
                     addLog(`🔎 "${ilce} ${kw}" (${searchResult.engine}): ${searchResult.results.length} sonuç`, 'info');
 
                     const newResults = searchResult.results.filter(r => {
-                        const domain = window.cleanDomain(r.url);
+                        const domain = window.normalizeMainDomain(r.url);
+                        if (!domain) return false;
                         if (/\.(bel|gov|edu|k12|pol|tsk|mil)\.tr$/i.test(domain)) {
                             return false;
                         }
@@ -1393,14 +1395,12 @@ window.useLeadHunterServices = (
                         if (foundViableCount >= targetCount) break;
 
                         // SUBDOMAIN KONTROLÜ - Ana domain değilse atla
-                        const domain = window.cleanDomain(r.url);
-                        const rootDomain = window.getRootDomain(r.url);
+                        const domain = window.normalizeMainDomain(r.url);
+                        if (!domain) continue;
+                        if (existingDomains.has(domain)) continue;
                         
                         // Eğer domain root domain değilse (subdomain ise) atla
-                        if (domain !== rootDomain) {
-                            console.log(`[AutoHunter] ⏭️ Subdomain atlandı: ${domain} (root: ${rootDomain})`);
-                            continue;
-                        }
+                        
                         
                         console.log(`[AutoHunter] Kontrol ediliyor: ${domain}`);
                         
@@ -1641,9 +1641,225 @@ window.useLeadHunterServices = (
         alert(`${allLeads.length} lead tarandı.\n${fixCount} tanesi düzeltildi.\n(${urlFixCount} tanesinin URL'si yalın domaine çevrildi.)`);
     };
 
+    // --- VERI TUTARLILIGI V2 (CIplak domain + merge) ---
+    const fixLeadConsistencyV2 = async () => {
+        if (!isDbConnected || !dbInstance) return alert("Veritabani bagli degil!");
+        if (!confirm("Tutarsiz lead verileri duzeltilecek ve ayni ciplak domaine ait mukerrer satirlar birlestirilecek.\nDevam edilsin mi?")) return;
+
+        const leadScore = (lead) => {
+            let score = 0;
+            if (lead.email && lead.email.length > 5) score += 4;
+            if ((lead.stage || 0) > 0) score += 3 + (lead.stage || 0);
+            if (lead.lastContactDate) score += 2;
+            if (lead.mailOpenedAt) score += 2;
+            if (lead.threadId) score += 2;
+            if (Array.isArray(lead.activityLog) && lead.activityLog.length > 0) score += 1;
+            if (lead.statusKey && lead.statusKey !== 'New') score += 2;
+            return score;
+        };
+
+        const getLatestIso = (...values) => {
+            const valid = values.filter(v => v && !isNaN(new Date(v).getTime()));
+            if (valid.length === 0) return null;
+            valid.sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+            return valid[0];
+        };
+
+        const mergeEmails = (a, b) => {
+            const split = (s) => (s || '')
+                .split(',')
+                .map(x => x.trim().toLowerCase())
+                .filter(Boolean);
+            return [...new Set([...split(a), ...split(b)])].join(', ');
+        };
+
+        const mergeActivity = (a, b) => {
+            const left = Array.isArray(a) ? a : [];
+            const right = Array.isArray(b) ? b : [];
+            const map = new Map();
+            [...left, ...right].forEach(entry => {
+                const key = `${entry?.date || ''}|${entry?.type || ''}|${entry?.content || ''}`;
+                if (!map.has(key)) map.set(key, entry);
+            });
+            return Array.from(map.values()).sort((x, y) => {
+                const tx = new Date(x?.date || 0).getTime();
+                const ty = new Date(y?.date || 0).getTime();
+                return tx - ty;
+            });
+        };
+
+        const mergeHistory = (a, b) => {
+            const out = { ...(a || {}) };
+            Object.entries(b || {}).forEach(([k, v]) => {
+                if (!out[k]) out[k] = v;
+            });
+            return out;
+        };
+
+        let allLeads = [];
+        try {
+            const snapshot = await dbInstance.collection('leads').get();
+            allLeads = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            console.log(`[fixLeadConsistencyV2] Firestore'dan ${allLeads.length} lead cekildi`);
+        } catch (e) {
+            return alert("Lead'ler cekilemedi: " + e.message);
+        }
+        if (allLeads.length === 0) return alert("Duzeltilecek lead bulunamadi.");
+
+        const groups = new Map();
+        allLeads.forEach(lead => {
+            const normalized = window.normalizeMainDomain(lead.url || '');
+            const key = normalized || window.cleanDomain(lead.url || '');
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push({ ...lead, __normalizedUrl: normalized || key });
+        });
+
+        const todayIso = new Date().toISOString();
+        let statusFixCount = 0;
+        let urlFixCount = 0;
+        let mergedDomainCount = 0;
+        let mergedRowDeleteCount = 0;
+        let updatedPrimaryCount = 0;
+
+        let batch = dbInstance.batch();
+        let batchCount = 0;
+        const localUpdateMap = {};
+        const deletedIds = new Set();
+
+        const queueUpdate = async (id, payload) => {
+            batch.update(dbInstance.collection("leads").doc(id), payload);
+            batchCount++;
+            localUpdateMap[id] = { ...(localUpdateMap[id] || {}), ...payload };
+            if (batchCount >= 450) {
+                await batch.commit();
+                batch = dbInstance.batch();
+                batchCount = 0;
+            }
+        };
+
+        const queueDelete = async (id) => {
+            batch.delete(dbInstance.collection("leads").doc(id));
+            batchCount++;
+            deletedIds.add(id);
+            if (batchCount >= 450) {
+                await batch.commit();
+                batch = dbInstance.batch();
+                batchCount = 0;
+            }
+        };
+
+        for (const [, leadsInDomain] of groups.entries()) {
+            const sorted = [...leadsInDomain].sort((a, b) => leadScore(b) - leadScore(a));
+            const primary = sorted[0];
+            const duplicates = sorted.slice(1);
+            const merged = { ...primary };
+
+            duplicates.forEach(dup => {
+                merged.email = mergeEmails(merged.email, dup.email);
+                merged.activityLog = mergeActivity(merged.activityLog, dup.activityLog);
+                merged.history = mergeHistory(merged.history, dup.history);
+                merged.notes = [merged.notes, dup.notes]
+                    .filter(Boolean)
+                    .filter((v, i, arr) => arr.indexOf(v) === i)
+                    .join('\n');
+
+                if (!merged.threadId && dup.threadId) merged.threadId = dup.threadId;
+                if (!merged.googleMessageId && dup.googleMessageId) merged.googleMessageId = dup.googleMessageId;
+                if (!merged.language && dup.language) merged.language = dup.language;
+
+                const mergedTrafficVal = Number(merged.trafficStatus?.value || 0);
+                const dupTrafficVal = Number(dup.trafficStatus?.value || 0);
+                if (dupTrafficVal > mergedTrafficVal) merged.trafficStatus = dup.trafficStatus;
+
+                merged.stage = Math.max(Number(merged.stage || 0), Number(dup.stage || 0));
+                merged.lastContactDate = getLatestIso(merged.lastContactDate, dup.lastContactDate) || merged.lastContactDate;
+                merged.mailOpenedAt = getLatestIso(merged.mailOpenedAt, dup.mailOpenedAt) || merged.mailOpenedAt;
+                merged.addedDate = getLatestIso(merged.addedDate, dup.addedDate) || merged.addedDate;
+
+                const mergedStatus = merged.statusKey || 'New';
+                const dupStatus = dup.statusKey || 'New';
+                if (mergedStatus === 'New' && dupStatus !== 'New') {
+                    merged.statusKey = dupStatus;
+                    merged.statusLabel = dup.statusLabel || window.LEAD_STATUSES[dupStatus]?.label || dupStatus;
+                }
+            });
+
+            const updates = {};
+            const sk = merged.statusKey || '';
+            const isNewOrEmpty = !sk || sk === 'New';
+            const hasBounce = Array.isArray(merged.activityLog) && merged.activityLog.some(a => a.type === 'BOUNCE');
+            const hasBeenContacted = !!merged.lastContactDate;
+            const hasBeenOpened = !!merged.mailOpenedAt;
+            const hasNoEmail = !merged.email || merged.email.length < 5 || merged.email === '-';
+
+            if (hasBounce && sk !== 'MAIL_ERROR') {
+                updates.statusKey = 'MAIL_ERROR';
+                updates.statusLabel = 'Error in mail (Bounced)';
+                statusFixCount++;
+            } else if (hasNoEmail && hasBeenContacted && isNewOrEmpty) {
+                updates.statusKey = 'MAIL_ERROR';
+                updates.statusLabel = 'Error in mail';
+                statusFixCount++;
+            } else if ((hasBeenContacted || hasBeenOpened) && isNewOrEmpty) {
+                updates.statusKey = 'NO_REPLY';
+                updates.statusLabel = window.LEAD_STATUSES['NO_REPLY']?.label || 'No reply yet';
+                if ((merged.stage || 0) === 0) updates.stage = 1;
+                statusFixCount++;
+            }
+
+            if (!merged.addedDate) updates.addedDate = merged.lastContactDate || todayIso;
+            if (merged.__normalizedUrl && merged.__normalizedUrl !== merged.url) {
+                updates.url = merged.__normalizedUrl;
+                urlFixCount++;
+            }
+
+            if (duplicates.length > 0) {
+                updates.email = merged.email || '';
+                updates.activityLog = merged.activityLog || [];
+                updates.history = merged.history || {};
+                updates.notes = merged.notes || '';
+                updates.stage = Number(merged.stage || updates.stage || 0);
+                updates.lastContactDate = merged.lastContactDate || updates.lastContactDate;
+                updates.mailOpenedAt = merged.mailOpenedAt || updates.mailOpenedAt;
+                updates.threadId = merged.threadId || '';
+                updates.googleMessageId = merged.googleMessageId || '';
+                updates.trafficStatus = merged.trafficStatus || { viable: false, value: 0, label: 'Veri Yok' };
+                updates.statusKey = updates.statusKey || merged.statusKey || 'New';
+                updates.statusLabel = updates.statusLabel || merged.statusLabel || (window.LEAD_STATUSES[updates.statusKey]?.label || updates.statusKey);
+                mergedDomainCount++;
+            }
+
+            if (Object.keys(updates).length > 0) {
+                await queueUpdate(primary.id, updates);
+                updatedPrimaryCount++;
+            }
+
+            for (const dup of duplicates) {
+                await queueDelete(dup.id);
+                mergedRowDeleteCount++;
+            }
+        }
+
+        if (batchCount > 0) await batch.commit();
+
+        setCrmData(prev => prev
+            .filter(item => !deletedIds.has(item.id))
+            .map(item => localUpdateMap[item.id] ? { ...item, ...localUpdateMap[item.id] } : item)
+        );
+
+        alert(
+            `${allLeads.length} lead tarandi.\n` +
+            `${updatedPrimaryCount} kayit guncellendi.\n` +
+            `${urlFixCount} kayitta URL ciplak domaine cevrildi.\n` +
+            `${mergedDomainCount} domain grubunda birlestirme yapildi.\n` +
+            `${mergedRowDeleteCount} mukerrer satir silindi.\n` +
+            `${statusFixCount} status/stage tutarsizligi duzeltildi.`
+        );
+    };
+
     // --- FINAL CHECK ---
     const servicesObj = {
-        selectedLead, setSelectedLead, isSending, openMailModal, openPromotionModal, handleSendMail, showBulkModal, setShowBulkModal, isBulkSending, bulkProgress, bulkConfig, setBulkConfig, executeBulkSend, executeBulkPromotion, isCheckingBulk, handleBulkReplyCheck, bulkUpdateStatus, bulkUpdateLanguage, bulkUpdateStage, bulkAddNotViable, isEnriching, showEnrichModal, setShowEnrichModal, enrichLogs, enrichProgress, enrichDatabase, stopEnrichBackground, isScanning, keywords, setKeywords, searchDepth, setSearchDepth, hunterLogs, hunterProgress, hunterLogsEndRef, startScan, stopScan, handleExportData, fixEncodedNames, startAutoFollowup, stopAutoFollowup, runAutoHunterScan, stopAutoHunterScan, isHunterRunning, autoHunterLogs, autoHunterStats, autoHunterLogsEndRef, fixLeadConsistency
+        selectedLead, setSelectedLead, isSending, openMailModal, openPromotionModal, handleSendMail, showBulkModal, setShowBulkModal, isBulkSending, bulkProgress, bulkConfig, setBulkConfig, executeBulkSend, executeBulkPromotion, isCheckingBulk, handleBulkReplyCheck, bulkUpdateStatus, bulkUpdateLanguage, bulkUpdateStage, bulkAddNotViable, isEnriching, showEnrichModal, setShowEnrichModal, enrichLogs, enrichProgress, enrichDatabase, stopEnrichBackground, isScanning, keywords, setKeywords, searchDepth, setSearchDepth, hunterLogs, hunterProgress, hunterLogsEndRef, startScan, stopScan, handleExportData, fixEncodedNames, startAutoFollowup, stopAutoFollowup, runAutoHunterScan, stopAutoHunterScan, isHunterRunning, autoHunterLogs, autoHunterStats, autoHunterLogsEndRef, fixLeadConsistency: fixLeadConsistencyV2
     };
 
     return servicesObj;

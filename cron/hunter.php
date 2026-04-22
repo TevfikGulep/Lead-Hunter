@@ -212,6 +212,42 @@ function getBoolValue($fields, $key, $default = false) {
     return isset($fields[$key]['booleanValue']) ? $fields[$key]['booleanValue'] : $default;
 }
 
+function extractHost($value) {
+    $raw = strtolower(trim((string)$value));
+    if ($raw === '') return '';
+    if (!preg_match('#^https?://#i', $raw)) {
+        $raw = 'https://' . $raw;
+    }
+    $host = parse_url($raw, PHP_URL_HOST);
+    if (!$host) return '';
+    return preg_replace('/^www\./i', '', strtolower($host));
+}
+
+function getRootDomainFromHost($host) {
+    $host = strtolower(trim((string)$host));
+    if ($host === '') return '';
+    if (filter_var($host, FILTER_VALIDATE_IP)) return $host;
+
+    $parts = explode('.', $host);
+    $count = count($parts);
+    if ($count <= 2) return $host;
+
+    $tld = $parts[$count - 1];
+    $sld = $parts[$count - 2];
+    $multiPartSuffixes = ['com', 'co', 'org', 'net', 'gov', 'edu', 'ac', 'k12', 'gen', 'biz', 'web', 'av', 'dr', 'bel', 'pol'];
+
+    if (strlen($tld) === 2 && in_array($sld, $multiPartSuffixes, true)) {
+        return implode('.', array_slice($parts, -3));
+    }
+    return implode('.', array_slice($parts, -2));
+}
+
+function normalizeMainDomain($value) {
+    $host = extractHost($value);
+    if (!$host) return '';
+    return getRootDomainFromHost($host);
+}
+
 function getExistingDomains($accessToken, $projectId) {
     $domains = [];
     $url = "https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents/leads?pageSize=1000";
@@ -233,8 +269,8 @@ function getExistingDomains($accessToken, $projectId) {
                 $fields = $doc['fields'] ?? [];
                 $docUrl = getStringValue($fields, 'url');
                 if ($docUrl) {
-                    $parsed = parse_url($docUrl, PHP_URL_HOST);
-                    if ($parsed) $domains[] = strtolower(preg_replace('/^www\./', '', $parsed));
+                    $normalized = normalizeMainDomain($docUrl);
+                    if ($normalized !== '') $domains[$normalized] = true;
                 }
             }
         }
@@ -444,15 +480,18 @@ try {
                 foreach ($json['results'] as $r) {
                     if ($foundViableCount >= $hunterTargetCount) break;
 
-                    $domain = parse_url($r['url'], PHP_URL_HOST);
+                    $scanDomain = extractHost($r['url']); // subdomain dahil
+                    if (!$scanDomain) continue;
+                    $domain = normalizeMainDomain($scanDomain); // kayÄ±t/duplicate iÃ§in Ã§Ä±plak domain
                     if (!$domain) continue;
-                    $domain = strtolower(preg_replace('/^www\./', '', $domain));
+
+                    if (preg_match('/\.(bel|gov|edu|k12|pol|tsk|mil)\.tr$/i', $domain)) continue;
 
                     // Skip duplicates
-                    if (in_array($domain, $existingDomains)) continue;
+                    if (isset($existingDomains[$domain])) continue;
 
                     // Traffic check
-                    $trafficUrl = SERVER_URL . "?type=traffic&domain=" . urlencode($domain);
+                    $trafficUrl = SERVER_URL . "?type=traffic&domain=" . urlencode($scanDomain);
                     $ch = curl_init();
                     curl_setopt($ch, CURLOPT_URL, $trafficUrl);
                     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -464,7 +503,7 @@ try {
 
                     if ($traffic && isset($traffic['success']) && $traffic['success'] && isset($traffic['value']) && $traffic['value'] > 20000) {
                         // Email discovery
-                        $emailUrl = SERVER_URL . "?type=email&domain=" . urlencode($domain);
+                        $emailUrl = SERVER_URL . "?type=email&domain=" . urlencode($scanDomain);
                         $ch = curl_init();
                         curl_setopt($ch, CURLOPT_URL, $emailUrl);
                         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -510,7 +549,7 @@ try {
                         if ($addResult) {
                             $foundViableCount++;
                             $addedCount++;
-                            $existingDomains[] = $domain;
+                            $existingDomains[$domain] = true;
                             $emailNote = $foundEmail ? " | Email: $foundEmail" : " | Email: Bulunamadı";
                             writeLog("✅ Eklendi [$addedCount]: $domain (Trafik: " . ($traffic['label'] ?? '?') . "$emailNote)", "SUCCESS");
                         } else {

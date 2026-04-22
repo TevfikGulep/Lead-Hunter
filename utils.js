@@ -40,7 +40,9 @@ window.cleanDomain = (url) => {
 };
 
 window.getRootDomain = (url) => {
-    const domain = window.cleanDomain(url);
+    const domain = (window.cleanDomain(url) || '').toLowerCase();
+    if (!domain) return '';
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(domain)) return domain; // IPv4
     const parts = domain.split('.');
     if (parts.length <= 2) return domain;
     const tld = parts[parts.length - 1];
@@ -49,6 +51,9 @@ window.getRootDomain = (url) => {
     if (tld.length === 2 && multiPartSuffixes.includes(sld)) { return parts.slice(-3).join('.'); }
     return parts.slice(-2).join('.');
 };
+
+// Kayıt/duplicate için tekil ana domain standardı.
+window.normalizeMainDomain = (url) => window.getRootDomain(url);
 
 window.parseCSV = (text) => {
     const lines = text.split('\n').filter(l => l.trim().length > 0);

@@ -97,7 +97,7 @@ window.ImportModal = ({
             setImportProgress({ current: 0, total });
 
             // Mevcut domainlerin temiz listesini (Set) oluştur - Hızlı mükerrer kontrolü için
-            const existingDomains = new Set(crmData.map(lead => window.cleanDomain(lead.url)));
+            const existingDomains = new Set(crmData.map(lead => window.normalizeMainDomain(lead.url)));
 
             let addedCount = 0;
             let skippedCount = 0;
@@ -105,7 +105,7 @@ window.ImportModal = ({
             for (let i = 0; i < total; i++) {
                 setImportProgress({ current: i + 1, total });
                 const rawUrl = rawDomains[i];
-                const cleanUrl = window.cleanDomain(rawUrl);
+                const cleanUrl = window.normalizeMainDomain(rawUrl);
 
                 // 1. Validasyon: Domain geçerli mi?
                 if (!cleanUrl || cleanUrl.length < 4 || !cleanUrl.includes('.')) {

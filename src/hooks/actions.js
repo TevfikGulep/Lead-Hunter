@@ -242,8 +242,10 @@ window.useLeadHunterActions = (dbInstance, isDbConnected, crmData, setCrmData, s
     const addToCrm = async (lead, lang) => {
         if (!isDbConnected) return alert("Veritabanı bağlı değil.");
         try {
+            const normalizedDomain = window.normalizeMainDomain(lead.url);
+            if (!normalizedDomain) return alert("GeÃ§erli bir domain bulunamadÄ±.");
             const newLead = {
-                url: window.cleanDomain(lead.url),
+                url: normalizedDomain,
                 email: lead.email || '',
                 statusKey: 'New',
                 statusLabel: 'New',
@@ -255,7 +257,7 @@ window.useLeadHunterActions = (dbInstance, isDbConnected, crmData, setCrmData, s
             };
             const docRef = await dbInstance.collection("leads").add(newLead);
             setCrmData(prev => [...prev, { ...newLead, id: docRef.id }]);
-            alert(`${window.cleanDomain(lead.url)} başarıyla eklendi!`);
+            alert(`${normalizedDomain} başarıyla eklendi!`);
         } catch (e) { alert("Ekleme hatası: " + e.message); }
     };
 
