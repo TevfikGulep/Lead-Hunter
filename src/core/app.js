@@ -224,6 +224,7 @@ const LeadHunter = () => {
             <window.MailModal selectedLead={services.selectedLead} setSelectedLead={services.setSelectedLead} handleSendMail={services.handleSendMail} isSending={services.isSending} />
             <window.ImportModal isOpen={showImportModal} onClose={() => setShowImportModal(false)} crmData={data.crmData} dbInstance={auth.dbInstance} isDbConnected={auth.isDbConnected} />
             <window.HistoryModal historyModalLead={historyModalLead} setHistoryModalLead={setHistoryModalLead} checkGmailReply={actions.checkGmailReply} isCheckingReply={actions.isCheckingReply} replyCheckResult={actions.replyCheckResult} onAddNote={actions.handleAddNote} onDeleteNote={actions.handleDeleteNote} onUpdateNote={actions.handleUpdateNote} />
+            <window.SyncLogModal isOpen={services.showFixLogModal} logs={services.fixConsistencyLogs} onClose={() => services.setShowFixLogModal(false)} />
         </div>
     );
 };
