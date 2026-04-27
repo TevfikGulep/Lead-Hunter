@@ -278,30 +278,51 @@ function getFirestoreLeads($accessToken, $projectId)
     return [];
 }
 
-// Firestore'dan tÃ¼m leadleri Ã§ek (basit)
+// Firestore'dan tüm leadleri çek (pageToken ile sayfalanır — tüm koleksiyon taranır)
 function getAllFirestoreLeads($accessToken, $projectId)
 {
-    $url = "https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents/leads";
+    $baseUrl = "https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents/leads?pageSize=300";
+    $allDocs = [];
+    $nextPageToken = null;
+    $pageCount = 0;
 
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        "Authorization: Bearer $accessToken"
-    ]);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+    do {
+        $fetchUrl = $nextPageToken ? $baseUrl . '&pageToken=' . urlencode($nextPageToken) : $baseUrl;
 
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $fetchUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            "Authorization: Bearer $accessToken"
+        ]);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 60);
 
-    if ($httpCode === 200) {
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr = curl_error($ch);
+        curl_close($ch);
+
+        if ($response === false || !empty($curlErr)) {
+            writeLog("Firestore leads cURL hatası (sayfa $pageCount): " . $curlErr, "ERROR");
+            return $allDocs;
+        }
+        if ($httpCode !== 200) {
+            writeLog("Firestore okuma hatası (HTTP $httpCode, sayfa $pageCount)", "ERROR");
+            return $allDocs;
+        }
+
         $data = json_decode($response, true);
-        return $data['documents'] ?? [];
-    }
+        if (isset($data['documents']) && is_array($data['documents'])) {
+            foreach ($data['documents'] as $doc) {
+                $allDocs[] = $doc;
+            }
+        }
 
-    writeLog("Firestore okuma hatasÄ±: HTTP $httpCode", "ERROR");
-    return [];
+        $nextPageToken = $data['nextPageToken'] ?? null;
+        $pageCount++;
+    } while ($nextPageToken);
+
+    return $allDocs;
 }
 
 // Firestore'a veri yazma (updateMask ile sadece belirtilen alanlarÄ± gÃ¼nceller)

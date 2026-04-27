@@ -117,6 +117,12 @@ window.useLeadHunterAuth = () => {
                             googleScriptUrl: cloudData.googleScriptUrl || prev.googleScriptUrl,
                             signature: cloudData.signature || prev.signature,
                             webhookUrl: cloudData.webhookUrl || prev.webhookUrl,
+                            followUpDays: cloudData.followUpDays != null ? cloudData.followUpDays : prev.followUpDays,
+                            // Mail şablonları (workflow + promosyon)
+                            workflowTR: (Array.isArray(cloudData.workflowTR) && cloudData.workflowTR.length) ? cloudData.workflowTR : prev.workflowTR,
+                            workflowEN: (Array.isArray(cloudData.workflowEN) && cloudData.workflowEN.length) ? cloudData.workflowEN : prev.workflowEN,
+                            promotionTemplateTR: cloudData.promotionTemplateTR || prev.promotionTemplateTR,
+                            promotionTemplateEN: cloudData.promotionTemplateEN || prev.promotionTemplateEN,
                             // Site Avcısı Otomasyon
                             ilceListesi: cloudData.ilceListesi || prev.ilceListesi,
                             autoHunterEnabled: cloudData.autoHunterEnabled || prev.autoHunterEnabled,
@@ -166,6 +172,12 @@ window.useLeadHunterAuth = () => {
                 googleScriptUrl: data.googleScriptUrl,
                 signature: data.signature,
                 webhookUrl: data.webhookUrl,
+                followUpDays: data.followUpDays,
+                // Mail şablonları (cron işleri buradan okur)
+                workflowTR: data.workflowTR,
+                workflowEN: data.workflowEN,
+                promotionTemplateTR: data.promotionTemplateTR,
+                promotionTemplateEN: data.promotionTemplateEN,
                 // Site Avcısı Otomasyon
                 ilceListesi: data.ilceListesi,
                 autoHunterEnabled: data.autoHunterEnabled,

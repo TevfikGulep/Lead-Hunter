@@ -5,3 +5,5 @@ logs/
 *.log
 lead-hunter-1500-firebase-admin-service-account.json
 .firebaserc
+tracking_data.json
+cron/error_log

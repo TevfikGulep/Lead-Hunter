@@ -27,16 +27,27 @@ window.SettingsTab = ({
     syncInboxReplies,
     isCheckingBulk
 }) => {
-    // Otomatik tarama logları güncellendiğinde otomatik kaydır
+    // Otomatik tarama logları güncellendiğinde otomatik kaydır (mount'ta değil)
+    const autoHunterLogsMountedRef = React.useRef(false);
     React.useEffect(() => {
+        if (!autoHunterLogsMountedRef.current) {
+            autoHunterLogsMountedRef.current = true;
+            return;
+        }
         if (autoHunterLogsEndRef && autoHunterLogsEndRef.current) {
-            autoHunterLogsEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            autoHunterLogsEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
     }, [autoHunterLogs]);
+
     const fixLogsEndRef = React.useRef(null);
+    const fixLogsMountedRef = React.useRef(false);
     React.useEffect(() => {
+        if (!fixLogsMountedRef.current) {
+            fixLogsMountedRef.current = true;
+            return;
+        }
         if (fixLogsEndRef.current) {
-            fixLogsEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            fixLogsEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
     }, [fixConsistencyLogs]);
     const [saveMsg, setSaveMsg] = React.useState('');
